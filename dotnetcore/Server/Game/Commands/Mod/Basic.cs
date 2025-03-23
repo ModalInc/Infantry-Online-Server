@@ -1217,13 +1217,18 @@ namespace InfServer.Game.Commands.Mod
             }
 
             //Check if player is a granted player and compare item selected to list of allowed items.
-            if (level == (int)Data.PlayerPermission.GrantedPlayer)
+            if (level == (int)Data.PlayerPermission.GrantedPlayer && player._arena.Prizelist == true)
             {
                 if (!player._arena._prizeItems.Contains(item.id))
                 {
                     player.sendMessage(-1, "You do not have permission to prize this item.");
                     return;
                 }
+            }
+            else
+            {
+                player.sendMessage(-1, "Prize item list does not exist, please contact admin.");
+                return;
             }
 
             //Is it targetted?
