@@ -34,6 +34,10 @@ namespace InfServer.Game
             Arena.maxItems = _config["arena/maxArenaItems"].intValue;
             Arena.maxVehicles = _config["arena/maxArenaVehicles"].intValue;
 
+            Arena.persistentArena = false;
+            if (_config.Exists("arena/persistentArena"))
+                Arena.persistentArena = _config["arena/persistentArena"].boolValue;
+
             if (_config.Exists("arena/allowArenaCreation"))
             {
                 Arena.allowArenaCreation = _config["arena/allowArenaCreation"].boolValue;
@@ -56,7 +60,69 @@ namespace InfServer.Game
                 Log.write(TLog.Error, "Invalid maxVehicles setting; cannot exceed {0}", UInt16.MaxValue - ZoneServer.maxPlayers);
                 return false;
             }
+
+            if (Arena.persistentArena)
+                OpenPersistentArenas();
+
             return true;
+        }
+
+        /// <summary>
+        /// Pre-open the default / named arenas so they poll with zero players when
+        /// <see cref="Arena.persistentArena"/> is enabled.
+        /// </summary>
+        void OpenPersistentArenas()
+        {
+            try
+            {
+                if (_namedArenas != null && _namedArenas.Count > 0)
+                {
+                    foreach (CfgInfo.NamedArena named in _namedArenas)
+                    {
+                        if (named == null || string.IsNullOrEmpty(named.name))
+                            continue;
+                        if (_arenas.ContainsKey(named.name))
+                            continue;
+                        Arena arena = newArena(named.name, true);
+                        if (arena != null)
+                        {
+                            arena._bActive = true;
+                            Log.write(TLog.Normal, "Persistent arena opened: {0}", arena._name);
+                        }
+                    }
+                }
+                else
+                {
+                    bool hasPublic = false;
+                    foreach (string key in _arenas.Keys)
+                    {
+                        if (key.StartsWith("Arena", StringComparison.OrdinalIgnoreCase))
+                        {
+                            hasPublic = true;
+                            break;
+                        }
+                    }
+                    if (!hasPublic)
+                    {
+                        Arena arena = newArena("", false);
+                        if (arena != null)
+                        {
+                            arena._bActive = true;
+                            Log.write(TLog.Normal, "Persistent arena opened: {0}", arena._name);
+                        }
+                    }
+                }
+
+                foreach (Arena a in _arenas.Values)
+                {
+                    if (a != null)
+                        a._bActive = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.write(TLog.Exception, "OpenPersistentArenas failed: {0}", ex);
+            }
         }
 
         /// <summary>

@@ -336,18 +336,26 @@ namespace InfServer.Protocol
 		}
 
 		/// <summary>
-        /// Prompts a player to start spectating another player
+		/// Prompts a player to start spectating another player
 		/// </summary>
 		/// <param name="stop">defaults to false. if set to true, will stop spectating player</param>
 		static public void Player_SpectatePlayer(Player p, Player toSpec, bool stop=false)
-		{	//Form the packet
+		{
+			Player_SpectateTarget(p, stop || toSpec == null ? (ushort)0 : toSpec._id, stop);
+		}
+
+		/// <summary>
+		/// Spectate by wire player/bot id (player-mimic bots use the same id space).
+		/// </summary>
+		static public void Player_SpectateTarget(Player p, ushort targetId, bool stop = false)
+		{
 			SC_PlayerSpectate pkt = new SC_PlayerSpectate();
 
 			pkt.spectatorID = p._id;
-            if (!stop)
-                pkt.playerID = toSpec._id;
-            else
-                pkt.playerID = ushort.MinValue;
+			if (!stop && targetId != 0)
+				pkt.playerID = targetId;
+			else
+				pkt.playerID = ushort.MinValue;
 
 			pkt.unk1 = -1;
 			pkt.unk2 = 1;

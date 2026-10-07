@@ -99,6 +99,8 @@ namespace InfServer.Game
 
         #region Player state
         public Player _spectating;				//The player we're currently spectating
+        /// <summary>Player-mimic bot hull we're spectating (mutually exclusive with <see cref="_spectating"/>).</summary>
+        public InfServer.Bots.Bot _spectatingBot;
         public List<Player> _spectators;		//The players that are currently spectating us
         public List<string> _summonIgnore;      //The players that are currently summon-ignored.
         public Dictionary<string, IPAddress> _accountIgnore;     //The players that are currently account ignored.
@@ -354,11 +356,7 @@ namespace InfServer.Game
         /// </summary>
         public void leftArena()
         {	//Stop spectating
-            if (_spectating != null)
-            {
-                _spectating._spectators.Remove(this);
-                _spectating = null;
-            }
+            stopSpectating();
 
             //Remove any possible game balls that the player was carrying
             removeBall();
@@ -1180,6 +1178,63 @@ namespace InfServer.Game
             Helpers.Player_StateInit(this, null);
         }
 
+        int _cachedBotObservationRange;
+        int _tickBotObservationRange;
+
+        /// <summary>
+        /// How far this player should receive high-rate (smooth) bot poses.
+        /// Uses arena route/weapon/radar bands, extended by last-fired item and
+        /// any inventory projectile routeRange (sniper / long guns before first shot).
+        /// </summary>
+        public int GetBotObservationRange()
+        {
+            int now = Environment.TickCount;
+            if (_tickBotObservationRange != 0
+                && now - _tickBotObservationRange >= 0
+                && now - _tickBotObservationRange < 200)
+                return _cachedBotObservationRange;
+
+            int r = Arena.GetBotHighRateViewRange();
+            try
+            {
+                AssetManager assets = _arena?._server?._assets;
+                if (assets != null)
+                {
+                    if (_lastItemUseID != 0)
+                    {
+                        ItemInfo item = assets.getItemByID(_lastItemUseID);
+                        if (item != null && item.getRouteRange(out int weaponRoute) && weaponRoute > r)
+                            r = weaponRoute;
+                    }
+
+                    if (_inventory != null)
+                    {
+                        foreach (InventoryItem ii in _inventory.Values)
+                        {
+                            if (ii?.item == null)
+                                continue;
+                            // Prefer projectiles — their routeRange tracks long-range / scoped fire.
+                            if (ii.item is not ItemInfo.Projectile)
+                                continue;
+                            if (ii.item.getRouteRange(out int pr) && pr > r)
+                                r = pr;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // keep arena band
+            }
+
+            if (r > 12000)
+                r = 12000;
+
+            _cachedBotObservationRange = r;
+            _tickBotObservationRange = now == 0 ? 1 : now;
+            return r;
+        }
+
         /// <summary>
         /// Retrives the inventory item count for the specified item type
         /// </summary>
@@ -1227,18 +1282,56 @@ namespace InfServer.Game
             if (!IsSpectator)
                 return false;
 
-            //Stop spectating
+            //Stop any current spectating
+            stopSpectating();
+
+            toSpectate._spectators.Add(this);
+            _spectating = toSpectate;
+            _spectatingBot = null;
+
+            Helpers.Player_SpectatePlayer(this, toSpectate);
+            return true;
+        }
+
+        /// <summary>
+        /// Spectate a player-mimic bot hull (same SC_PlayerSpectate id path as a real player).
+        /// </summary>
+        public bool spectate(InfServer.Bots.Bot toSpectate)
+        {
+            if (toSpectate == null || toSpectate.bCondemned)
+                return false;
+            // Dropship-pending corpses stay on the namelist — allow camera attach at the death site.
+            if (toSpectate.IsDead && !toSpectate.bDropshipRespawnPending)
+                return false;
+            if (!IsSpectator)
+                return false;
+
+            stopSpectating();
+
+            toSpectate._spectators.Add(this);
+            _spectatingBot = toSpectate;
+            _spectating = null;
+
+            Helpers.Player_SpectateTarget(this, toSpectate._id, stop: false);
+            return true;
+        }
+
+        /// <summary>
+        /// Clears any active spectating state
+        /// </summary>
+        public void stopSpectating()
+        {
             if (_spectating != null)
             {
                 _spectating._spectators.Remove(this);
                 _spectating = null;
             }
 
-            toSpectate._spectators.Add(this);
-            _spectating = toSpectate;
-
-            Helpers.Player_SpectatePlayer(this, toSpectate);
-            return true;
+            if (_spectatingBot != null)
+            {
+                _spectatingBot._spectators.Remove(this);
+                _spectatingBot = null;
+            }
         }
 
         /// <summary>
@@ -1291,6 +1384,7 @@ namespace InfServer.Game
             }
 
             _bSpectator = true;
+            stopSpectating();
 
             //Throw ourselves onto team spec!
             team.addPlayer(this);
@@ -1335,20 +1429,35 @@ namespace InfServer.Game
                 return false;
             }
 
+            if (team == null)
+            {
+                Log.write(TLog.Warning, "Attempted to unspectate with null team. {0}", this);
+                return false;
+            }
+
             //Reset leftover variables
             this._deathTime = 0;
             this._lastMovement = Environment.TickCount;
             this._maxTimeCalled = false;
 
-            //Throw ourselves onto our new team!
-            team.addPlayer(this);
+            // Join team first — if JoinTeam vetoes (e.g. Bot*), abort while still in spectator.
+            // Previously we destroyed the spectator anyway and left players at 0,0 with no dropship warp.
+            if (!team.addPlayer(this))
+            {
+                Log.write(TLog.Warning, "Unspec aborted: could not join team '{0}' for {1}.", team._name, this);
+                return false;
+            }
 
             //Destroy our spectator vehicle
             _occupiedVehicle.destroy(true);
             _bSpectator = false;
 
-            //Set relative vehicle if required, no need for any if statement here :]
-            VehInfo vehicle = _server._assets.getVehicleByID(getDefaultVehicle().Id + _server._zoneConfig.teams[team._id].relativeVehicle);
+            //Set relative vehicle if required — only index CFG team slots that exist.
+            List<CfgInfo.TeamInfo> cfgTeams = _server._zoneConfig.teams;
+            int relative = 0;
+            if (cfgTeams != null && team._id >= 0 && team._id < cfgTeams.Count)
+                relative = cfgTeams[team._id].relativeVehicle;
+            VehInfo vehicle = _server._assets.getVehicleByID(getDefaultVehicle().Id + relative);
             setDefaultVehicle(vehicle);
 
             //Run the exit spec event
@@ -1358,6 +1467,9 @@ namespace InfServer.Game
             _arena.playerEnter(this);
 
             Bounty = _server._zoneConfig.bounty.start;
+            // Scripts persist bounty across leave (e.g. Eol ZoneStat). Restore after this reset.
+            if (_arena != null)
+                _arena.handlePlayerUnspec(this);
 
             return true;
         }

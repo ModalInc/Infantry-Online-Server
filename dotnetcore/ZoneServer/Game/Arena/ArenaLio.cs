@@ -9,6 +9,7 @@ using System.Threading;
 using InfServer.Network;
 using InfServer.Protocol;
 using InfServer.Logic;
+using InfServer.Bots;
 
 using Assets;
 
@@ -163,7 +164,15 @@ namespace InfServer.Game
             /// </summary>
             public bool Switch(int turretGroup, Player player, bool bOpen)
             {
-                if (!turrets.ContainsKey(turretGroup))
+                if (player == null)
+                    return false;
+                return Switch(turretGroup, player._team, player._arena, bOpen);
+            }
+
+            /// <summary>Team-based turret group switch (bots / script claims).</summary>
+            public bool Switch(int turretGroup, Team team, Arena arena, bool bOpen)
+            {
+                if (!turrets.ContainsKey(turretGroup) || team == null || arena == null)
                     return false;
 
                 bool anySwitched = false;
@@ -172,14 +181,13 @@ namespace InfServer.Game
                     if (bOpen && turret.Item1.HideData.TurretInverseState == 0)
                     {   //Normal acting turret
                         if (turret.Item1.HideData.TurretSwitchedFrequency == -2)
-                        {   //Set to player's freq
-                            Team newTeam = player._team;
-                            turret.Item2._team = newTeam;
+                        {   //Set to claiming team's freq
+                            turret.Item2._team = team;
                             anySwitched = true;
                         }
                         else
                         {   //freq -1 .. 9999
-                            Team newTeam = player._arena.getTeamByID(turret.Item1.HideData.TurretSwitchedFrequency);
+                            Team newTeam = arena.getTeamByID(turret.Item1.HideData.TurretSwitchedFrequency);
                             if (newTeam != null)
                             {
                                 turret.Item2._team = newTeam;
@@ -189,7 +197,7 @@ namespace InfServer.Game
                     }
                     else if (!bOpen || (turret.Item1.HideData.TurretInverseState == 1 && bOpen))
                     {   //The turret should do the opposite, switch is flipped and the turret goes off
-                        Team newTeam = player._arena.getTeamByID(turret.Item1.HideData.AssignFrequency);
+                        Team newTeam = arena.getTeamByID(turret.Item1.HideData.AssignFrequency);
                         if (newTeam != null)
                         {
                             turret.Item2._team = newTeam;
@@ -1123,6 +1131,55 @@ namespace InfServer.Game
                     Helpers.Object_ItemDropUpdate(Players, value.id, (ushort)value.quantity);
                 }
             }
+
+            Helpers.Object_Flags(Players, fs);
+            return true;
+        }
+
+        /// <summary>
+        /// In-place flag ownership for script bots — same SkillLogic / delay / range gates as
+        /// <see cref="flagAction"/>, without inventing a player carrier.
+        /// </summary>
+        public bool flagClaimByBot(Bot bot, FlagState fs, bool bForce = false)
+        {
+            if (bot == null || fs == null || fs.flag == null || bot._team == null)
+                return false;
+
+            LioInfo.Flag flag = fs.flag;
+
+            if (!bForce && !fs.bActive)
+                return false;
+
+            if (!bForce && !Helpers.isInRange(130,
+                bot._state.positionX, bot._state.positionY,
+                fs.posX, fs.posY))
+                return false;
+
+            if (bot.IsDead)
+                return false;
+
+            if (!bForce && Environment.TickCount - fs.lastOperation < (flag.FlagData.PickupDelay * 10))
+                return false;
+
+            if (!Logic_Assets.SkillCheckBot(bot, flag.FlagData.SkillLogic))
+                return false;
+
+            // Bots never carry — only claim when the flag would become owned on carry or drop.
+            bool ownOnCarry = flag.FlagData.IsFlagOwnedWhenCarried;
+            bool ownOnDrop = flag.FlagData.IsFlagOwnedWhenDropped;
+            if (!bForce && !ownOnCarry && !ownOnDrop)
+                return false;
+
+            if (fs.team == bot._team)
+                return false;
+
+            fs.carrier = null;
+            fs.oldTeam = fs.team;
+            fs.team = bot._team;
+            fs.lastOperation = Environment.TickCount;
+
+            if (flag.FlagData.TurretrGroupId != 0)
+                _turretGroups.Switch(flag.FlagData.TurretrGroupId, bot._team, this, true);
 
             Helpers.Object_Flags(Players, fs);
             return true;

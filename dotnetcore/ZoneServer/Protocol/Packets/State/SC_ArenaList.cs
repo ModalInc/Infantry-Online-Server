@@ -50,11 +50,12 @@ namespace InfServer.Protocol
 				Write((byte)TypeID);
 
 				Write(arena._name, 32);
-                //Is he in the arena?
+                // Players + bots for the list pop (join caps still use TotalPlayerCount alone).
+                int listed = arena.TotalPlayerCount + arena.BotCount;
                 if (requestee._arena == arena)
-                    Write((short)(arena.TotalPlayerCount * -1));
+                    Write((short)(listed * -1));
                 else
-                    Write((short)arena.TotalPlayerCount);
+                    Write((short)listed);
 			}
 			foreach (CfgInfo.NamedArena arena in requestee._server._namedArenas)
             {

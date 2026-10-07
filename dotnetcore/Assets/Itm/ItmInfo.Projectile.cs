@@ -83,6 +83,8 @@ namespace Assets
             public bool damageAccessible;
             public int trailDelay;
             public int explosionRecoilRadius;
+            /// <summary>Horizontal knockback applied to vehicles (ITM col 121). GLs often use this with Weapon=0.</summary>
+            public int explosionRecoilVehicle;
             public int explosionRecoilIgnoreTime;
             public int explosionRecoilVehicleVertical;
             public int explosionRecoilWeapon;
@@ -227,6 +229,7 @@ namespace Assets
                 projectile.damageAccessible = CSVReader.GetBool(values[117]);
                 projectile.trailDelay = CSVReader.GetInt(values[119]);
                 projectile.explosionRecoilRadius = CSVReader.GetInt(values[120]);
+                projectile.explosionRecoilVehicle = CSVReader.GetInt(values[121]);
                 projectile.explosionRecoilVehicleVertical = CSVReader.GetInt(values[122]);
                 projectile.explosionRecoilIgnoreTime = CSVReader.GetInt(values[123]);
                 projectile.explosionRecoilWeapon = CSVReader.GetInt(values[124]);

@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 
 using Assets;
 using InfServer.Game;
+using InfServer.Game.Modules;
 using InfServer.Bots;
 using InfServer.Protocol;
 using InfServer.Logic;
@@ -3338,6 +3339,26 @@ namespace InfServer.Game.Commands.Mod
             player._arena.sendArenaMessage("Prizing of items is now" + (player._arena._allowprize ? " allowed!" : " not allowed!"), 0);
         }
 
+        static public void arenacap(Player player, Player recipient, string payload, int bong)
+        {
+            ClassModule.ArenaCapCommand(player, player._arena, payload);
+        }
+
+        static public void teamcap(Player player, Player recipient, string payload, int bong)
+        {
+            ClassModule.TeamCapCommand(player, player._arena, payload);
+        }
+
+        static public void classlimits(Player player, Player recipient, string payload, int bong)
+        {
+            ClassModule.ClassLimitsCommand(player, player._arena, payload);
+        }
+
+        static public void dynamiclimits(Player player, Player recipient, string payload, int bong)
+        {
+            ClassModule.DynamicLimitsCommand(player, player._arena, payload);
+        }
+
         /// <summary>
         /// Registers all handlers
         /// </summary>
@@ -3626,6 +3647,26 @@ namespace InfServer.Game.Commands.Mod
             yield return new HandlerDescriptor(allowprize, "allowprize",
                 "Toggles if arena allows prize.",
                 "*allowprize",
+               InfServer.Data.PlayerPermission.Level2, true);
+
+            yield return new HandlerDescriptor(arenacap, "arenacap",
+                "Sets arena capacity for a specific class.",
+                "*arenacap name:amount or *arenacap id:amount",
+               InfServer.Data.PlayerPermission.Level2, true);
+
+            yield return new HandlerDescriptor(teamcap, "teamcap",
+                "Sets team capacity for a specific class.",
+                "*teamcap name:amount or *teamcap id:amount",
+               InfServer.Data.PlayerPermission.Level2, true);
+
+            yield return new HandlerDescriptor(classlimits, "classlimits",
+                "Shows class limits information and debug data.",
+                "*classlimits",
+               InfServer.Data.PlayerPermission.Level2, true);
+
+            yield return new HandlerDescriptor(dynamiclimits, "dynamiclimits",
+                "Sets dynamic limits for a specific class based on player count percentage.",
+                "*dynamiclimits name:on/off:percent or *dynamiclimits id:on/off:percent",
                InfServer.Data.PlayerPermission.Level2, true);
         }
     }

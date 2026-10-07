@@ -12,6 +12,13 @@
   <ItemGroup>
     <PackageReference Include="CS-Script" Version="4.9.7" />
     <PackageReference Include="Ionic.Zlib.Core" Version="1.0.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Net.WebClient" />
+    <Reference Include="System.ComponentModel.Primitives" />
+    <Reference Include="System.ComponentModel.TypeConverter" />
   </ItemGroup>
 
   <ItemGroup>

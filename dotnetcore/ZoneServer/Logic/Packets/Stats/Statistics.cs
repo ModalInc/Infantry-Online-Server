@@ -5,6 +5,7 @@ using System.Text;
 
 using InfServer.Protocol;
 using InfServer.Game;
+using InfServer.Bots;
 
 namespace InfServer.Logic
 {	// Logic_Statistics Class
@@ -29,92 +30,44 @@ namespace InfServer.Logic
 			{
 				case Helpers.ChartType.ScoreOnlinePlayers:
 					{
-						List<Player> players = player._arena.Players.Where(p => !p.IsStealth).OrderByDescending(p => p.Points).ToList();
-
 						chart.type = Helpers.ChartType.ScoreOnlinePlayers;
 						chart.columns = "Online Player Scores,Name,Squad";
-						chart.playerFunc = delegate(int idx)
-						{	return players[idx];	};
-						chart.dataFunc = delegate(int idx)
-						{
-							if (idx >= players.Count)
-								return null;
-
-                            if (players[idx].StatsTotal != null)
-                                return players[idx].StatsTotal;
-
-                            return null;
-						};
-
+						chart.rows = BuildArenaChartRows(player._arena,
+							p => p.StatsTotal,
+							b => b.GetChartStats());
 						player._client.sendReliable(chart, 1);
 					}
 					break;
 
 				case Helpers.ChartType.ScoreCurrentGame:
 					{
-						List<Player> players = player._arena.Players.Where(p => !p.IsStealth).OrderByDescending(p => p.Points).ToList();
-
 						chart.type = Helpers.ChartType.ScoreCurrentGame;
 						chart.columns = "Current Game Scores,Name,Squad";
-						chart.playerFunc = delegate(int idx)
-						{ return players[idx]; };
-						chart.dataFunc = delegate(int idx)
-						{
-							if (idx >= players.Count)
-								return null;
-
-                            if (players[idx].StatsCurrentGame != null)
-                                return players[idx].StatsCurrentGame;
-
-                            return null;
-						};
-
+						chart.rows = BuildArenaChartRows(player._arena,
+							p => p.StatsCurrentGame,
+							b => b.GetChartStats());
 						player._client.sendReliable(chart, 1);
 					}
 					break;
 
 				case Helpers.ChartType.ScorePreviousGame:
 					{
-						List<Player> players = player._arena.Players.Where(p => !p.IsStealth).OrderByDescending(p => p.Points).ToList();
-
 						chart.type = Helpers.ChartType.ScorePreviousGame;
 						chart.columns = "Current Session Scores,Name,Squad";
-						chart.playerFunc = delegate(int idx)
-						{ return players[idx]; };
-						chart.dataFunc = delegate(int idx)
-						{
-							if (idx >= players.Count)
-								return null;
-
-                            if (players[idx].StatsLastGame != null)
-                                return players[idx].StatsLastGame;
-
-                            return null;
-						};
-
+						chart.rows = BuildArenaChartRows(player._arena,
+							p => p.StatsLastGame,
+							b => b._statsLastGame);
 						player._client.sendReliable(chart, 1);
 					}
 					break;
 
 				case Helpers.ChartType.ScoreCurrentSession:
 					{
-						List<Player> players = player._arena.Players.Where(p => !p.IsStealth).OrderByDescending(p => p.Points).ToList();
-
 						chart.type = Helpers.ChartType.ScoreCurrentSession;
 						chart.columns = "Current Session Scores,Name,Squad";
-						chart.playerFunc = delegate(int idx)
-						{ return players[idx]; };
-						chart.dataFunc = delegate(int idx)
-						{
-							if (idx >= players.Count)
-								return null;
-
-                            if (players[idx].StatsCurrentSession != null)
-                                return players[idx].StatsCurrentSession;
-
-                            return null;
-						};
-
+						chart.rows = BuildArenaChartRows(player._arena,
+							p => p.StatsCurrentSession,
+							b => b.GetChartStats());
 						player._client.sendReliable(chart, 1);
 					}
 					break;
@@ -247,11 +200,58 @@ namespace InfServer.Logic
 					{
 						chart.type = Helpers.ChartType.ScoreCurrentGame;
 						chart.columns = "Invalid Chart Request";
-						chart.dataFunc = delegate(int idx) { return null; };
+						chart.rows = new List<SC_ScoreChart.ChartRow>();
 						player._client.sendReliable(chart, 1);
 					}
 					break;
 			}
+		}
+
+		/// <summary>
+		/// Merge non-stealth players + named bots into one score chart, sorted by points then kills.
+		/// </summary>
+		static List<SC_ScoreChart.ChartRow> BuildArenaChartRows(
+			Arena arena,
+			Func<Player, Data.PlayerStats> playerStats,
+			Func<Bot, Data.PlayerStats> botStats)
+		{
+			List<SC_ScoreChart.ChartRow> rows = new List<SC_ScoreChart.ChartRow>();
+			if (arena == null)
+				return rows;
+
+			foreach (Player p in arena.Players)
+			{
+				if (p == null || p.IsStealth)
+					continue;
+				Data.PlayerStats stats = playerStats(p);
+				if (stats == null)
+					continue;
+				rows.Add(new SC_ScoreChart.ChartRow(p._alias, p._squad, stats));
+			}
+
+			foreach (Bot bot in arena.GetScoreChartBots())
+			{
+				if (bot == null)
+					continue;
+				Data.PlayerStats stats = botStats(bot);
+				if (stats == null)
+					continue;
+				rows.Add(new SC_ScoreChart.ChartRow(bot._alias, "", stats));
+			}
+
+			rows.Sort((a, b) =>
+			{
+				long pa = a.stats != null ? a.stats.Points : 0;
+				long pb = b.stats != null ? b.stats.Points : 0;
+				int cmp = pb.CompareTo(pa);
+				if (cmp != 0)
+					return cmp;
+				int ka = a.stats != null ? a.stats.kills : 0;
+				int kb = b.stats != null ? b.stats.kills : 0;
+				return kb.CompareTo(ka);
+			});
+
+			return rows;
 		}
 
 		/// <summary>

@@ -459,6 +459,10 @@ namespace InfServer.Logic
                 return;
             }
 
+            Log.write(TLog.Normal,
+                "RequestSpectator: {0} id={1} unk1={2} spec={3}",
+                player._alias, pkt.playerID, pkt.unk1, player.IsSpectator);
+
             if (!player.IsSpectator)
             {
                 Log.write(TLog.Warning, "Handle_CS_RequestSpectator(): Player {0} attempted to spectate a player while not in spec.", player);

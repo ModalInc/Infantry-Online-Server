@@ -473,6 +473,12 @@ namespace InfServer.Logic
             var oldAlias = pkt.aliasTo;
             var newAlias = pkt.query;        
 
+            if (Logic_Login.IsReservedBotAliasPrefix(newAlias, out string reservedReason))
+            {
+                zone._server.sendMessage(zone, pkt.sender, reservedReason);
+                return;
+            }
+
             var newAliasExists = ctx.Aliases.Any(a => a.Name == newAlias);
 
             if (newAliasExists)

@@ -26,10 +26,9 @@ namespace InfServer.Bots
         private LvlInfo lvlInfo;
         private int pathHandleClr2;
         private int pathHandleClr0;
-        private int logcounter = 1;
 
         private Thread pathingThread;
-        public BlockingCollection<PathfindReq> pathingQueue;
+        readonly PathfinderWorkQueue _workQueue;
 
         #region Pathfinder DLL Declarations
         [DllImport("pathfinder.dll")]
@@ -65,7 +64,7 @@ namespace InfServer.Bots
             _logger = logger;
 
             lvlInfo = server._assets.Level;
-            pathingQueue = new BlockingCollection<PathfindReq>(25);
+            _workQueue = new PathfinderWorkQueue(80, softDropThreshold: 60, logName: "Pathfinder");
 
             //Create a boolean representation of our map
             byte[] map = new byte[lvlInfo.Width * lvlInfo.Height];
@@ -129,22 +128,19 @@ namespace InfServer.Bots
         /// </summary>
         private void pathfinder(Object obj)
         {
-            foreach (PathfindReq req in pathingQueue.GetConsumingEnumerable())
-            {   //Solve the path
-                int[] path;
-
-                if (!calculatePath(req.startX, req.startY, req.endX, req.endY, out path))
+            _workQueue.RunWorker(
+                isStillNeeded: null,
+                process: req =>
                 {
-                    req.callback(null, 0);
-                    continue;
-                }
+                    int[] path;
+                    if (!calculatePath(req.startX, req.startY, req.endX, req.endY, out path))
+                    {
+                        req.callback?.Invoke(null, 0);
+                        return;
+                    }
 
-                //Create a steerable path
-                req.callback(createSteerablePath(path), path.Length);
-
-                //Required to ensure the delegate is released when the loop is idle
-                req.callback = null;
-            }
+                    req.callback?.Invoke(createSteerablePath(path), path.Length);
+                });
         }
 
         /// <summary>
@@ -152,41 +148,32 @@ namespace InfServer.Bots
         /// </summary>
         public void queueRequest(short startX, short startY, short endX, short endY, Action<List<Vector3>, int> callback)
         {
+            queueRequest(startX, startY, endX, endY, callback, 0, PathPriority.Idle);
+        }
 
-            //Increased from 25 to 50, there really is no need to limit this, however if we hit over 50 we can clear some.
-            if (pathingQueue.Count > 50)
-            {
-                //Add to logcounter
-                logcounter++;
+        public void queueRequest(
+            short startX,
+            short startY,
+            short endX,
+            short endY,
+            Action<List<Vector3>, int> callback,
+            int botId,
+            PathPriority priority)
+        {
+            queueRequest(startX, startY, endX, endY, callback, botId, priority, null);
+        }
 
-                //write single log for combined count of 50
-                if (logcounter == 20)
-                {
-                    Log.write(TLog.Warning, "Excessive pathing queue count: " + pathingQueue.Count);
-                    //Clear log list to start again.
-                    logcounter = 1;
-                }
-
-                //Remove all path requests currently in pathing queue
-                PathfindReq cItem = pathingQueue.Take();
-                pathingQueue.TryTake(out cItem, TimeSpan.FromMilliseconds(100));
-
-                //Let them know
-                callback(null, 0);
-                return;
-            }
-            else
-            {
-                PathfindReq req = new PathfindReq();
-
-                req.startX = startX;
-                req.startY = startY;
-                req.endX = endX;
-                req.endY = endY;
-                req.callback = callback;
-
-                pathingQueue.Add(req);
-            }
+        public void queueRequest(
+            short startX,
+            short startY,
+            short endX,
+            short endY,
+            Action<List<Vector3>, int> callback,
+            int botId,
+            PathPriority priority,
+            Func<bool> stillNeeded)
+        {
+            _workQueue.Enqueue(startX, startY, endX, endY, callback, botId, priority, stillNeeded);
         }
 
         /// <summary>
@@ -300,7 +287,15 @@ namespace InfServer.Bots
         /// </summary>
         public int queueCount()
         {
-            return pathingQueue.Count;
+            return _workQueue.Count;
+        }
+
+        public int clearQueue()
+        {
+            int dropped = _workQueue.ClearAll();
+            if (dropped > 0)
+                Log.write(TLog.Warning, "Cleared {0} pending path request(s).", dropped);
+            return dropped;
         }
 
         public void updateTile(int tileX, int tileY, Tile tile)

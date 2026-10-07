@@ -58,6 +58,18 @@ namespace InfServer.Protocol
         const int RATETHRESHOLD_BASE = 1048576;
         const int DECAYRATE_BASE = 157284;//78642;
 
+        /// <summary>
+        /// Matches client UdpLibrary maxOutstandingBytes — never declare a larger DataStream total.
+        /// Oversized payloads crash stock clients via unbounded mBigDataTargetLen allocation.
+        /// </summary>
+        public const int MaxReliablePayload = 200 * 1024;
+
+        /// <summary>
+        /// Cap DataStream fragment bytes emitted per client poll so we stay under the client's
+        /// 200 KB outstanding budget even when _rateThreshold allows ~1 MB/tick.
+        /// </summary>
+        const int MaxDataStreamBytesPerPoll = 48 * 1024;
+
         static public int udpMaxSize;
         static public int crcLength;
 
@@ -65,6 +77,8 @@ namespace InfServer.Protocol
         static public bool bLogUnknowns;
 
         static private Random rand = new Random();
+
+        int _dataStreamBytesThisPoll;
 
         ///////////////////////////////////////////////////
         // Member Classes
@@ -344,6 +358,9 @@ namespace InfServer.Protocol
                     _tickLastBytesSample = now;
                 }
 
+                // Fresh fragment budget each poll (shared across all 4 streams).
+                _dataStreamBytesThisPoll = 0;
+
                 //Handle each stream
                 for (int i = 0; i < 4; ++i)
                 {
@@ -404,8 +421,11 @@ namespace InfServer.Protocol
         private bool enqueueDataStream(DataStream ds, StreamState stream)
         {	//Write packets into the stream while we still have bandwidth available
             int bytesLeft = _rateThreshold - _bytesWritten;
+            int fragmentBudget = MaxDataStreamBytesPerPoll - _dataStreamBytesThisPoll;
+            if (fragmentBudget <= 0)
+                return true; // still streaming; wait for next poll
 
-            while (bytesLeft > 0 && ds.amountSent < ds.buffer.Length)
+            while (bytesLeft > 0 && fragmentBudget > 0 && ds.amountSent < ds.buffer.Length)
             {	//Prepare a data packet
                 DataPacket dp = new DataPacket(stream.streamID);
 
@@ -421,6 +441,8 @@ namespace InfServer.Protocol
 
                 ds.amountSent += dp._dataRead;
                 bytesLeft -= dp._dataRead;
+                fragmentBudget -= dp._dataRead;
+                _dataStreamBytesThisPoll += dp._dataRead;
 
                 //Add it to our list of reliable packets
                 ReliableInfo ri = new ReliableInfo();
@@ -483,6 +505,44 @@ namespace InfServer.Protocol
         }
 
         /// <summary>
+        /// When all reliables are acked and the sequence nears ushort wrap, reset
+        /// counters so long sessions can continue without freezing reliable traffic.
+        /// </summary>
+        void compactReliableStream(StreamState stream)
+        {
+            if (SequenceNumberLessThan(stream.S2C_ReliableConfirmed, stream.S2C_Reliable))
+                return;
+
+            const ushort wrapThreshold = (ushort)(ushort.MaxValue - 64);
+            if (stream.S2C_Reliable < wrapThreshold)
+                return;
+
+            stream.S2C_Reliable = 0;
+            stream.S2C_ReliableConfirmed = 0;
+            stream.reliablePackets.Clear();
+            stream.lastOOSPacket = 0;
+        }
+
+        /// <summary>
+        /// Resends a reliable packet the client reported missing via OutOfSync.
+        /// </summary>
+        public bool resendReliable(int streamID, ushort rNumber)
+        {
+            using (DdMonitor.Lock(_sync))
+            {
+                StreamState stream = _streams[streamID];
+                ReliableInfo ri;
+                if (!stream.reliablePackets.TryGetValue(rNumber, out ri))
+                    return false;
+
+                ri.timeSent = 0;
+                ri.attempts = 0;
+                _packetQueue.Enqueue(ri.packet);
+                return true;
+            }
+        }
+
+        /// <summary>
         /// Ensures that the client is receiving all reliable packets sent
         /// </summary>
         /// <remarks>Also is the only function that sends reliable packets.</remarks>
@@ -516,6 +576,19 @@ namespace InfServer.Protocol
                 ReliableInfo ri;
                 if (stream.reliablePackets.TryGetValue(current, out ri))
                 {
+                    // Give up on packets that have been resent too many times — prevents
+                    // unbounded reliablePackets growth when a client stalls. Do not disconnect;
+                    // later OutOfSync requests for this rid will simply be ignored.
+                    if (ri.attempts >= 12)
+                    {
+                        Log.write(TLog.Warning,
+                            "Reliable packet #{0} on stream {1} failed after 12 attempts — abandoning packet for {2}.",
+                            current, stream.streamID, this);
+                        stream.reliablePackets.Remove(current);
+                        current = (ushort)(current + 1);
+                        continue;
+                    }
+
                     //Has it been delayed too long?
                     if (currentTick - ri.timeSent >= 1000)
                     {
@@ -573,6 +646,7 @@ namespace InfServer.Protocol
                 }
 
                 stream.S2C_ReliableConfirmed = end;
+                compactReliableStream(stream);
             }
         }
 
@@ -596,15 +670,13 @@ namespace InfServer.Protocol
             stream.tickOOSPacket = Environment.TickCount;
         }
 
-        /// <summary>
-        /// Sends a reliable packet to the client
-        /// </summary>
-        public void sendReliable(PacketBase packet)
+        /// <summary>Queue a reliable packet. False when it was dropped (queue full or invalid payload).</summary>
+        public bool sendReliable(PacketBase packet)
         {
             // Vary the Stream ID so it is evenly distributed between the four streams.
             //var randomStreamId = rand.Next(4);
 
-            sendReliable(packet, null, 0);
+            return sendReliable(packet, null, 0);
         }
 
         /// <summary>
@@ -629,14 +701,35 @@ namespace InfServer.Protocol
         /// <summary>
         /// Sends a reliable packet to the client
         /// </summary>
-        public void sendReliable(PacketBase packet, Action completionCallback, int streamID)
+        public bool sendReliable(PacketBase packet, Action completionCallback, int streamID)
         {	//Sync up!
             using (DdMonitor.Lock(_sync))
             {	//Get the relevant stream
                 Client.StreamState stream = _streams[streamID];
 
+                // Bound waiting reliables so lag cannot grow an unbounded resend storm (chat/notifs).
+                // Never drop DataStream entries — that leaves clients mid-reassembly and can throw.
+                const int maxReliableQueue = 96;
+                trimReliableQueue(stream, maxReliableQueue);
+                if (stream.reliableQueue.Count >= maxReliableQueue)
+                {
+                    Log.write(TLog.Warning,
+                        "Reliable queue full (DataStreams preserved); dropping new reliable type={0} for {1}",
+                        packet._type, this);
+                    return false;
+                }
+
                 //Make sure the packet is serialized
                 packet.MakeSerialized(this, _handler);
+
+                // Cap declared DataStream totals to what stock clients can safely allocate.
+                if (packet._size <= 0 || packet._size > MaxReliablePayload)
+                {
+                    Log.write(TLog.Warning,
+                        "Dropping oversized/invalid reliable ({0} bytes, type={1}) to {2}",
+                        packet._size, packet._type, this);
+                    return false;
+                }
 
                 //Is the (packet and reliable header) too large to be sent as one?
                 if (4 + packet._size + _CRCLength > _C2S_UDPSize)
@@ -666,6 +759,39 @@ namespace InfServer.Protocol
 
                     //Put it in the reliable queue
                     stream.reliableQueue.Enqueue(ri);
+                }
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// Drops oldest non-DataStream reliables when the queue is full.
+        /// DataStreams are preserved so clients are not left with orphaned fragment sets.
+        /// </summary>
+        static void trimReliableQueue(StreamState stream, int maxReliableQueue)
+        {
+            while (stream.reliableQueue.Count >= maxReliableQueue)
+            {
+                List<ReliableInfo> items = new List<ReliableInfo>(stream.reliableQueue);
+                int dropIdx = -1;
+                for (int i = 0; i < items.Count; i++)
+                {
+                    if (items[i].dataStream == null)
+                    {
+                        dropIdx = i;
+                        break;
+                    }
+                }
+
+                if (dropIdx < 0)
+                    return; // Only DataStreams left — caller must refuse new sends
+
+                stream.reliableQueue.Clear();
+                for (int i = 0; i < items.Count; i++)
+                {
+                    if (i == dropIdx)
+                        continue;
+                    stream.reliableQueue.Enqueue(items[i]);
                 }
             }
         }
@@ -804,12 +930,6 @@ namespace InfServer.Protocol
 
             else if (packetQueue.Count == 1)
             {
-                // FIXME: Testing reliable packet issues.
-                if (stream.S2C_Reliable > ushort.MaxValue - 4)
-                {
-                    return new List<ReliableInfo>();
-                }
-
                 //We need to put it in a reliable case
                 Reliable reli = new Reliable();
                 ReliableInfo rinfo = packetQueue.Dequeue();

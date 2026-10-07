@@ -58,6 +58,52 @@ namespace InfServer.Protocol
 				NorthEast = 0x2D2A,
 			}
 
+			/// <summary>
+			/// Client run cycle dies on Direction.None. If the bot still has velocity,
+			/// force a non-None facing so packets don't look like pose hops.
+			/// </summary>
+			public static ushort EnsureBotWireDirection(ushort direction, short velX, short velY, byte yaw)
+			{
+				if (direction != (ushort)Direction.None)
+					return direction;
+
+				long speed2 = (long)velX * velX + (long)velY * velY;
+				if (speed2 < 4)
+					return direction;
+
+				double yawRad = yaw * (Math.PI / 120.0);
+				double fx = Math.Sin(yawRad);
+				double fy = Math.Cos(yawRad);
+				double speed = Math.Sqrt(speed2);
+				double nx = velX / speed;
+				double ny = velY / speed;
+				double forward = nx * fx + ny * fy;
+				double strafe = nx * fy - ny * fx;
+
+				const double axis = 0.35;
+				if (forward > axis)
+				{
+					if (strafe > axis)
+						return (ushort)Direction.NorthEast;
+					if (strafe < -axis)
+						return (ushort)Direction.NorthWest;
+					return (ushort)Direction.Forward;
+				}
+				if (forward < -axis)
+				{
+					if (strafe > axis)
+						return (ushort)Direction.SouthEast;
+					if (strafe < -axis)
+						return (ushort)Direction.SouthWest;
+					return (ushort)Direction.Backward;
+				}
+				if (strafe > axis)
+					return (ushort)Direction.StrafeRight;
+				if (strafe < -axis)
+					return (ushort)Direction.StrafeLeft;
+				return (ushort)Direction.Forward;
+			}
+
 			//Converting objects to vector space
 			public Vector3 velocity()
 			{
@@ -88,31 +134,47 @@ namespace InfServer.Protocol
 		///////////////////////////////////////////////////
 		// Member Functions
 		//////////////////////////////////////////////////
+		/// <summary>Keep arena-join snapshots under one UDP frame so clients avoid DataStream alloc.</summary>
+		const int ItemDropChunkSize = 40;
+		/// <summary>Root vehicles per reliable packet (children serialize with their parent).</summary>
+		const int VehicleChunkSize = 20;
+
 		/// <summary>
 		/// Notifies a bunch of players of item drops
 		/// </summary>
 		static public void Object_Items(IEnumerable<Player> players, IEnumerable<Arena.ItemDrop> drop)
-		{	//Create the notification packet
-			SC_Items items = new SC_Items();
+		{
+			if (players == null || drop == null)
+				return;
 
-			items.items = drop;
-
-			//Route the packet
-			foreach (Player p in players)
-				p._client.sendReliable(items);
+			List<Arena.ItemDrop> list = drop as List<Arena.ItemDrop> ?? drop.ToList();
+			foreach (List<Arena.ItemDrop> chunk in ChunkList(list, ItemDropChunkSize))
+			{
+				SC_Items items = new SC_Items();
+				items.items = chunk;
+				foreach (Player p in players)
+				{
+					if (p != null && p._client != null)
+						p._client.sendReliable(items);
+				}
+			}
 		}
 
 		/// <summary>
 		/// Notifies a player of item drops
 		/// </summary>
 		static public void Object_Items(Player p, IEnumerable<Arena.ItemDrop> drop)
-		{	//Create the notification packet
-			SC_Items items = new SC_Items();
+		{
+			if (p == null || p._client == null || drop == null)
+				return;
 
-			items.items = drop;
-
-			//Route the packet
-			p._client.sendReliable(items);
+			List<Arena.ItemDrop> list = drop as List<Arena.ItemDrop> ?? drop.ToList();
+			foreach (List<Arena.ItemDrop> chunk in ChunkList(list, ItemDropChunkSize))
+			{
+				SC_Items items = new SC_Items();
+				items.items = chunk;
+				p._client.sendReliable(items);
+			}
 		}
 
 		/// <summary>
@@ -343,12 +405,11 @@ namespace InfServer.Protocol
 		/// Sends a series of vehicle updates to the specified player
 		/// </summary>
 		static public void Object_Vehicles(Player p, IEnumerable<Vehicle> update)
-		{	//Prepare the packet
-			SC_Vehicles vehicles = new SC_Vehicles();
-			vehicles.vehicles = update;
+		{
+			if (p == null || p._client == null || update == null)
+				return;
 
-			//Send to recipient
-			p._client.sendReliable(vehicles);
+			sendVehicleChunks(p, update);
 		}
 
 		/// <summary>
@@ -361,20 +422,67 @@ namespace InfServer.Protocol
 
 			//Send to each recipient
 			foreach (Player player in p)
+			{
+				if (player == null || player._client == null)
+					continue;
 				player._client.sendReliable(vehicles);
+			}
 		}
 
 		/// <summary>
 		/// Sends a series of vehicle updates to the specified players
 		/// </summary>
 		static public void Object_Vehicles(IEnumerable<Player> p, IEnumerable<Vehicle> update)
-		{	//Prepare the packet
-			SC_Vehicles vehicles = new SC_Vehicles();
-			vehicles.vehicles = update;
+		{
+			if (p == null || update == null)
+				return;
 
-			//Send to each recipient
 			foreach (Player player in p)
-				player._client.sendReliable(vehicles);
+			{
+				if (player != null && player._client != null)
+					sendVehicleChunks(player, update);
+			}
+		}
+
+		static void sendVehicleChunks(Player p, IEnumerable<Vehicle> update)
+		{
+			// Dependents ride with their parent; only chunk root vehicles.
+			List<Vehicle> roots = update
+				.Where(v => v != null && v._type != null && v._type.Type != VehInfo.Types.Dependent)
+				.ToList();
+
+			if (roots.Count == 0)
+			{
+				SC_Vehicles empty = new SC_Vehicles();
+				empty.vehicles = roots;
+				p._client.sendReliable(empty);
+				return;
+			}
+
+			foreach (List<Vehicle> chunk in ChunkList(roots, VehicleChunkSize))
+			{
+				SC_Vehicles vehicles = new SC_Vehicles();
+				vehicles.vehicles = chunk;
+				p._client.sendReliable(vehicles);
+			}
+		}
+
+		static IEnumerable<List<T>> ChunkList<T>(List<T> source, int chunkSize)
+		{
+			if (source == null || source.Count == 0)
+			{
+				yield return source ?? new List<T>();
+				yield break;
+			}
+
+			if (chunkSize <= 0)
+				chunkSize = 1;
+
+			for (int i = 0; i < source.Count; i += chunkSize)
+			{
+				int n = Math.Min(chunkSize, source.Count - i);
+				yield return source.GetRange(i, n);
+			}
 		}
 
 		/// <summary>

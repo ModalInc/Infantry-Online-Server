@@ -1,0 +1,1978 @@
+﻿{
+  "activeGameModes": [
+    "General",
+    "CTF",
+    "KOTH",
+    "DM",
+    "MOBA",
+    "Domination",
+    "Payload",
+    "SnD",
+    "Survival",
+    "Racing",
+    "BaseBuild",
+    "Infection"
+  ],
+  "actions": [
+    {
+      "actionId": 1,
+      "actionName": "AttackPlayer",
+      "used": true,
+      "priority": 0.85,
+      "cooldown": 0,
+      "description": "AttackPlayer",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 2,
+      "actionName": "AttackFlag",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "AttackFlag",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 3,
+      "actionName": "DefendFlag",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "DefendFlag",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 4,
+      "actionName": "DefendPosition",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 250,
+      "description": "DefendPosition",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 5,
+      "actionName": "Patrol",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 250,
+      "description": "Patrol",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 6,
+      "actionName": "FollowPlayer",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "FollowPlayer",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 7,
+      "actionName": "FollowBot",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "FollowBot",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 8,
+      "actionName": "Retreat",
+      "used": true,
+      "priority": 1,
+      "cooldown": 400,
+      "description": "Retreat",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 9,
+      "actionName": "Heal",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "Heal",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 10,
+      "actionName": "Repair",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "Repair",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 11,
+      "actionName": "HeadToTurret",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "HeadToTurret",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 12,
+      "actionName": "ReplaceTurret",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "ReplaceTurret",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 13,
+      "actionName": "HeadToFlag",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "HeadToFlag",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 14,
+      "actionName": "ReturnFlag",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "ReturnFlag",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 15,
+      "actionName": "SeekEnemy",
+      "used": true,
+      "priority": 0.85,
+      "cooldown": 0,
+      "description": "SeekEnemy",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 16,
+      "actionName": "SeekObjective",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "SeekObjective",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 17,
+      "actionName": "Strafe",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "Strafe",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 18,
+      "actionName": "TakeCover",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "TakeCover",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 19,
+      "actionName": "Flank",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "Flank",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 20,
+      "actionName": "Suppress",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "Suppress",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 21,
+      "actionName": "Communicate",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "Communicate",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 22,
+      "actionName": "SuppressEnemy",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "SuppressEnemy",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 23,
+      "actionName": "FlankEnemy",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "FlankEnemy",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 24,
+      "actionName": "CoverFire",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "CoverFire",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 25,
+      "actionName": "TacticalWithdrawal",
+      "used": true,
+      "priority": 1,
+      "cooldown": 400,
+      "description": "TacticalWithdrawal",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 26,
+      "actionName": "Ambush",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "Ambush",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 27,
+      "actionName": "CounterAttack",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "CounterAttack",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 28,
+      "actionName": "EscortPlayer",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "EscortPlayer",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 29,
+      "actionName": "SecureArea",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "SecureArea",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 30,
+      "actionName": "InterceptEnemy",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "InterceptEnemy",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 31,
+      "actionName": "Reconnaissance",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "Reconnaissance",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 32,
+      "actionName": "EstablishBeachhead",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "EstablishBeachhead",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 33,
+      "actionName": "Resupply",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "Resupply",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 34,
+      "actionName": "RepairVehicle",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "RepairVehicle",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 35,
+      "actionName": "DeployEquipment",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "DeployEquipment",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 36,
+      "actionName": "SignalTeam",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "SignalTeam",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 37,
+      "actionName": "CoordinateStrike",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "CoordinateStrike",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 38,
+      "actionName": "Formation",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "Formation",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 39,
+      "actionName": "Crossfire",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "Crossfire",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 40,
+      "actionName": "Pincer",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "Pincer",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 41,
+      "actionName": "Feint",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "Feint",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 42,
+      "actionName": "Overwatch",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "Overwatch",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 43,
+      "actionName": "CaptureFlag",
+      "used": true,
+      "priority": 0.8,
+      "cooldown": 400,
+      "description": "CaptureFlag",
+      "gameModes": [ "CTF" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 44,
+      "actionName": "DefendBase",
+      "used": true,
+      "priority": 0.8,
+      "cooldown": 400,
+      "description": "DefendBase",
+      "gameModes": [ "CTF" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 45,
+      "actionName": "EscortFlagCarrier",
+      "used": true,
+      "priority": 0.8,
+      "cooldown": 400,
+      "description": "EscortFlagCarrier",
+      "gameModes": [ "CTF" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 46,
+      "actionName": "InterceptFlagCarrier",
+      "used": true,
+      "priority": 0.8,
+      "cooldown": 400,
+      "description": "InterceptFlagCarrier",
+      "gameModes": [ "CTF" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 47,
+      "actionName": "GuardFlagSpawn",
+      "used": true,
+      "priority": 0.8,
+      "cooldown": 400,
+      "description": "GuardFlagSpawn",
+      "gameModes": [ "CTF" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 48,
+      "actionName": "ClearFlagPath",
+      "used": true,
+      "priority": 0.8,
+      "cooldown": 400,
+      "description": "ClearFlagPath",
+      "gameModes": [ "CTF" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 49,
+      "actionName": "EstablishFlagRoute",
+      "used": true,
+      "priority": 0.8,
+      "cooldown": 400,
+      "description": "EstablishFlagRoute",
+      "gameModes": [ "CTF" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 50,
+      "actionName": "CoverFlagCarrier",
+      "used": true,
+      "priority": 0.8,
+      "cooldown": 400,
+      "description": "CoverFlagCarrier",
+      "gameModes": [ "CTF" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 51,
+      "actionName": "DistractEnemyTeam",
+      "used": true,
+      "priority": 0.8,
+      "cooldown": 400,
+      "description": "DistractEnemyTeam",
+      "gameModes": [ "CTF" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 52,
+      "actionName": "SecureFlagZone",
+      "used": true,
+      "priority": 0.8,
+      "cooldown": 400,
+      "description": "SecureFlagZone",
+      "gameModes": [ "CTF" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 53,
+      "actionName": "CaptureHill",
+      "used": true,
+      "priority": 0.85,
+      "cooldown": 400,
+      "description": "CaptureHill",
+      "gameModes": [ "KOTH" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 54,
+      "actionName": "DefendHill",
+      "used": true,
+      "priority": 0.85,
+      "cooldown": 400,
+      "description": "DefendHill",
+      "gameModes": [ "KOTH" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 55,
+      "actionName": "ContestHill",
+      "used": true,
+      "priority": 0.85,
+      "cooldown": 400,
+      "description": "ContestHill",
+      "gameModes": [ "KOTH" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 56,
+      "actionName": "EstablishHillControl",
+      "used": true,
+      "priority": 0.85,
+      "cooldown": 400,
+      "description": "EstablishHillControl",
+      "gameModes": [ "KOTH" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 57,
+      "actionName": "ClearHillApproach",
+      "used": true,
+      "priority": 0.85,
+      "cooldown": 400,
+      "description": "ClearHillApproach",
+      "gameModes": [ "KOTH" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 58,
+      "actionName": "MaintainHillPresence",
+      "used": true,
+      "priority": 0.85,
+      "cooldown": 400,
+      "description": "MaintainHillPresence",
+      "gameModes": [ "KOTH" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 59,
+      "actionName": "ReinforceHill",
+      "used": true,
+      "priority": 0.85,
+      "cooldown": 400,
+      "description": "ReinforceHill",
+      "gameModes": [ "KOTH" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 60,
+      "actionName": "InterceptHillContesters",
+      "used": true,
+      "priority": 0.85,
+      "cooldown": 400,
+      "description": "InterceptHillContesters",
+      "gameModes": [ "KOTH" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 61,
+      "actionName": "SecureHillPerimeter",
+      "used": true,
+      "priority": 0.85,
+      "cooldown": 400,
+      "description": "SecureHillPerimeter",
+      "gameModes": [ "KOTH" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 62,
+      "actionName": "CoordinateHillDefense",
+      "used": true,
+      "priority": 0.85,
+      "cooldown": 400,
+      "description": "CoordinateHillDefense",
+      "gameModes": [ "KOTH" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 63,
+      "actionName": "HuntPlayers",
+      "used": true,
+      "priority": 0.85,
+      "cooldown": 400,
+      "description": "HuntPlayers",
+      "gameModes": [ "DM" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 64,
+      "actionName": "SecureKillZone",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "SecureKillZone",
+      "gameModes": [ "DM" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 65,
+      "actionName": "EstablishKillRoute",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "EstablishKillRoute",
+      "gameModes": [ "DM" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 66,
+      "actionName": "AmbushSpawnPoints",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "AmbushSpawnPoints",
+      "gameModes": [ "DM" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 67,
+      "actionName": "ControlHighGround",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "ControlHighGround",
+      "gameModes": [ "DM" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 68,
+      "actionName": "MaintainKillStreak",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "MaintainKillStreak",
+      "gameModes": [ "DM" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 69,
+      "actionName": "InterceptFleeingPlayers",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "InterceptFleeingPlayers",
+      "gameModes": [ "DM" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 70,
+      "actionName": "SecurePowerPositions",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "SecurePowerPositions",
+      "gameModes": [ "DM" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 71,
+      "actionName": "CoordinateTeamKills",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "CoordinateTeamKills",
+      "gameModes": [ "DM" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 72,
+      "actionName": "EstablishKillChokePoints",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "EstablishKillChokePoints",
+      "gameModes": [ "DM" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 73,
+      "actionName": "PushLane",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "PushLane",
+      "gameModes": [ "MOBA" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 74,
+      "actionName": "DefendLane",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "DefendLane",
+      "gameModes": [ "MOBA" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 75,
+      "actionName": "GankEnemy",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "GankEnemy",
+      "gameModes": [ "MOBA" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 76,
+      "actionName": "ProtectCarry",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "ProtectCarry",
+      "gameModes": [ "MOBA" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 77,
+      "actionName": "RoamMap",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "RoamMap",
+      "gameModes": [ "MOBA" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 78,
+      "actionName": "SecureJungle",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "SecureJungle",
+      "gameModes": [ "MOBA" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 79,
+      "actionName": "ContestObjective",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "ContestObjective",
+      "gameModes": [ "MOBA" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 80,
+      "actionName": "SplitPush",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "SplitPush",
+      "gameModes": [ "MOBA" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 81,
+      "actionName": "TeamFight",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "TeamFight",
+      "gameModes": [ "MOBA" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 82,
+      "actionName": "Backdoor",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "Backdoor",
+      "gameModes": [ "MOBA" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 83,
+      "actionName": "WardMap",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "WardMap",
+      "gameModes": [ "MOBA" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 84,
+      "actionName": "ClearWards",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "ClearWards",
+      "gameModes": [ "MOBA" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 85,
+      "actionName": "BaitEnemy",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "BaitEnemy",
+      "gameModes": [ "MOBA" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 86,
+      "actionName": "CounterJungle",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "CounterJungle",
+      "gameModes": [ "MOBA" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 87,
+      "actionName": "SecureBuffs",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "SecureBuffs",
+      "gameModes": [ "MOBA" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 88,
+      "actionName": "DefendTower",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "DefendTower",
+      "gameModes": [ "MOBA" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 89,
+      "actionName": "PushTower",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "PushTower",
+      "gameModes": [ "MOBA" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 90,
+      "actionName": "RotateLanes",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "RotateLanes",
+      "gameModes": [ "MOBA" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 91,
+      "actionName": "CoordinateGank",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "CoordinateGank",
+      "gameModes": [ "MOBA" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 92,
+      "actionName": "EstablishVision",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "EstablishVision",
+      "gameModes": [ "MOBA" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 93,
+      "actionName": "CaptureControlPoint",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "CaptureControlPoint",
+      "gameModes": [ "Domination" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 94,
+      "actionName": "DefendControlPoint",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "DefendControlPoint",
+      "gameModes": [ "Domination" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 95,
+      "actionName": "RotateBetweenPoints",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "RotateBetweenPoints",
+      "gameModes": [ "Domination" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 96,
+      "actionName": "EstablishPointControl",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "EstablishPointControl",
+      "gameModes": [ "Domination" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 97,
+      "actionName": "ClearPointApproach",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "ClearPointApproach",
+      "gameModes": [ "Domination" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 98,
+      "actionName": "MaintainPointPresence",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "MaintainPointPresence",
+      "gameModes": [ "Domination" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 99,
+      "actionName": "ReinforcePoint",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "ReinforcePoint",
+      "gameModes": [ "Domination" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 100,
+      "actionName": "InterceptPointContesters",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "InterceptPointContesters",
+      "gameModes": [ "Domination" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 101,
+      "actionName": "SecurePointPerimeter",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "SecurePointPerimeter",
+      "gameModes": [ "Domination" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 102,
+      "actionName": "CoordinatePointDefense",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "CoordinatePointDefense",
+      "gameModes": [ "Domination" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 103,
+      "actionName": "PushPayload",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "PushPayload",
+      "gameModes": [ "Payload" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 104,
+      "actionName": "DefendPayload",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "DefendPayload",
+      "gameModes": [ "Payload" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 105,
+      "actionName": "EscortVIP",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "EscortVIP",
+      "gameModes": [ "Payload" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 106,
+      "actionName": "InterceptPayload",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "InterceptPayload",
+      "gameModes": [ "Payload" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 107,
+      "actionName": "GuardPayloadRoute",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "GuardPayloadRoute",
+      "gameModes": [ "Payload" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 108,
+      "actionName": "ClearPayloadPath",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "ClearPayloadPath",
+      "gameModes": [ "Payload" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 109,
+      "actionName": "EstablishPayloadRoute",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "EstablishPayloadRoute",
+      "gameModes": [ "Payload" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 110,
+      "actionName": "CoverPayloadCarrier",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "CoverPayloadCarrier",
+      "gameModes": [ "Payload" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 111,
+      "actionName": "DistractPayloadDefenders",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "DistractPayloadDefenders",
+      "gameModes": [ "Payload" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 112,
+      "actionName": "SecurePayloadZone",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "SecurePayloadZone",
+      "gameModes": [ "Payload" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 113,
+      "actionName": "PlantBomb",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "PlantBomb",
+      "gameModes": [ "SnD" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 114,
+      "actionName": "DefuseBomb",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "DefuseBomb",
+      "gameModes": [ "SnD" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 115,
+      "actionName": "GuardBombSite",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "GuardBombSite",
+      "gameModes": [ "SnD" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 116,
+      "actionName": "AttackBombSite",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "AttackBombSite",
+      "gameModes": [ "SnD" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 117,
+      "actionName": "CoordinateBombTactics",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "CoordinateBombTactics",
+      "gameModes": [ "SnD" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 118,
+      "actionName": "EstablishBombRoute",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "EstablishBombRoute",
+      "gameModes": [ "SnD" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 119,
+      "actionName": "ClearBombApproach",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "ClearBombApproach",
+      "gameModes": [ "SnD" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 120,
+      "actionName": "MaintainBombPresence",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "MaintainBombPresence",
+      "gameModes": [ "SnD" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 121,
+      "actionName": "ReinforceBombSite",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "ReinforceBombSite",
+      "gameModes": [ "SnD" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 122,
+      "actionName": "InterceptBombCarrier",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "InterceptBombCarrier",
+      "gameModes": [ "SnD" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 123,
+      "actionName": "BalanceKillsAndObjectives",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "BalanceKillsAndObjectives",
+      "gameModes": [ "DM", "CTF", "KOTH" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 124,
+      "actionName": "PrioritizeHighValueTargets",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "PrioritizeHighValueTargets",
+      "gameModes": [ "DM", "CTF", "KOTH" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 125,
+      "actionName": "CoordinateTeamMovements",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "CoordinateTeamMovements",
+      "gameModes": [ "DM", "CTF", "KOTH" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 126,
+      "actionName": "EstablishMapControl",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "EstablishMapControl",
+      "gameModes": [ "DM", "CTF", "KOTH" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 127,
+      "actionName": "ClearObjectiveApproach",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "ClearObjectiveApproach",
+      "gameModes": [ "DM", "CTF", "KOTH" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 128,
+      "actionName": "MaintainObjectivePresence",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "MaintainObjectivePresence",
+      "gameModes": [ "DM", "CTF", "KOTH" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 129,
+      "actionName": "ReinforceObjective",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "ReinforceObjective",
+      "gameModes": [ "DM", "CTF", "KOTH" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 130,
+      "actionName": "InterceptObjectiveContesters",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "InterceptObjectiveContesters",
+      "gameModes": [ "DM", "CTF", "KOTH" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 131,
+      "actionName": "SecureObjectivePerimeter",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "SecureObjectivePerimeter",
+      "gameModes": [ "DM", "CTF", "KOTH" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 132,
+      "actionName": "CoordinateObjectiveDefense",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "CoordinateObjectiveDefense",
+      "gameModes": [ "DM", "CTF", "KOTH" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 133,
+      "actionName": "ManageResources",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "ManageResources",
+      "gameModes": [ "Survival" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 134,
+      "actionName": "AvoidDangerZones",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "AvoidDangerZones",
+      "gameModes": [ "Survival" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 135,
+      "actionName": "FormTemporaryAlliances",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "FormTemporaryAlliances",
+      "gameModes": [ "Survival" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 136,
+      "actionName": "BetrayAllies",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "BetrayAllies",
+      "gameModes": [ "Survival" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 137,
+      "actionName": "EstablishSafeZone",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "EstablishSafeZone",
+      "gameModes": [ "Survival" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 138,
+      "actionName": "ClearResourceApproach",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "ClearResourceApproach",
+      "gameModes": [ "Survival" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 139,
+      "actionName": "MaintainResourcePresence",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "MaintainResourcePresence",
+      "gameModes": [ "Survival" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 140,
+      "actionName": "ReinforceSafeZone",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "ReinforceSafeZone",
+      "gameModes": [ "Survival" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 141,
+      "actionName": "InterceptResourceContesters",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "InterceptResourceContesters",
+      "gameModes": [ "Survival" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 142,
+      "actionName": "CoordinateSurvivalTactics",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "CoordinateSurvivalTactics",
+      "gameModes": [ "Survival" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 143,
+      "actionName": "NavigateRaceTrack",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "NavigateRaceTrack",
+      "gameModes": [ "Racing" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 144,
+      "actionName": "UseVehicleAbilities",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "UseVehicleAbilities",
+      "gameModes": [ "Racing" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 145,
+      "actionName": "CoordinateVehicleStrategies",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "CoordinateVehicleStrategies",
+      "gameModes": [ "Racing" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 146,
+      "actionName": "EstablishVehicleControl",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "EstablishVehicleControl",
+      "gameModes": [ "Racing" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 147,
+      "actionName": "ClearVehicleApproach",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "ClearVehicleApproach",
+      "gameModes": [ "Racing" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 148,
+      "actionName": "MaintainVehiclePresence",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "MaintainVehiclePresence",
+      "gameModes": [ "Racing" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 149,
+      "actionName": "ReinforceVehiclePosition",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "ReinforceVehiclePosition",
+      "gameModes": [ "Racing" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 150,
+      "actionName": "InterceptVehicleContesters",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "InterceptVehicleContesters",
+      "gameModes": [ "Racing" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 151,
+      "actionName": "SecureVehiclePerimeter",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "SecureVehiclePerimeter",
+      "gameModes": [ "Racing" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 152,
+      "actionName": "CoordinateVehicleDefense",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "CoordinateVehicleDefense",
+      "gameModes": [ "Racing" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 153,
+      "actionName": "GatherResources",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "GatherResources",
+      "gameModes": [ "BaseBuild" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 154,
+      "actionName": "BuildStructures",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "BuildStructures",
+      "gameModes": [ "BaseBuild" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 155,
+      "actionName": "DefendStructures",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "DefendStructures",
+      "gameModes": [ "BaseBuild" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 156,
+      "actionName": "CoordinateEconomicStrategies",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "CoordinateEconomicStrategies",
+      "gameModes": [ "BaseBuild" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 157,
+      "actionName": "EstablishBaseControl",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "EstablishBaseControl",
+      "gameModes": [ "BaseBuild" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 158,
+      "actionName": "ClearBaseApproach",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "ClearBaseApproach",
+      "gameModes": [ "BaseBuild" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 159,
+      "actionName": "MaintainBasePresence",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "MaintainBasePresence",
+      "gameModes": [ "BaseBuild" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 160,
+      "actionName": "ReinforceBase",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "ReinforceBase",
+      "gameModes": [ "BaseBuild" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 161,
+      "actionName": "InterceptBaseContesters",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "InterceptBaseContesters",
+      "gameModes": [ "BaseBuild" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 162,
+      "actionName": "SecureBasePerimeter",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "SecureBasePerimeter",
+      "gameModes": [ "BaseBuild" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 163,
+      "actionName": "HuntInfected",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "HuntInfected",
+      "gameModes": [ "Infection" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 164,
+      "actionName": "SurviveAsLastPlayer",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "SurviveAsLastPlayer",
+      "gameModes": [ "Infection" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 165,
+      "actionName": "CoordinateWithSurvivors",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "CoordinateWithSurvivors",
+      "gameModes": [ "Infection" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 166,
+      "actionName": "EstablishSurvivalControl",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "EstablishSurvivalControl",
+      "gameModes": [ "Infection" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 167,
+      "actionName": "ClearInfectionApproach",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "ClearInfectionApproach",
+      "gameModes": [ "Infection" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 168,
+      "actionName": "MaintainSurvivalPresence",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "MaintainSurvivalPresence",
+      "gameModes": [ "Infection" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 169,
+      "actionName": "ReinforceSurvivors",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "ReinforceSurvivors",
+      "gameModes": [ "Infection" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 170,
+      "actionName": "InterceptInfected",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "InterceptInfected",
+      "gameModes": [ "Infection" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 171,
+      "actionName": "SecureSurvivalPerimeter",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "SecureSurvivalPerimeter",
+      "gameModes": [ "Infection" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 172,
+      "actionName": "CoordinateSurvivalDefense",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "CoordinateSurvivalDefense",
+      "gameModes": [ "Infection" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 173,
+      "actionName": "StrafeAndFire",
+      "used": true,
+      "priority": 0.8,
+      "cooldown": 0,
+      "description": "StrafeAndFire",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 174,
+      "actionName": "CircleStrafe",
+      "used": true,
+      "priority": 0.8,
+      "cooldown": 0,
+      "description": "CircleStrafe",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 175,
+      "actionName": "DodgeAndCounter",
+      "used": true,
+      "priority": 0.8,
+      "cooldown": 0,
+      "description": "DodgeAndCounter",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 176,
+      "actionName": "EvadeAndReposition",
+      "used": true,
+      "priority": 0.8,
+      "cooldown": 0,
+      "description": "EvadeAndReposition",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 177,
+      "actionName": "MaintainCombatDistance",
+      "used": true,
+      "priority": 0.8,
+      "cooldown": 0,
+      "description": "MaintainCombatDistance",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 178,
+      "actionName": "CloseMeleeCombat",
+      "used": true,
+      "priority": 0.8,
+      "cooldown": 0,
+      "description": "CloseMeleeCombat",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 179,
+      "actionName": "SniperMaintainDistance",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "SniperMaintainDistance",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 180,
+      "actionName": "SniperMoveBetweenShots",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "SniperMoveBetweenShots",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 181,
+      "actionName": "SniperFindCover",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "SniperFindCover",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 182,
+      "actionName": "SniperTargetPriority",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "SniperTargetPriority",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 183,
+      "actionName": "MedicHealTeam",
+      "used": true,
+      "priority": 0.95,
+      "cooldown": 400,
+      "description": "MedicHealTeam",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 184,
+      "actionName": "MedicPrioritizeCritical",
+      "used": true,
+      "priority": 0.95,
+      "cooldown": 400,
+      "description": "MedicPrioritizeCritical",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 185,
+      "actionName": "MedicCombatHeal",
+      "used": true,
+      "priority": 0.95,
+      "cooldown": 400,
+      "description": "MedicCombatHeal",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 186,
+      "actionName": "EngineerRepairTurrets",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "EngineerRepairTurrets",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 187,
+      "actionName": "EngineerMaintainTurrets",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "EngineerMaintainTurrets",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 188,
+      "actionName": "EngineerProtectTurrets",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "EngineerProtectTurrets",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 189,
+      "actionName": "CombatFlagCarrier",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "CombatFlagCarrier",
+      "gameModes": [ "CTF" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 190,
+      "actionName": "CombatHillControl",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "CombatHillControl",
+      "gameModes": [ "KOTH" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 191,
+      "actionName": "CombatPayloadDefense",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "CombatPayloadDefense",
+      "gameModes": [ "Payload" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 192,
+      "actionName": "CombatBombSite",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "CombatBombSite",
+      "gameModes": [ "SnD" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 193,
+      "actionName": "CombatControlPoint",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "CombatControlPoint",
+      "gameModes": [ "Domination" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 194,
+      "actionName": "CombatObjectiveDefense",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "CombatObjectiveDefense",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 195,
+      "actionName": "CombatSurvival",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "CombatSurvival",
+      "gameModes": [ "Survival" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 196,
+      "actionName": "CombatInfection",
+      "used": true,
+      "priority": 0.5,
+      "cooldown": 400,
+      "description": "CombatInfection",
+      "gameModes": [ "Infection" ],
+      "allowedVehicleIds": []
+    }
+  ]
+}

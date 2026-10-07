@@ -1,14 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-
+using Axiom.Math;
+using Assets;
+using Bnoerj.AI.Steering;
 using InfServer.Game;
 using InfServer.Protocol;
-
-using Assets;
-using Axiom.Math;
-using Bnoerj.AI.Steering;
 
 namespace InfServer.Bots
 {
@@ -27,7 +23,34 @@ namespace InfServer.Bots
 
 		public Func<InfantryVehicle, Vector3> steerDelegate;//Delegate which calculates how much steering to apply
 
-		
+		/// <summary>
+		/// When set, path following uses smooth corridor steering on these waypoints.
+		/// </summary>
+		public List<Vector3>? FollowPath { get; set; }
+		public int FollowPathTarget { get; set; }
+
+		public void ClearNavigationPath()
+		{
+			FollowPath = null;
+			FollowPathTarget = 0;
+		}
+
+		public void ClearSteerInputs()
+		{
+			_useAnalogDrive = false;
+			_analogForward = 0f;
+			_analogStrafe = 0f;
+			_analogRotate = 0f;
+			steerDelegate = null;
+			// Keep _smooth* so the next SetAnalogDrive blends from the last commit.
+			// Do not clear FollowPath here — BotMotionApplier clears inputs every poll;
+			// wiping the path before re-apply was rewinding Api navigation every tick.
+			stopThrusting();
+			stopStrafing();
+			stopRotating();
+			bStrafeLeft = false;
+			bStrafeRight = false;
+		}
 		///////////////////////////////////////////////////
 		// Member Functions
 		///////////////////////////////////////////////////
@@ -48,93 +71,83 @@ namespace InfServer.Bots
 		/// </summary>
 		public override bool updateState(double delta)
 		{
-			double difference;
+			if (TryConsumeStuck())
+			{
+				SetAnalogDrive(0.85f, ((_state.positionX & 8) == 0) ? -0.55f : 0.55f, 0f);
+				return base.updateState(delta);
+			}
 
-			if (steerDelegate == null)
-			{	//Should we aim anyway?
-				if (bSkipAim)
+			double aimDifference = 0;
+			if (bSkipAim)
+				aimDifference = Helpers.calculateDifferenceInAngles(_state.yaw, angle);
+
+			if (_useAnalogDrive)
+			{
+				if (bSkipAim && Math.Abs(aimDifference) > 2)
 				{
-					difference = Helpers.calculateDifferenceInAngles(_state.yaw, angle);
-
-					if (Math.Abs(difference) < 2)
-						stopRotating();
-					else if (difference > 0)
-						rotateRight();
-					else
-						rotateLeft();
+					float aimRotate = BotDrive.ClampAxis((float)(aimDifference / 35.0));
+					SetAnalogDrive(_analogForward, _analogStrafe, aimRotate);
 				}
+
+				bSkipAim = false;
+				bSkipRotate = false;
+				bStrafeLeft = false;
+				bStrafeRight = false;
+				steerDelegate = null;
+				return base.updateState(delta);
+			}
+
+			if (steerDelegate == null && FollowPath == null)
+			{
+				if (bSkipAim && Math.Abs(aimDifference) > 2)
+					SetAnalogDrive(0f, 0f, BotDrive.ClampAxis((float)(aimDifference / 35.0)));
 				else
-					stopRotating();
+					ClearAnalogDrive();
 
-				stopThrusting();
-				stopStrafing();
-
+				bSkipAim = false;
+				bSkipRotate = false;
+				bStrafeLeft = false;
+				bStrafeRight = false;
 				steerDelegate = null;
 				return base.updateState(delta);
 			}
 
 			vehicle.Position = _state.position();
+			vehicle.Speed = Math.Max(0.2f, MathF.Sqrt(
+				_state.velocityX * _state.velocityX + _state.velocityY * _state.velocityY) / 10000f);
 
-			//Determine our steering vector
-			Vector3 steer = steerDelegate(vehicle);
-			float degrees;
-
-			//Which direction are we supposed to be travelling in?
-			double yaw = Utility.ATan2(steer.x, steer.y);
-			degrees = -((Utility.RadiansToDegrees(yaw) / 1.5f) - 120);
-
-			double steerDifference = Helpers.calculateDifferenceInAngles(_state.yaw, degrees);
-
-			if (bSkipAim)
-				difference = Helpers.calculateDifferenceInAngles(_state.yaw, angle);
-			else
-				difference = steerDifference;
-
-			if (!bSkipRotate || bSkipAim)
-			{	//Turn to face our target
-				if (Math.Abs(difference) < 2)
-					stopRotating();
-				else if (difference > 0)
-					rotateRight();
-				else
-					rotateLeft();
-			}
-			else
-				stopRotating();
-
-			//Move appropriately towards the target
-			if (steer.Length < 0.6f)
+			Vector3 steer;
+			if (FollowPath != null && FollowPath.Count > 0)
 			{
-				stopThrusting();
-				stopStrafing();
+				int pathTarget = FollowPathTarget;
+				steer = PathNavigationHelper.SteerAlongPathSmooth(vehicle, FollowPath, ref pathTarget);
+				FollowPathTarget = pathTarget;
+
+				if (pathTarget >= FollowPath.Count)
+					ClearNavigationPath();
 			}
-			else if (steerDifference > 90 || steerDifference < -90)
+			else if (steerDelegate != null)
 			{
-				thrustBackward();
-				stopStrafing();
-			}
-			else if (steerDifference > 50 || bStrafeLeft)
-			{
-				stopThrusting();
-				strafeRight();
-			}
-			else if (steerDifference < -50 || bStrafeRight)
-			{
-				stopThrusting();
-				strafeLeft();
+				steer = steerDelegate(vehicle);
 			}
 			else
 			{
-				thrustForward();
-				stopStrafing();
+				steer = Vector3.Zero;
 			}
-			
-			//These should be updated every poll
+
+			steer = BotWallAvoidance.BlendRepulsion(this, steer);
+
+			BotDrive.ApplySteerVectorAsDrive(
+				this,
+				_state.yaw,
+				steer,
+				aimDifference,
+				prioritizeAim: bSkipAim);
+
 			bSkipAim = false;
 			bSkipRotate = false;
 			bStrafeLeft = false;
 			bStrafeRight = false;
-
 			steerDelegate = null;
 			return base.updateState(delta);
 		}

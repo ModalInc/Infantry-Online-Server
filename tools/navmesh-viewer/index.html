@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Infantry Nav Mesh Viewer</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Nav Mesh Viewer</h1>
+    <div class="header-actions">
+      <label class="file-btn">
+        Load .navmesh.json
+        <input type="file" id="fileInput" accept=".json,application/json" />
+      </label>
+      <span id="fileName" class="muted">No file loaded</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <section>
+        <h2>Layers</h2>
+        <label><input type="checkbox" id="layerPhysics" checked /> Physics overlay</label>
+        <label><input type="checkbox" id="layerBlocked" checked /> Blocked tiles</label>
+        <label><input type="checkbox" id="layerRawWalk" /> Raw walkable</label>
+        <label><input type="checkbox" id="layerClrWalk" checked /> Clearance walkable</label>
+        <label><input type="checkbox" id="layerTriFill" checked /> Nav triangle fill</label>
+        <label><input type="checkbox" id="layerTriEdge" checked /> Nav triangle edges</label>
+        <label><input type="checkbox" id="layerPortals" checked /> Portal edges</label>
+      </section>
+
+      <section>
+        <h2>Path test</h2>
+        <p class="hint">Click two walkable tiles to find a triangle path (A*).</p>
+        <button type="button" id="clearPath">Clear path</button>
+        <label><input type="checkbox" id="snapCentroid" checked /> Snap clicks to triangle</label>
+      </section>
+
+      <section>
+        <h2>View</h2>
+        <label>Zoom
+          <input type="range" id="zoomSlider" min="1" max="24" value="6" step="0.5" />
+        </label>
+        <button type="button" id="resetView">Reset view</button>
+        <button type="button" id="exportPng">Export PNG</button>
+      </section>
+
+      <section>
+        <h2>Stats</h2>
+        <dl id="statsPanel" class="stats"></dl>
+      </section>
+
+      <section>
+        <h2>Legend</h2>
+        <ul class="legend" id="legend"></ul>
+      </section>
+
+      <section>
+        <h2>Hover</h2>
+        <pre id="hoverInfo" class="hover-info">—</pre>
+      </section>
+    </aside>
+
+    <main class="canvas-wrap">
+      <canvas id="canvas"></canvas>
+      <div class="canvas-hint">Drag to pan · Wheel to zoom · Drop JSON file anywhere</div>
+    </main>
+  </div>
+
+  <script src="viewer.js"></script>
+</body>
+</html>

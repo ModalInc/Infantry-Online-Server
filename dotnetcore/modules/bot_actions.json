@@ -1,0 +1,58 @@
+{
+  "activeGameModes": [
+    "General",
+    "CTF",
+    "KOTH",
+    "DM",
+    "MOBA",
+    "Domination",
+    "Payload",
+    "SnD",
+    "Survival",
+    "Racing",
+    "BaseBuild",
+    "Infection"
+  ],
+  "actions": [
+    {
+      "actionId": 1,
+      "actionName": "AttackPlayer",
+      "used": true,
+      "priority": 0.85,
+      "cooldown": 0,
+      "description": "Engage nearest hostile player",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 5,
+      "actionName": "Patrol",
+      "used": true,
+      "priority": 0.3,
+      "cooldown": 250,
+      "description": "Patrol around anchor / HQ",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 8,
+      "actionName": "Retreat",
+      "used": true,
+      "priority": 1.0,
+      "cooldown": 400,
+      "description": "Fall back to patrol anchor",
+      "gameModes": [ "General" ],
+      "allowedVehicleIds": []
+    },
+    {
+      "actionId": 43,
+      "actionName": "CaptureFlag",
+      "used": true,
+      "priority": 0.8,
+      "cooldown": 400,
+      "description": "Move to enemy flag",
+      "gameModes": [ "CTF" ],
+      "allowedVehicleIds": []
+    }
+  ]
+}

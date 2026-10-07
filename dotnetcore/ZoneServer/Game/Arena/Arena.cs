@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Net;
@@ -92,6 +93,10 @@ namespace InfServer.Game
         static public int maxVehicles;					//The maximum amount of vehicles we can have active
         static public int maxItems;						//The maximum amount of items we can have laying about
         static public bool allowArenaCreation;          //True if we can create an arena at any time of the day.
+        /// <summary>
+        /// When true (server.xml arena/persistentArena), arenas stay open and polling with zero players.
+        /// </summary>
+        static public bool persistentArena;
         static public int maxBalls;                     //The maxium amount of playing balls we can have
 
         //CFG variables to allow for script changes on the fly. Max per team, private teams allowed etc.
@@ -100,6 +105,20 @@ namespace InfServer.Game
         public int _maxPrivatePop;
         public int _maxPerPrivateTeam;
         public bool _allowprize;
+
+        public Modules.ClassModule ClassesModule;
+        public Modules.BotNameModule BotNames;
+        /// <summary>Shared bot action registry / objectives (optional module).</summary>
+        public Modules.BotActions.BotActionModule BotActionModule;
+        /// <summary>Zone-wide bot activity throttle (from server.xml modules/botThrottle).</summary>
+        public Modules.BotActions.BotThrottleConfig BotThrottle { get; private set; }
+        /// <summary>
+        /// Optional gametype filter for bot-vs-bot hostility in the action module.
+        /// When null, any different-team bot is hostile. Return false to skip a pair.
+        /// </summary>
+        public Func<InfServer.Bots.Bot, InfServer.Bots.Bot, bool> BotVsBotHostilityFilter;
+        /// <summary>When true, bot aliases appear in the stock team list UI.</summary>
+        public bool BotNamelistEnabled { get; private set; }
 
 
         static public int gameCheckInterval;			//The frequency at which we check basic game state
@@ -110,6 +129,32 @@ namespace InfServer.Game
         static public int routeRadarRangeFactor;		//The factor at which the packets are routed
         static public int routeRadarRangeFar;			//The range at which packets are routed, but even slower
         static public int routeRadarRangeFarFactor;		//The factor at which the far packets are routed
+
+        /// <summary>
+        /// Base radius for high-rate (player-smooth) bot poses: max of route / weapon / radar bands.
+        /// </summary>
+        public static int GetBotHighRateViewRange()
+        {
+            int r = routeRange > 0 ? routeRange : 1000;
+            if (routeWeaponRange > r)
+                r = routeWeaponRange;
+            if (routeRadarRange > r)
+                r = routeRadarRange;
+            if (routeRadarRangeFar > r)
+                r = routeRadarRangeFar;
+            return r;
+        }
+
+        /// <summary>
+        /// Probe radius when hunting snipers / long weapon observers beyond the base high-rate band.
+        /// </summary>
+        public static int GetBotObserverProbeRange()
+        {
+            int r = GetBotHighRateViewRange();
+            // Allow item routeRange snipers past far band without scanning the whole arena.
+            int probe = Math.Max(r, 6000);
+            return probe > 12000 ? 12000 : probe;
+        }
 
         public delegate void LogMessage(string message);
 
@@ -448,8 +493,9 @@ namespace InfServer.Game
             _condemnedItems = new List<ItemDrop>();
             _condemnedVehicles = new List<Vehicle>();
             _vehicles = new ObjTracker<Vehicle>();
-            _lastVehicleKey = (ushort)5001;						//The vehicle IDs must start at 5001, everything before
-            //is assumed to be a player base vehicle.
+            _lastVehicleKey = (ushort)5001;						//Normal vehicles start at 5001.
+            //IDs below 5001 are player base vehicles or soft-mimic bots (free slots in 1..4999).
+            _lastBotMimicKey = 4999;
             _items = new SortedDictionary<ushort, ItemDrop>();
             _lastItemKey = 0;
 
@@ -518,6 +564,164 @@ namespace InfServer.Game
 
             //Initialize our breakdown settings
             _breakdownSettings = new BreakdownSettings();
+
+            initModules();
+        }
+
+        /// <summary>
+        /// Loads optional server modules from server.xml module flags.
+        /// Logs loaded / not-in-use for each; disables modules whose required JSON is missing
+        /// (unless the module can auto-create that JSON).
+        /// </summary>
+        void initModules()
+        {
+            ClassesModule = null;
+            BotActionModule = null;
+            BotThrottle = Modules.BotActions.BotThrottleConfig.Defaults;
+            BotNamelistEnabled = false;
+
+            // Name pool is always available for killfeed/stats (embedded defaults if JSON missing).
+            BotNames = new Modules.BotNameModule("modules/bot_names.json");
+
+            if (_server?._config == null)
+                return;
+
+            // --- botnames (soft-mimic PlayerEnter + team list). ~BotN naming does not need JSON. ---
+            bool wantBotnames = false;
+            try { wantBotnames = _server._config["modules/botnames"].boolValue; }
+            catch { wantBotnames = false; }
+
+            if (!wantBotnames)
+            {
+                BotNamelistEnabled = false;
+                Log.write(TLog.Normal, "Module not in use: botnames.");
+            }
+            else
+            {
+                // Soft-mimic clients crash on empty-alias / Vehicles-without-Enter. Keep namelist
+                // on whenever XML asks for it — JSON is optional (~BotN naming).
+                BotNamelistEnabled = true;
+                string namesJson = FindExistingModuleFile("modules/bot_names.json", "Modules/bot_names.json");
+                if (namesJson == null)
+                    Log.write(TLog.Normal,
+                        "Module loaded: botnames (~BotN naming; modules/bot_names.json not found).");
+                else
+                    Log.write(TLog.Normal, "Module loaded: botnames (team list UI, {0}).", namesJson);
+            }
+
+            // --- botThrottle (XML block only; no JSON) ---
+            bool botThrottleFromXml = false;
+            try
+            {
+                ConfigSetting throttleNode = _server._config["modules/botThrottle"];
+                botThrottleFromXml = throttleNode != null && throttleNode.ChildCount(false) > 0;
+            }
+            catch
+            {
+                botThrottleFromXml = false;
+            }
+
+            BotThrottle = Modules.BotActions.BotThrottleConfig.LoadFromServerConfig(_server._config);
+            Modules.BotActions.BotThrottleConfig.Active = BotThrottle;
+            if (botThrottleFromXml)
+            {
+                Log.write(TLog.Normal,
+                    "Module loaded: botThrottle (sense={0}ms fireExec={1}ms pathRequeue={2}ms).",
+                    BotThrottle.HostileSenseReuseMs, BotThrottle.FireExecMinMs, BotThrottle.CombatPathRequeueMs);
+            }
+            else
+            {
+                Log.write(TLog.Normal, "Module not in use: botThrottle (using defaults).");
+            }
+
+            // --- botactions (can auto-create bot_actions.json template) ---
+            bool wantBotActions = true;
+            string botActionsConfig = "modules/bot_actions.json";
+            try { wantBotActions = _server._config["modules/botactions"].boolValue; }
+            catch { wantBotActions = true; }
+            try
+            {
+                string cfg = _server._config["modules/botactionsConfig"].Value;
+                if (!string.IsNullOrEmpty(cfg))
+                    botActionsConfig = cfg;
+            }
+            catch
+            {
+                // keep default path
+            }
+
+            if (!wantBotActions)
+            {
+                BotActionModule = new Modules.BotActions.BotActionModule(
+                    false, botActionsConfig, this, BotThrottle);
+                Log.write(TLog.Normal, "Module not in use: botactions.");
+            }
+            else
+            {
+                BotActionModule = new Modules.BotActions.BotActionModule(
+                    true, botActionsConfig, this, BotThrottle);
+                if (BotActionModule.Enabled)
+                {
+                    Log.write(TLog.Normal, "Module loaded: botactions ({0} actions, {1}).",
+                        BotActionModule.Registry != null ? BotActionModule.Registry.ActionCount : 0,
+                        BotActionModule.ConfigPath ?? botActionsConfig);
+                }
+                else
+                {
+                    Log.write(TLog.Warning,
+                        "Module disabled: botactions — {0} missing and template could not be created.",
+                        BotActionModule.ConfigPath ?? botActionsConfig);
+                }
+            }
+
+            // --- classlimits (requires class_limits.json; no auto-create) ---
+            bool wantClassLimits = false;
+            try { wantClassLimits = _server._config["modules/classlimits"].boolValue; }
+            catch { wantClassLimits = false; }
+
+            if (!wantClassLimits)
+            {
+                ClassesModule = null;
+                Log.write(TLog.Normal, "Module not in use: classlimits.");
+            }
+            else
+            {
+                string foundPath = FindExistingModuleFile(
+                    "modules/class_limits.json", "Modules/class_limits.json");
+                if (foundPath != null)
+                {
+                    ClassesModule = new Modules.ClassModule(foundPath);
+                    Log.write(TLog.Normal, "Module loaded: classlimits (from {0}).", foundPath);
+                }
+                else
+                {
+                    ClassesModule = null;
+                    Log.write(TLog.Warning,
+                        "Module disabled: classlimits — modules/class_limits.json not found (cannot auto-create).");
+                }
+            }
+        }
+
+        static string FindExistingModuleFile(params string[] candidates)
+        {
+            if (candidates == null)
+                return null;
+
+            string baseDir = AppContext.BaseDirectory;
+            foreach (string path in candidates)
+            {
+                if (string.IsNullOrEmpty(path))
+                    continue;
+                if (File.Exists(path))
+                    return path;
+                if (!string.IsNullOrEmpty(baseDir))
+                {
+                    string rooted = Path.Combine(baseDir, path);
+                    if (File.Exists(rooted))
+                        return rooted;
+                }
+            }
+            return null;
         }
 
         /// <summary>
@@ -547,9 +751,16 @@ namespace InfServer.Game
 
                 //Are we due a minor poll update?
                 int now = Environment.TickCount;
+
+                // Pace bot killfeed every poll (25ms gate inside); death FX is sent immediately on kill.
+                DrainBotDeathNetQueue(now);
+
                 bool bMinor = (now - _tickLastMinorPoll) >= 1000;
                 if (bMinor)
+                {
                     _tickLastMinorPoll = now;
+                    ClassesModule?.CheckDynamicRecalculation(this);
+                }
 
                 bool bDBSync = (now - _tickLastDatabaseSync) >= 60000; //Every 60 seconds
                 if (bDBSync)
@@ -891,11 +1102,20 @@ namespace InfServer.Game
         }
 
         /// <summary>
-        /// Creates a team within the arena
+        /// Creates a team within the arena and registers it by name and frequency id.
         /// </summary>
         public void createTeam(Team team)
         {
-            _teams.Add(team._name.ToLower(), team);
+            if (team == null || string.IsNullOrEmpty(team._name))
+                return;
+
+            string key = team._name.ToLowerInvariant();
+            if (!_teams.ContainsKey(key))
+                _teams.Add(key, team);
+
+            // Soft-mimic / client team list key off _id — duplicates collapse all bots onto one freq.
+            if (_freqTeams != null && !_freqTeams.ContainsKey(team._id))
+                _freqTeams.Add(team._id, team);
         }
 
         /// <summary>
@@ -1259,11 +1479,7 @@ namespace InfServer.Game
             _playersIngame.Add(player);
 
             //Stop spectating
-            if (player._spectating != null)
-            {
-                player._spectating._spectators.Remove(player);
-                player._spectating = null;
-            }
+            player.stopSpectating();
         }
 
         /// <summary>
@@ -1326,18 +1542,32 @@ namespace InfServer.Game
         }
 
         /// <summary>
+        /// Managed bot factions (soft-mimic team list) — never auto-pick for humans.
+        /// </summary>
+        public static bool IsManagedBotTeamName(string name)
+        {
+            return !string.IsNullOrEmpty(name)
+                && name.StartsWith("Bot", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
         /// Determines which team is appropriate for the player to be playing on
         /// </summary>
         public virtual Team pickAppropriateTeam(Player player)
         {	//Find an appropriate team for the player to join
-            List<Team> publicTeams = _teams.Values.Where(team => team.IsPublic).ToList();
+            // Exclude Bot* public freqs — they exist for the team list / soft-mimic only.
+            // Auto-picking them left JoinTeam veto + unspec destroying the spectator with no dropship warp.
+            List<Team> publicTeams = _teams.Values
+                .Where(team => team != null && team.IsPublic && !IsManagedBotTeamName(team._name) && team._info != null)
+                .ToList();
             Team pick = null;
 
             if (_server._zoneConfig.arena.forceEvenTeams)
             {	//We just want one for each team
                 int playerCount = 0;
+                int limit = Math.Min(_server._zoneConfig.arena.desiredFrequencies, publicTeams.Count);
 
-                for (int i = 0; i < _server._zoneConfig.arena.desiredFrequencies; ++i)
+                for (int i = 0; i < limit; ++i)
                 {	//Do we have more active players than the last?
                     Team team = publicTeams[i];
                     int activePlayers = team.ActivePlayerCount;

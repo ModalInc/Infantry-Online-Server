@@ -1,0 +1,10 @@
+[
+  {
+    "ClassId": 1,
+    "ClassName": "Example Class",
+    "PerArenaLimit": 5,
+    "PerTeamLimit": 3,
+    "Dynamic": false,
+    "Percent": 0
+  }
+]

@@ -192,14 +192,14 @@ namespace InfServer.Game
             if (_team._id == -1)
                 return false;
 
-            //See if there are any valid targets within the tracking radius
-            Player target = getClosestValidTarget();
-            if (target == null)
+            //See if there are any valid targets within the tracking radius (players or bots, not our team)
+            Helpers.ObjectState aim = getClosestValidAimState();
+            if (aim == null)
                 return false;
 
             //Look at our target if we're allowed to rotate
             if (_tickAntiRotate < now)
-                _state.fireAngle = Helpers.computeLeadFireAngle(_state, target._state, _primaryProjectile.muzzleVelocity / 1000);
+                _state.fireAngle = Helpers.computeLeadFireAngle(_state, aim, _primaryProjectile.muzzleVelocity / 1000);
 
             //If not reloaded yet don't fire
             if (_tickShotTime + _fireDelay > now ||
@@ -228,6 +228,69 @@ namespace InfServer.Game
         }
 
         /// <summary>
+        /// Player-deployable bases and occupied gun seats: the occupant aims and fires.
+        /// Unattended auto-turrets (HQ, sentries) still track and shoot.
+        /// </summary>
+        protected bool IsPlayerOperatedComputer()
+        {
+            if (_inhabitant != null)
+                return true;
+
+            if (IsPlayerOperatedType(_type))
+                return true;
+
+            if (_parent != null)
+            {
+                if (_parent._inhabitant != null)
+                    return true;
+                if (IsPlayerOperatedType(_parent._type))
+                    return true;
+            }
+
+            if (_childs != null)
+            {
+                for (int i = 0; i < _childs.Count; i++)
+                {
+                    Vehicle child = _childs[i];
+                    if (child != null && child._inhabitant != null)
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        static bool IsPlayerOperatedType(VehInfo type)
+        {
+            if (type == null)
+                return false;
+            if (type.IsControllable)
+                return true;
+            if (String.IsNullOrEmpty(type.Name))
+                return false;
+            return type.Name.IndexOf("PDB", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>
+        /// Closest valid aim point: enemy player or enemy bot, whichever is nearer.
+        /// </summary>
+        protected Helpers.ObjectState getClosestValidAimState()
+        {
+            Player player = getClosestValidTarget();
+            Vehicle bot = getClosestValidBotTarget();
+            if (player == null && bot == null)
+                return null;
+            if (player == null)
+                return bot._state;
+            if (bot == null)
+                return player._state;
+
+            double pd = squaredDistanceTo(player);
+            double bd = squaredDistanceTo(bot);
+            return bd < pd ? bot._state : player._state;
+        }
+
+        /// <summary>
         /// Returns the closest valid target, if any
         /// </summary>		
         protected Player getClosestValidTarget()
@@ -252,6 +315,62 @@ namespace InfServer.Game
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Closest enemy bot vehicle in tracking range.
+        /// </summary>
+        protected Vehicle getClosestValidBotTarget()
+        {
+            if (_arena == null)
+                return null;
+
+            List<Vehicle> inTrackingRange = _arena.getVehiclesInRange(
+                _state.positionX, _state.positionY, _type.TrackingRadius,
+                delegate (Vehicle v)
+                {
+                    return v != null && v != this && v._bBotVehicle && !v.IsDead && !v.bCondemned;
+                });
+
+            inTrackingRange.Sort(delegate (Vehicle a, Vehicle b)
+            {
+                return Comparer<double>.Default.Compare(squaredDistanceTo(a), squaredDistanceTo(b));
+            });
+
+            foreach (Vehicle v in inTrackingRange)
+            {
+                if (isValidBotTarget(v))
+                    return v;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Same team / range / weight / angle / LOS rules as players, for bot vehicles.
+        /// </summary>
+        protected virtual bool isValidBotTarget(Vehicle v)
+        {
+            if (v == null || v._state == null)
+                return false;
+            if (v._team != null && v._team == _team)
+                return false;
+            if (v.IsDead || v.bCondemned)
+                return false;
+            if (!InRange(v))
+                return false;
+
+            int weight = v._type != null ? v._type.Weight : 0;
+            if (weight < _type.TrackingWeightLow || weight > _type.TrackingWeightHigh)
+                return false;
+
+            if (!InTurretAngle(v._state.positionX, v._state.positionY))
+                return false;
+
+            if (_type.ObeyLos != 0 && IsPositionOccluded(v._state.positionX, v._state.positionY))
+                return false;
+
+            return true;
         }
 
         /// <summary>
@@ -284,14 +403,8 @@ namespace InfServer.Game
                 return false;
 
             // Do not fire at people out of turret angle limits
-            double pAngle = Helpers.calcDegreesBetweenPoints(p._state.positionX, p._state.positionY, _state.positionX, _state.positionY);
-            if (_type.AngleStart > 0)
-                if ((short)pAngle < _type.AngleStart)
-                    return false;
-
-            if (_type.AngleLength < 360)
-                if ((short)pAngle > _type.AngleLength)
-                    return false;
+            if (!InTurretAngle(p._state.positionX, p._state.positionY))
+                return false;
 
             //Check if player is within turrets vision
             if (_type.ObeyLos != 0)
@@ -316,10 +429,18 @@ namespace InfServer.Game
                 return true;
             }
 
+            return IsPositionOccluded(p._state.positionX, p._state.positionY);
+        }
+
+        protected Boolean IsPositionOccluded(short posX, short posY)
+        {
+            if (_arena == null)
+                return true;
+
             //Pretty ugly way to get it done but it works perfectly. Vision tiles are all calculated seemingly fine. If you have a better way of doing it, by all means. - Super-man
             int tileSize = 8; //8 is nonexistant.
             int tileDistance = 0;
-            List<LvlInfo.Tile> tiles = Helpers.calcBresenhems(p._arena, _state.positionX, _state.positionY, p._state.positionX, p._state.positionY);
+            List<LvlInfo.Tile> tiles = Helpers.calcBresenhems(_arena, _state.positionX, _state.positionY, posX, posY);
             for (int i = 0; i <= tiles.Count - 1; i++)
             {
                 if (tiles[i].Vision > 0)
@@ -334,6 +455,20 @@ namespace InfServer.Game
             }
             if (tileSize == 8 || tiles.Count < Math.Floor(tileSize * 1.8) + tileDistance)
                 return false;
+
+            return true;
+        }
+
+        protected Boolean InTurretAngle(short posX, short posY)
+        {
+            double pAngle = Helpers.calcDegreesBetweenPoints(posX, posY, _state.positionX, _state.positionY);
+            if (_type.AngleStart > 0)
+                if ((short)pAngle < _type.AngleStart)
+                    return false;
+
+            if (_type.AngleLength < 360)
+                if ((short)pAngle > _type.AngleLength)
+                    return false;
 
             return true;
         }
@@ -353,12 +488,25 @@ namespace InfServer.Game
             return false;
         }
 
+        protected Boolean InRange(Vehicle v)
+        {
+            if (v == null)
+                return false;
+            double d = Math.Sqrt(squaredDistanceTo(v));
+            return d <= _type.FireRadius;
+        }
+
         /// <summary>
         /// Returns squared norm distance from turret to this player
         /// </summary>		
         protected double squaredDistanceTo(Player p)
         {
             return Math.Pow(p._state.positionX - _state.positionX, 2) + Math.Pow(p._state.positionY - _state.positionY, 2);
+        }
+
+        protected double squaredDistanceTo(Vehicle v)
+        {
+            return Math.Pow(v._state.positionX - _state.positionX, 2) + Math.Pow(v._state.positionY - _state.positionY, 2);
         }
 
         /// <summary>
