@@ -43,6 +43,68 @@ namespace InfServer.Logic
 			return SkillCheckTester(player, classId, cleanString);
 		}
 
+		/// <summary>
+		/// SkillLogic check for script bots (class / exp / points / skills / attributes).
+		/// Bots without a skill map fail closed on bare skill IDs and attributes.
+		/// </summary>
+		static public bool SkillCheckBot(InfServer.Bots.Bot bot, string skillString)
+		{
+			if (bot == null)
+				return false;
+
+			if (string.IsNullOrWhiteSpace(skillString) || skillString == "\"\"")
+				return true;
+
+			string cleanString = illegalChars.Replace(skillString, "");
+			if (cleanString == "")
+				return true;
+
+			int classId = (bot._type != null) ? bot._type.ClassId : 0;
+			int exp = bot.Experience;
+			long points = bot.Points;
+
+			string booleanString = paramRegex.Replace(cleanString.TrimStart('&'), delegate(Match m)
+			{
+				bool val;
+				string prefix = m.Groups[1].Value;
+				int numVal = int.Parse(m.Groups[2].Value);
+
+				if (prefix == "%")
+					val = (classId == numVal);
+				else if (prefix == "@")
+					val = (exp >= numVal);
+				else if (prefix == "#")
+					val = (points >= numVal);
+				else if (prefix == "-")
+				{
+					int attrVal = numVal % 1000;
+					int attrID = -numVal / 1000;
+					int qty;
+					val = bot.TryGetSkillQuantity(attrID, out qty) && qty >= attrVal;
+				}
+				else
+				{
+					int qty;
+					val = bot.TryGetSkillQuantity(numVal, out qty);
+				}
+
+				return (val ^ m.Groups[0].Value.StartsWith("!")) ? "1" : "0";
+			});
+
+			int pos = 0;
+			bool bQualified = false;
+			try
+			{
+				bQualified = expr(booleanString, ref pos);
+			}
+			catch (Exception e)
+			{
+				Log.write(TLog.Error, "Error parsing bot skill string '{0}' as '{1}', {2}", skillString, booleanString, e);
+			}
+
+			return bQualified;
+		}
+
         /// <summary>
         /// The public skill id check method, checks the future class id.
         /// </summary>

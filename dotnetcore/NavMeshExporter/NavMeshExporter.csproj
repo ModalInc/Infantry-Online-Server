@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>NavMeshExporter</RootNamespace>
+    <AssemblyName>NavMeshExporter</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Assets\Assets.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\ZoneServer\Game\Arena\Bot\Pathfinding\NavMesh\NavMeshBuilder.cs" Link="NavMesh\NavMeshBuilder.cs" />
+    <Compile Include="..\ZoneServer\Game\Arena\Bot\Pathfinding\NavMesh\NavTriangle.cs" Link="NavMesh\NavTriangle.cs" />
+    <Compile Include="..\ZoneServer\Game\Arena\Bot\Pathfinding\NavMesh\NavVec2.cs" Link="NavMesh\NavVec2.cs" />
+  </ItemGroup>
+
+</Project>

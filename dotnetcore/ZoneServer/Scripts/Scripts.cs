@@ -184,19 +184,48 @@ namespace InfServer.Scripting
 			_invokerScripts[""] = defaultScripts;
 		}
 
+		static private readonly string[] ScriptFrameworkAssemblies =
+		{
+			"System.Net.WebClient.dll",
+			"System.ComponentModel.Primitives.dll",
+			"System.ComponentModel.TypeConverter.dll",
+			"System.ComponentModel.EventBasedAsync.dll",
+			"System.ObjectModel.dll",
+			"System.Collections.dll",
+			"System.Linq.dll",
+			"System.Runtime.dll",
+			"System.Threading.dll",
+			"System.Threading.Tasks.dll",
+			"netstandard.dll",
+		};
+
+		/// <summary>Normalize scriptDir paths so Windows and Linux match scripts.xml.</summary>
+		static private string NormalizeScriptRelPath(string path)
+		{
+			if (string.IsNullOrEmpty(path))
+				return path;
+			return path.Replace('\\', Path.DirectorySeparatorChar)
+				.Replace('/', Path.DirectorySeparatorChar)
+				.Trim(Path.DirectorySeparatorChar);
+		}
+
 		/// <summary>
 		/// Compiles an assembly for a specific invoker type
 		/// </summary>
 		private static bool compile(List<ScriptParser> parsers, string[] sources, string[] namespaces)
 		{
-            List<string> assemblyLocations = new List<string>();
+            var assemblyLocations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            AddScriptCompileFrameworkAssemblies(assemblyLocations);
+			AddTrustedPlatformAssemblies(assemblyLocations);
 
             //Add every assembly in our current appdomain
             foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
 			{
 				try
 				{
-					assemblyLocations.Add(asm.Location);
+					if (!string.IsNullOrEmpty(asm.Location))
+						assemblyLocations.Add(asm.Location);
 				}
 				catch (ArgumentException)
 				{
@@ -245,8 +274,19 @@ namespace InfServer.Scripting
 
                     foreach (Diagnostic diagnostic in failures)
                     {
-                        Console.Error.WriteLine("{0}: {1}", diagnostic.Id, diagnostic.GetMessage());
+						string msg = string.Format("{0}: {1}", diagnostic.Id, diagnostic.GetMessage());
+						string loc = diagnostic.Location.GetLineSpan().Path;
+						if (!string.IsNullOrEmpty(loc))
+							msg = string.Format("{0}({1},{2}): {3}",
+								loc,
+								diagnostic.Location.GetLineSpan().StartLinePosition.Line + 1,
+								diagnostic.Location.GetLineSpan().StartLinePosition.Character + 1,
+								msg);
+                        Console.Error.WriteLine(msg);
+						Log.write(TLog.Error, msg);
                     }
+
+                    return false;
                 }
 
                 ms.Seek(0, SeekOrigin.Begin);
@@ -297,9 +337,26 @@ namespace InfServer.Scripting
 		static private void loadDirScripts(ref List<ScriptParser> scripts, string directory)
 		{	//Create lists of files to define for each bot type
 			foreach (string dir in Directory.GetDirectories(directory))
-			{	//For each cs file in this directory
+			{
+				string topName = Path.GetFileName(dir);
+				// Never compile MSBuild/VS output into zone scripts.
+				if (topName.Equals("obj", StringComparison.OrdinalIgnoreCase)
+					|| topName.Equals("bin", StringComparison.OrdinalIgnoreCase))
+					continue;
+
+				//For each cs file in this directory
 				foreach (string f in Directory.GetFiles(dir, "*.cs", SearchOption.AllDirectories))
-				{	//Attempt to compile it
+				{
+					// Skip nested obj/bin (e.g. scripts/GameTypes/Foo/obj/...)
+					if (f.IndexOf($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase) >= 0
+						|| f.IndexOf($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase) >= 0)
+						continue;
+					// Skip generated assembly attribute stubs
+					if (f.EndsWith("AssemblyAttributes.cs", StringComparison.OrdinalIgnoreCase)
+						|| f.EndsWith("AssemblyInfo.cs", StringComparison.OrdinalIgnoreCase))
+						continue;
+
+					//Attempt to compile it
 					string[] dirpath = f.Split(new char[] { Path.DirectorySeparatorChar });
 
 					//Obtain the subdir path
@@ -315,7 +372,7 @@ namespace InfServer.Scripting
 					}
 
 					//Trim the last slash
-					path = path.Trim(new [] { Path.DirectorySeparatorChar });
+					path = NormalizeScriptRelPath(path);
 
 					//Parse the script and add to the dictionary
 					ScriptParser parser = new ScriptParser(f, true);
@@ -325,7 +382,7 @@ namespace InfServer.Scripting
 					//Which bot type does this belong to?
 					InvokerType scriptType = null;
 					foreach (InvokerType bt in _invokerTypes)
-						if (bt.scriptDir == path)
+						if (NormalizeScriptRelPath(bt.scriptDir) == path)
 						{
 							scriptType = bt;
 							break;
@@ -376,6 +433,70 @@ namespace InfServer.Scripting
 		#endregion Complilation
 
 		#region Helper functions
+		/// <summary>
+		/// Adds forwarded framework assemblies commonly required by legacy script APIs (e.g. WebClient).
+		/// </summary>
+		static private void AddScriptCompileFrameworkAssemblies(HashSet<string> assemblyLocations)
+		{
+			foreach (string assemblyFileName in ScriptFrameworkAssemblies)
+				AddSharedFrameworkAssembly(assemblyLocations, assemblyFileName);
+		}
+
+		/// <summary>
+		/// Pull every trusted platform assembly (critical on Linux where AppDomain starts leaner).
+		/// </summary>
+		static private void AddTrustedPlatformAssemblies(HashSet<string> assemblyLocations)
+		{
+			try
+			{
+				object data = AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES");
+				string tpa = data as string;
+				if (string.IsNullOrEmpty(tpa))
+					return;
+
+				char sep = Path.PathSeparator;
+				foreach (string path in tpa.Split(sep))
+				{
+					if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+						continue;
+					assemblyLocations.Add(path);
+				}
+			}
+			catch
+			{
+			}
+		}
+
+		/// <summary>
+		/// Adds a shared-framework assembly path for Roslyn script compilation.
+		/// </summary>
+		static private void AddSharedFrameworkAssembly(HashSet<string> assemblyLocations, string assemblyFileName)
+		{
+			try
+			{
+				string? coreDir = Path.GetDirectoryName(typeof(object).Assembly.Location);
+				if (string.IsNullOrEmpty(coreDir))
+					return;
+
+				string path = Path.Combine(coreDir, assemblyFileName);
+				if (!File.Exists(path))
+					return;
+
+				assemblyLocations.Add(path);
+
+				try
+				{
+					Assembly.LoadFrom(path);
+				}
+				catch (FileLoadException)
+				{
+				}
+			}
+			catch (Exception)
+			{
+			}
+		}
+
 		/// <summary>
 		/// Creates a list of directories to search for assemblies in
 		/// </summary>

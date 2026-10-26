@@ -5,6 +5,7 @@ using System.Text;
 
 using InfServer.Network;
 using InfServer.Game;
+using InfServer.Bots;
 
 namespace InfServer.Protocol
 {	/// <summary>
@@ -16,6 +17,7 @@ namespace InfServer.Protocol
 		public Player singlePlayer;
 		public Player exclude;
 		public IEnumerable<Player> players;
+		public IEnumerable<Bot> bots;
 
 		public const ushort TypeID = (ushort)Helpers.PacketIDs.S2C.PlayerEnter;
 
@@ -57,25 +59,54 @@ namespace InfServer.Protocol
 			//Write out each asset
 			bool bEmpty = true;
 
-			foreach (Player player in players)
-			{	//Don't send to our exclude
-				if (exclude == player)
-					continue;
-				
-				//Not sure why it does this for each entry
-				Write((byte)TypeID);
+			if (players != null)
+			{
+				foreach (Player player in players)
+				{	//Don't send to our exclude
+					if (exclude == player)
+						continue;
+					
+					//Not sure why it does this for each entry
+					Write((byte)TypeID);
 
-				Write((player._team != null ? player._team._name : ""), 32);
-				Write(player._alias, 32);
-				Write((player._squad != null ? player._squad : ""), 32);
+					Write((player._team != null ? player._team._name : ""), 32);
+					Write(player._alias, 32);
+					Write((player._squad != null ? player._squad : ""), 32);
 
-				Write(player._id);
-				Write((ushort)player._baseVehicle._type.Id);
-				Write(player._team._id);
-				Write((UInt32)new Random().Next());
-				Write((bool)true);
+					Write(player._id);
+					Write((ushort)player._baseVehicle._type.Id);
+					Write(player._team._id);
+					Write((UInt32)new Random().Next());
+					Write((bool)true);
 
-				bEmpty = false;
+					bEmpty = false;
+				}
+			}
+
+			if (bots != null)
+			{
+				foreach (Bot bot in bots)
+				{
+					if (bot == null || string.IsNullOrEmpty(bot._alias))
+						continue;
+
+					Write((byte)TypeID);
+
+					Write((bot._team != null ? bot._team._name : ""), 32);
+					Write(bot._alias, 32);
+					Write("", 32);
+
+					Write(bot._id);
+					Write((ushort)bot._type.Id);
+					Write(bot._team != null ? bot._team._id : (short)0);
+					Write((UInt32)new Random().Next());
+					// Must be true: client PlayerEnter creates an inhabited hull only when
+					// this flag is set (inhabitant = player/vehicle id). False → empty
+					// vehicle and an invisible bot (shots still appear).
+					Write((bool)true);
+
+					bEmpty = false;
+				}
 			}
 
 			if (bEmpty)

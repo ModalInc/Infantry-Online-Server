@@ -18,6 +18,28 @@ namespace InfServer.Protocol
 		// Member Functions
 		//////////////////////////////////////////////////
 		/// <summary>
+		/// Snapshot a live equip list so deferred packet serialization cannot race
+		/// against Clear/Add on the source (bots sync utilities on another path).
+		/// </summary>
+		static List<ItemInfo.UtilityItem> SnapshotActiveUtilities(List<ItemInfo.UtilityItem> source)
+		{
+			if (source == null)
+				return null;
+
+			lock (source)
+				return new List<ItemInfo.UtilityItem>(source);
+		}
+
+		static List<ushort> SnapshotActiveEquip(List<ushort> source)
+		{
+			if (source == null)
+				return null;
+
+			lock (source)
+				return new List<ushort>(source);
+		}
+
+		/// <summary>
 		/// Obtains a list of valid targets to route the update to
 		/// </summary>
 		static public List<Player> getRouteList(Arena arena, Helpers.ObjectState state, bool bWeapon, int weaponRouteRange, IEnumerable<Player> additionals, int oldPosX, int oldPosY)
@@ -73,7 +95,7 @@ namespace InfServer.Protocol
 
             //We only route active utilities if we're not broken
             if (update._state.health > update._type.HitpointsRequiredToOperate)
-                tu.activeUtilities = update._activeEquip;
+                tu.activeUtilities = SnapshotActiveUtilities(update._activeEquip);
 
 			//TODO: Should we use SC_PlayerUpdate for computers too?
 
@@ -106,7 +128,7 @@ namespace InfServer.Protocol
 			tu.vehicle = update.ActiveVehicle;
 			tu.itemID = pkt.itemID;
 			
-			tu.activeEquip = pkt.activeEquip;
+			tu.activeEquip = SnapshotActiveEquip(pkt.activeEquip);
 
 			SC_PlayerUpdate up = new SC_PlayerUpdate();
 
@@ -115,7 +137,7 @@ namespace InfServer.Protocol
 			up.vehicle = update.ActiveVehicle;
 			up.itemID = pkt.itemID;
 
-			up.activeEquip = pkt.activeEquip;
+			up.activeEquip = SnapshotActiveEquip(pkt.activeEquip);
 
             //Get the routing audience
 
@@ -167,54 +189,172 @@ namespace InfServer.Protocol
 		}
 
 		/// <summary>
-		/// Provides an easy means of routing bot update packets to players
+		/// Soft player-mimic: bots egress like real players —
+		/// same updateTick formula, getRouteList audience, SC_PlayerEnter+Vehicles create,
+		/// and SC_PlayerUpdate with bBot=false / wirePlayerId = bot id.
 		/// </summary>
 		static public void Update_RouteBot(Bot update)
-		{	//Prepare the appropriate packets
-			SC_PlayerTeamUpdate tu = new SC_PlayerTeamUpdate();
+		{
+			if (update?._arena == null || update._state == null)
+				return;
 
-			tu.tickUpdate = Environment.TickCount;
-			tu.player = null;
-			tu.vehicle = update;
-			tu.itemID = (short)update._itemUseID;
-			tu.activeUtilities = update._activeEquip;
-			tu.bBot = true;
+			int updateTick = update.AdvancePlayerStyleUpdateTick();
+			update.PreparePlayerMimicWireVelocity();
 
-			SC_PlayerUpdate up = new SC_PlayerUpdate();
+			int oldPosX = update._hasPlayerRoutePos ? update._lastPlayerRoutePosX : update._state.positionX;
+			int oldPosY = update._hasPlayerRoutePos ? update._lastPlayerRoutePosY : update._state.positionY;
 
-			up.tickUpdate = Environment.TickCount;
-			up.player = null;
-			up.vehicle = update;
-			up.itemID = (short)update._itemUseID;
-			up.activeUtilities = update._activeEquip;
-			up.bBot = true;
-			
-			//Get the routing audience
+			bool itemUpdate = update._itemUseID != 0;
 			int weaponRouteRange = 0;
-			if (update._itemUseID != 0)
+			if (itemUpdate && _server?._assets != null)
 			{
-				ItemInfo item = AssetManager.Manager.getItemByID(update._itemUseID);
-                if (item != null)
-                {
-                    item.getRouteRange(out weaponRouteRange);
-                }
-                else
-                {
-                    Log.write(TLog.Warning, "RouteBot(): item is null");
-                }
+				ItemInfo item = _server._assets.getItemByID(update._itemUseID);
+				if (item != null)
+					item.getRouteRange(out weaponRouteRange);
 			}
 
-			List<Player> audience = getRouteList(update._arena, update._state, (update._itemUseID != 0), weaponRouteRange, null, 
-				update._state.positionX, update._state.positionY);
+			// Same audience rules as Update_RoutePlayer (incl. radar factor ticks).
+            List<Player> audience = getRouteList(
+				update._arena, update._state, itemUpdate, weaponRouteRange,
+				update._spectators, oldPosX, oldPosY);
 
-			//Send our updates..
-			foreach (Player player in audience)
+			RouteBotAsPlayerToAudience(update, audience, updateTick);
+
+			update._lastPlayerRoutePosX = update._state.positionX;
+			update._lastPlayerRoutePosY = update._state.positionY;
+			update._hasPlayerRoutePos = true;
+			update._tickLastPlayerRoute = Environment.TickCount;
+			update._wireVelOverride = false;
+		}
+
+		/// <summary>
+		/// Ensure each observer has PlayerEnter + Vehicles (human base-vehicle layout),
+		/// then send player-style pose packets (never bBot).
+		/// </summary>
+		static void RouteBotAsPlayerToAudience(Bot update, List<Player> audience, int updateTick)
+		{
+			if (audience == null || audience.Count == 0)
+				return;
+
+			if (string.IsNullOrEmpty(update._alias))
+				update._alias = "Bot " + update._id;
+
+			short itemID = (short)update._itemUseID;
+			bool onNamelist = Arena.ShouldBotAppearOnNamelist(update);
+			bool alreadyNamelist = update._arena != null
+				&& update._arena.IsBotNamelistAdvertised(update._id);
+
+			// Corpse after MaxDeaths (or otherwise off-roster) must not re-SC_PlayerEnter.
+			if (!onNamelist && alreadyNamelist && update._arena != null)
 			{
+				update._arena.RemoveBotFromNamelist(update);
+				alreadyNamelist = false;
+			}
+
+			for (int i = 0; i < audience.Count; i++)
+			{
+				Player player = audience[i];
+				if (player?._client == null)
+					continue;
+
+				if (!update.IsClientAwareOfBot(player))
+				{
+					// Soft-mimic: never send Vehicles without a prior PlayerEnter — empty / hull-only
+					// state is a known client crash. Off-roster corpses must not invent a new entity.
+					if (!onNamelist)
+						continue;
+
+					if (string.IsNullOrEmpty(update._alias))
+						update._alias = "Bot " + update._id;
+
+					// After death, the client still has the namelist row but dropped the car body.
+					// Re-send Vehicles only — Leave/Enter reprints "Player entered" and can desync.
+					bool known = update._arena != null
+						&& update._arena.IsBotNamelistKnownBy(player, update._id);
+					bool repair = update.NeedsHullReattach && known;
+					if (!repair)
+						update._arena?.SendBotNamelistEntryTo(player, update, leaveFirst: known);
+
+					SC_Vehicles vehicles = new SC_Vehicles();
+					vehicles.singleUpdate = update;
+					if (player._client.sendReliable(vehicles))
+						update.MarkClientAwareOfBot(player);
+				}
+
+				// Off-roster corpses: no player-wire pose (that recreates the namelist entity).
+				if (!onNamelist)
+					continue;
+
 				if (player.IsSpectator || player._team == update._team)
+				{
+					SC_PlayerTeamUpdate tu = new SC_PlayerTeamUpdate
+					{
+						tickUpdate = updateTick,
+						player = null,
+						vehicle = update,
+						itemID = itemID,
+						activeUtilities = null,
+						activeEquip = null,
+						bBot = false,
+						wirePlayerId = update._id
+					};
+					tu.CaptureBotPose(update);
 					player._client.send(tu);
+				}
 				else
+				{
+					SC_PlayerUpdate up = new SC_PlayerUpdate
+					{
+						tickUpdate = updateTick,
+						player = null,
+						vehicle = update,
+						itemID = itemID,
+						activeUtilities = null,
+						activeEquip = null,
+						bBot = false,
+						wirePlayerId = update._id
+					};
+					up.CaptureBotPose(update);
 					player._client.send(up);
+				}
 			}
+
+			// LogBotWirePoseThrottled(update, updateTick);
+		}
+
+		// Debug (disabled) — BotWire pose logging helpers.
+		// static int _tickLastBotWirePoseLog;
+		// static ushort _lastBotWirePoseLogId;
+
+		static void LogBotWirePoseThrottled(Bot update, int tickUpdate)
+		{
+			// Debug (disabled) — restore call site + fields above to re-enable.
+			/*
+			if (update?._state == null)
+				return;
+
+			int now = Environment.TickCount;
+			bool moving = Math.Abs(update._state.velocityX) > 2 || Math.Abs(update._state.velocityY) > 2;
+			if (!moving && now - _tickLastBotWirePoseLog < 5000)
+				return;
+			if (now - _tickLastBotWirePoseLog < 2000)
+				return;
+
+			_tickLastBotWirePoseLog = now;
+			_lastBotWirePoseLogId = update._id;
+			short vx = update._wireVelOverride ? update._wireVelX : update._state.velocityX;
+			short vy = update._wireVelOverride ? update._wireVelY : update._state.velocityY;
+			Log.write(TLog.Normal,
+				"[BotWire] id={0} style=playerMimic tickMs={1} vx={2} vy={3} dir={4} yaw={5} item={6} synVel={7}",
+				update._id,
+				tickUpdate & 0xFFFF,
+				vx,
+				vy,
+				(ushort)update._state.direction,
+				update._state.yaw,
+				update._itemUseID,
+				update._wireVelOverride ? 1 : 0);
+			*/
 		}
 	}
 }

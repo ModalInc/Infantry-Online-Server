@@ -69,8 +69,13 @@ namespace InfServer.Logic
 		/// </summary>
 		static public void Handle_OutOfSync(OutOfSync pkt, Client client)
 		{
-			//TODO: Resend packet?
-			//Log.write(TLog.Error, "** OUTOFSYNC: " + pkt.rNumber);
+			if (client.resendReliable(pkt.streamID, pkt.rNumber))
+				return;
+
+			// Packet already gone (acked, trimmed, or abandoned) — do not kick the player.
+			Log.write(TLog.Warning,
+				"Client {0} reported missing reliable #{1} on stream {2} — packet already dropped; ignoring.",
+				client, pkt.rNumber, pkt.streamID);
 		}
 
 		/// <summary>

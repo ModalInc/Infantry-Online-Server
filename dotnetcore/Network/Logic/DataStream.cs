@@ -48,7 +48,7 @@ namespace InfServer.Logic
 					return;
 				}
              */
-				if (pkt.dataSize > 20 * 1024 * 1024)
+				if (pkt.dataSize <= 0 || pkt.dataSize > 200 * 1024)
 				{
 					Log.write(TLog.Error, "Received data stream packet with invalid size {0}", pkt.dataSize);
 					return;

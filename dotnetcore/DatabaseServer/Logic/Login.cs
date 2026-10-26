@@ -32,6 +32,32 @@ namespace InfServer.Logic
         }
 
         /// <summary>
+        /// Names reserved for soft-mimic bots (~BotN / ~Guest legacy). Players cannot use a leading '~'.
+        /// </summary>
+        public static bool IsReservedBotAliasPrefix(string alias, out string reason)
+        {
+            reason = null;
+            if (string.IsNullOrEmpty(alias))
+                return false;
+
+            if (alias.StartsWith("~", StringComparison.Ordinal))
+            {
+                reason = "Aliases starting with '~' are reserved for bots.";
+                return true;
+            }
+
+            // Explicit messages for common reserved stems (also covered by '~' above).
+            if (alias.StartsWith("~Guest", StringComparison.OrdinalIgnoreCase)
+                || alias.StartsWith("~Bot", StringComparison.OrdinalIgnoreCase))
+            {
+                reason = "That alias prefix is reserved for bots.";
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Handles the zone login request packet 
         /// </summary>
         static public void Handle_CS_Auth(CS_Auth<Zone> pkt, Client<Zone> client)
@@ -217,9 +243,17 @@ namespace InfServer.Logic
                 }
                    
                 //
-                // Allow symbols as login names for admins.
+                // Allow symbols as login names for admins — but never '~' bot prefixes.
                 //
                 var pktAlias = pkt.alias;
+
+                if (IsReservedBotAliasPrefix(pktAlias, out string reservedReason))
+                {
+                    plog.bSuccess = false;
+                    plog.loginMessage = reservedReason;
+                    zone._client.send(plog);
+                    return;
+                }
 
                 if (plog.permission != Data.PlayerPermission.Level5)
                 {

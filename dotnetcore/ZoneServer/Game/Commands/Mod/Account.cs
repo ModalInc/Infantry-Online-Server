@@ -426,6 +426,12 @@ namespace InfServer.Game.Commands.Mod
                 aliasTo = recipient._alias;
             }
 
+            if (!string.IsNullOrEmpty(alias) && alias.StartsWith("~", StringComparison.Ordinal))
+            {
+                player.sendMessage(-1, "Aliases starting with '~' are reserved for bots.");
+                return;
+            }
+
             //For some reason the player never see's the message
             //so putting it here to give send message a chance
             if (recipient != null)

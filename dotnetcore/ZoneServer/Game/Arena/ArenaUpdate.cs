@@ -93,6 +93,12 @@ namespace InfServer.Game
         { }
 
         /// <summary>
+        /// Triggered after a player has unspec'd and bounty has been reset to <c>bounty.start</c>.
+        /// </summary>
+        public virtual void handlePlayerUnspec(Player player)
+        { }
+
+        /// <summary>
         /// Triggered when a player wants to enter a vehicle
         /// </summary>
         public virtual void handlePlayerEnterVehicle(Player from, bool bEnter, ushort vehicleID)

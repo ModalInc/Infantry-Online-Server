@@ -43,8 +43,10 @@ namespace InfServer.Protocol
 			Write(veh._id);
 			Write((ushort)veh._type.Id);
 
-			if (veh is InfServer.Bots.Bot)
-				Write(veh._id);
+			if (veh is InfServer.Bots.Bot bot)
+				// Soft player-mimic: same layout as a human base vehicle —
+				// inhabitant id == vehicle/player id so the client draws the car body.
+				Write((short)bot._id);
 			else
 				Write((short)((veh._inhabitant == null) ? -1 : veh._inhabitant._id));
 

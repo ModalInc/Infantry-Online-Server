@@ -332,18 +332,22 @@ namespace InfServer.Game
 
         public bool Remove(T p)
         {
-            if (!_objToBucket.ContainsKey(p)) return false;
-            else
-            {
-                // Remove player from ID map
-                _idToObj.Remove(p.getID());
+            if (p == null)
+                return false;
 
-                // Take player out of the spatial mapper
-                List<T> lastBucket = _objToBucket[p];
+            // Always drop the id map entry — otherwise Count leaks forever when the
+            // spatial bucket key is missing (partial teardown / bot condemn races).
+            bool hadId = _idToObj.Remove(p.getID());
+
+            List<T> lastBucket;
+            if (_objToBucket.TryGetValue(p, out lastBucket))
+            {
                 lastBucket.Remove(p);
                 _objToBucket.Remove(p);
                 return true;
             }
+
+            return hadId;
         }
         #endregion
 

@@ -36,6 +36,22 @@ namespace InfServer.Game
 
         private int _lastTurretUpdate = Environment.TickCount;
 
+        /// <summary>Drop queued computer produce requests for a departing player.</summary>
+        void ClearProductionForPlayer(Player player)
+        {
+            if (player == null || productionLine.Count == 0)
+                return;
+
+            lock (productionLine)
+            {
+                for (int i = productionLine.Count - 1; i >= 0; i--)
+                {
+                    if (productionLine[i].client == player)
+                        productionLine.RemoveAt(i);
+                }
+            }
+        }
+
         ///////////////////////////////////////////////////
         // Member Functions
         ///////////////////////////////////////////////////

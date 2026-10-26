@@ -183,15 +183,22 @@ namespace InfServer.Game
         }
 
         /// <summary>
-        /// Adds the given player to the team and notifies others
+        /// Adds the given player to the team and notifies others.
+        /// Returns false when the join was vetoed or could not complete.
         /// </summary>
-        public void addPlayer(Player player, bool manualJoin)
+        public bool addPlayer(Player player, bool manualJoin)
         {	//Sanity checks
             if (player._bIngame && player._team == this)
             {
                 Log.write(TLog.Warning, "Attempted to add player to his own team. {0}", player);
-                return;
+                return true; // Already on this team — treat as success (e.g. unspec continue).
             }
+
+            // Script may veto (e.g. block joining managed bot teams). Spec joins always allowed.
+            if (_arena != null && !IsSpec
+                && _arena.exists("Player.JoinTeam")
+                && !(bool)_arena.callsync("Player.JoinTeam", false, player, this, manualJoin))
+                return false;
 
             //Have him lose his current team
             if (player._team != null)
@@ -223,11 +230,13 @@ namespace InfServer.Game
                 else
                     Logic_Assets.RunEvent(player, _server._zoneConfig.EventInfo.joinTeam);
             }
+
+            return true;
         }
 
-        public void addPlayer(Player player)
+        public bool addPlayer(Player player)
         {
-            addPlayer(player, false);
+            return addPlayer(player, false);
         }
 
         /// <summary>

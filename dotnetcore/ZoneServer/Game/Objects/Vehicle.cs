@@ -11,6 +11,7 @@ using InfServer.Protocol;
 
 using Assets;
 using Bnoerj.AI.Steering;
+using InfServer.Bots;
 
 namespace InfServer.Game
 {
@@ -309,8 +310,8 @@ namespace InfServer.Game
             //If we have a player, kick him out
             playerLeave(bRestoreBase);
 
-            if (this is Bots.Bot)
-                _arena._botsInArena--;
+            // Bot pop is maintained by Arena.lostBot / SyncBotsInArenaCount — do not
+            // decrement a sticky counter here (condemn-before-destroy skipped this path).
 
             //Destroy all child vehicles too
             foreach (Vehicle child in _childs)
@@ -318,6 +319,8 @@ namespace InfServer.Game
 
             //Notify the arena of our destruction
             _arena.lostVehicle(this, bRemove);
+
+            _attackers?.Clear();
 
             if (Destroyed != null)
                 Destroyed(this);
@@ -453,35 +456,35 @@ namespace InfServer.Game
             {
                 fraction = 1 - radius / wep.kineticDamageRadius;
                 grossDamage = (wep.kineticDamageInner - wep.kineticDamageOuter) * fraction + wep.kineticDamageOuter;
-                netDamage += (grossDamage - _type.Armors[0].SelfIgnore) * (1.0d - _type.Armors[0].SelfReduction / 1000.0d);
+                netDamage += ApplyArmorChannel(grossDamage, _type.Armors[0], 0);
             }
 
             if (radius <= wep.explosiveDamageRadius)
             {
                 fraction = 1 - radius / wep.explosiveDamageRadius;
                 grossDamage = (wep.explosiveDamageInner - wep.explosiveDamageOuter) * fraction + wep.explosiveDamageOuter;
-                netDamage += (grossDamage - _type.Armors[1].SelfIgnore) * (1.0d - _type.Armors[1].SelfReduction / 1000.0d);
+                netDamage += ApplyArmorChannel(grossDamage, _type.Armors[1], 1);
             }
 
             if (radius <= wep.electronicDamageRadius)
             {
                 fraction = 1 - radius / wep.electronicDamageRadius;
                 grossDamage = (wep.electronicDamageInner - wep.electronicDamageOuter) * fraction + wep.electronicDamageOuter;
-                netDamage += (grossDamage - _type.Armors[2].SelfIgnore) * (1.0d - _type.Armors[2].SelfReduction / 1000.0d);
+                netDamage += ApplyArmorChannel(grossDamage, _type.Armors[2], 2);
             }
 
             if (radius <= wep.psionicDamageRadius)
             {
                 fraction = 1 - radius / wep.psionicDamageRadius;
                 grossDamage = (wep.psionicDamageInner - wep.psionicDamageOuter) * fraction + wep.psionicDamageOuter;
-                netDamage += (grossDamage - _type.Armors[3].SelfIgnore) * (1.0d - _type.Armors[3].SelfReduction / 1000.0d);
+                netDamage += ApplyArmorChannel(grossDamage, _type.Armors[3], 3);
             }
 
             if (radius <= wep.bypassDamageRadius)
             {
                 fraction = 1 - radius / wep.bypassDamageRadius;
                 grossDamage = (wep.bypassDamageInner - wep.bypassDamageOuter) * fraction + wep.bypassDamageOuter;
-                netDamage += (grossDamage - _type.Armors[4].SelfIgnore) * (1.0d - _type.Armors[4].SelfReduction / 1000.0d);
+                netDamage += ApplyArmorChannel(grossDamage, _type.Armors[4], 4);
             }
 
             if (radius <= wep.energyDamageRadius)
@@ -586,6 +589,21 @@ namespace InfServer.Game
             float dy = aY - bY;
 
             return (float)Math.Sqrt((dx * dx) + (dy * dy));
+        }
+
+        /// <summary>
+        /// Extra utility armor for bots; default is none.
+        /// </summary>
+        protected virtual void GetUtilityArmorForChannel(int channel, out int ignore, out int percent)
+        {
+            ignore = 0;
+            percent = 0;
+        }
+
+        protected double ApplyArmorChannel(double grossDamage, ArmorValues vehicleArmor, int channel)
+        {
+            GetUtilityArmorForChannel(channel, out int utilIgnore, out int utilPercent);
+            return BotUtilityEffects.ApplyArmorChannel(grossDamage, vehicleArmor, utilIgnore, utilPercent);
         }
         #endregion
 

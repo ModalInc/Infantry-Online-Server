@@ -12,7 +12,17 @@
   <ItemGroup>
     <PackageReference Include="CS-Script" Version="4.9.7" />
     <PackageReference Include="Ionic.Zlib.Core" Version="1.0.0" />
+<<<<<<< HEAD
     <PackageReference Include="NATS.Net" Version="3.1.0" />
+=======
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Net.WebClient" />
+    <Reference Include="System.ComponentModel.Primitives" />
+    <Reference Include="System.ComponentModel.TypeConverter" />
+>>>>>>> dependabot/nuget/dotnetcore/DatabaseServerNATS/MessagePack-3.1.9
   </ItemGroup>
 
   <ItemGroup>

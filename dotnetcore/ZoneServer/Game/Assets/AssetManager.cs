@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.IO;
+using System.Net.Http;
 
 using Assets;
 
@@ -250,18 +252,14 @@ namespace InfServer.Game
         {
             try
             {
-                System.Net.WebClient dlclient = new System.Net.WebClient();
-                dlclient.DownloadFile(fileUrl, fileLocation);
-                dlclient.Dispose();
+                DownloadFile(fileUrl, fileLocation);
             }
             catch (Exception)
             {
                 //Lets try again with a different url
                 try
                 {
-                    System.Net.WebClient dlclient = new System.Net.WebClient();
-                    dlclient.DownloadFile("http://dk-industry.com/files/svn/?count=30", "..\\Global\\global.nws");
-                    dlclient.Dispose();
+                    DownloadFile("http://dk-industry.com/files/svn/?count=30", "..\\Global\\global.nws");
                 }
                 catch (Exception e)
                 {
@@ -271,6 +269,16 @@ namespace InfServer.Game
                 }
             }
             return true;
+        }
+
+        private static void DownloadFile(string fileUrl, string fileLocation)
+        {
+            using var client = new HttpClient();
+            using var response = client.GetAsync(fileUrl).GetAwaiter().GetResult();
+            response.EnsureSuccessStatusCode();
+            using var stream = response.Content.ReadAsStreamAsync().GetAwaiter().GetResult();
+            using var file = File.Create(fileLocation);
+            stream.CopyTo(file);
         }
 
         /// <summary>

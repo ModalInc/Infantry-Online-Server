@@ -141,6 +141,34 @@ namespace InfServer.Game
             }
         }
 
+        /// <summary>
+        /// Population shown on the zone directory / ping responder: non-stealth players + live bots.
+        /// </summary>
+        public int getReportedPlayerCount()
+        {
+            int players = 0;
+            if (_players != null)
+            {
+                foreach (KeyValuePair<ushort, Player> entry in _players)
+                {
+                    if (entry.Value != null && !entry.Value.IsStealth)
+                        players++;
+                }
+            }
+
+            int bots = 0;
+            if (_arenas != null)
+            {
+                foreach (Arena arena in _arenas.Values)
+                {
+                    if (arena != null)
+                        bots += arena.BotCount;
+                }
+            }
+
+            return players + bots;
+        }
+
         ///////////////////////////////////////////////////
         // Member Functions
         ///////////////////////////////////////////////////
@@ -309,7 +337,14 @@ namespace InfServer.Game
                 Log.write(TLog.Exception, "Exception while compiling scripts:\n" + ex.ToString());
             }
 
-            if (_config["server/pathFindingEnabled"].boolValue)
+            if (_config["server/pathFindingNavMesh"].boolValue)
+            {
+                Log.write("Initializing navmesh pathfinder..");
+                LogClient log = Log.createClient("NavMeshPathfinder");
+                _pathfinder = new Bots.NavMesh.NavMeshPathfinder(this, log);
+                _pathfinder.beginThread();
+            }
+            else if (_config["server/pathFindingEnabled"].boolValue)
             {
                 Log.write("Initializing pathfinder..");
                 LogClient log = Log.createClient("Pathfinder");
@@ -380,7 +415,11 @@ namespace InfServer.Game
 
             // Create the ping/player count responder
             //////////////////////////////////////////////
+<<<<<<< HEAD
             _pingResponder = new ClientPingResponder(_players, acceptsAllowedIp);
+=======
+            _pingResponder = new ClientPingResponder(this);
+>>>>>>> dependabot/nuget/dotnetcore/DatabaseServerNATS/MessagePack-3.1.9
 
             Log.write("Asset Checksum: " + _assets.checkSum());
 
@@ -874,7 +913,7 @@ namespace InfServer.Game
         private class ClientPingResponder
         {
             private LogClient _pingLogger;
-            private Dictionary<ushort, Player> _players;
+            private ZoneServer _server;
             private Thread _listenThread;
             private Socket _socket;
             private Dictionary<EndPoint, Int32> _clients;
@@ -886,11 +925,18 @@ namespace InfServer.Game
             /// <summary>
             /// Constructor with socket creation
             /// </summary>
+<<<<<<< HEAD
             public ClientPingResponder(Dictionary<ushort, Player> players, Func<IPEndPoint, bool> acceptsClient)
             {
                 _pingLogger = Log.createClient("PingResponder");
                 _players = players;
                 _acceptsClient = acceptsClient;
+=======
+            public ClientPingResponder(ZoneServer server)
+            {
+                _pingLogger = Log.createClient("PingResponder");
+                _server = server;
+>>>>>>> dependabot/nuget/dotnetcore/DatabaseServerNATS/MessagePack-3.1.9
                 _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
                 _clients = new Dictionary<EndPoint, Int32>();
                 _lock = new ReaderWriterLock();
@@ -970,7 +1016,7 @@ namespace InfServer.Game
                     if (queue != null && queue.Count != 0)
                     {
                         // May not be synchronized, but that's okay, the client requests often.
-                        byte[] playerCount = BitConverter.GetBytes(_players.Where(p => !p.Value.IsStealth).Count());
+                        byte[] playerCount = BitConverter.GetBytes(_server.getReportedPlayerCount());
 
                         foreach (var entry in queue)
                         {

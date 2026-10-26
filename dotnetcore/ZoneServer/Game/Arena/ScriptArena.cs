@@ -121,6 +121,10 @@ namespace InfServer.Game
                 //Update player count first
                 base.playerEnter(player);
 
+                // Defer soft-mimic namelist so exitSpectatorMode SC_PlayerWarp (dropship) is not
+                // buried under Leave/Enter for every bot on the same tick.
+                QueueBotNamelistSync(player);
+
                 //Pass it to the script environment
                 callsync("Player.Enter", false, player);
             }
@@ -219,6 +223,7 @@ namespace InfServer.Game
 
             //Clear the arena stats
             ClearCurrentStats();
+            ClearBotGameStats();
 
             //Handle the start for all players
             string startGame = _server._zoneConfig.EventInfo.startGame;
@@ -1088,6 +1093,9 @@ namespace InfServer.Game
                 }
 
                 //Forward to our script
+                if (!Modules.ClassModule.CheckUnspecClassLimit(from, this, from._team))
+                    return;
+
                 if (exists("Player.JoinGame") && !(bool)callsync("Player.JoinGame", false, from))
                 {
                     return;
@@ -1097,14 +1105,30 @@ namespace InfServer.Game
                 Team pick = pickAppropriateTeam(from);
                 if (pick != null)
                 {
+                    if (!Modules.ClassModule.CheckUnspecClassLimit(from, this, pick))
+                        return;
+
                     //Great, use it
-                    from.unspec(pick);
+                    if (!from.unspec(pick))
+                    {
+                        from.sendMessage(-1, "Unable to leave spectator mode — try again or pick another team.");
+                        return;
+                    }
                     from._lastMovement = Environment.TickCount;
                     from._maxTimeCalled = false;
                 }
                 else
                     from.sendMessage(-1, "Unable to pick a team.");
             }
+        }
+
+        /// <summary>
+        /// After engine sets bounty to start on unspec — scripts may restore a persisted value.
+        /// </summary>
+        public override void handlePlayerUnspec(Player player)
+        {
+            if (player != null && exists("Player.Unspec"))
+                callsync("Player.Unspec", false, player);
         }
         #endregion
 
@@ -1193,8 +1217,11 @@ namespace InfServer.Game
 
             //Forward to our script
             if (!exists("Player.Explosion") || (bool)callsync("Player.Explosion", false, from, usedWep, update.positionX, update.positionY, update.positionZ))
-            {	//Find the largest blast radius of damage types of this weapon
+            {	                //Find the largest blast radius of damage types of this weapon
+                // (include recoil radius so knockback-only / vehicle-recoil weapons still hit bots)
                 int maxDamageRadius = Helpers.getMaxBlastRadius(usedWep);
+                if (usedWep.explosionRecoilRadius > maxDamageRadius)
+                    maxDamageRadius = usedWep.explosionRecoilRadius;
 
                 List<Vehicle> vechs = _vehicles.getObjsInRange(update.positionX, update.positionY, maxDamageRadius + 500);
                 //Notify all vehicles in the vicinity
@@ -1419,11 +1446,12 @@ namespace InfServer.Game
 
             //If it's a spectator, we should not route
             if (from.IsSpectator)
-            {	//Are we still spectating a player?
-                if (update.playerSpectating == -1 && from._spectating != null)
+            {
+                //Client reports player spectate via playerSpectating; -1 means not on a player.
+                if (update.playerSpectating == -1)
                 {
-                    from._spectating._spectators.Remove(from);
-                    from._spectating = null;
+                    if (from._spectating != null || from._spectatingBot != null)
+                        from.stopSpectating();
                 }
 
                 return;
@@ -1449,9 +1477,14 @@ namespace InfServer.Game
             {	//Sanity checks
                 killer = _players.getObjByID((ushort)update.killerPlayerID);
 
-                //Was it a player we can't find?
+                // Soft-mimic bots share 1..4999 with players — only warn when neither a player
+                // nor a bot vehicle owns that id.
                 if (update.killerPlayerID < 5001 && killer == null)
-                    Log.write(TLog.Warning, "Player {0} gave invalid player killer ID.", from);
+                {
+                    Bots.Bot softKiller = _vehicles.getObjByID((ushort)update.killerPlayerID) as Bots.Bot;
+                    if (softKiller == null)
+                        Log.write(TLog.Warning, "Player {0} gave invalid player killer ID.", from);
+                }
             }
 
             //Fall out of our vehicle and die!
@@ -1508,15 +1541,10 @@ namespace InfServer.Game
             {	//Sanity checks
                 killer = _players.getObjByID((ushort)update.killerPlayerID);
 
-                //Was it a player?
-                if (update.killerPlayerID < 5001)
+                // Human player killer (ids 1..4999 can also be soft-mimic bots — only treat as
+                // player kill when a real Player exists at that id).
+                if (update.killerPlayerID < 5001 && killer != null)
                 {
-                    if (killer == null)
-                    {
-                        Log.write(TLog.Warning, "Player {0} gave invalid killer ID.", from);
-                        return;
-                    }
-
                     //Forward to our script
                     if (!exists("Player.PlayerKill") || (bool)callsync("Player.PlayerKill", false, from, killer))
                     {	//Handle any flags
@@ -1553,22 +1581,28 @@ namespace InfServer.Game
             //Handle any ball action
             ballResetPlayer(from);
 
-            //Was it a bot kill?
-            if (update.type == Helpers.KillType.Player && update.killerPlayerID >= 5001)
-            {	//Attempt to find the associated bot
+            // Bot kill: classic vehicles (id >= 5001) OR soft player-mimic bots (id 1..4999).
+            if (update.type == Helpers.KillType.Player)
+            {
                 Bots.Bot bot = _vehicles.getObjByID((ushort)update.killerPlayerID) as Bots.Bot;
+                if (bot != null || update.killerPlayerID >= 5001)
+                {
+                    //Note: bot can be null when projectiles kill after the bot is already gone.
 
-                //Note: bot can be null, for when a player is killed by the bot's projectiles after the bot is dead
+                    //Forward to our script — returning false means the script owns kill routing/killfeed.
+                    if (!exists("Player.BotKill") || (bool)callsync("Player.BotKill", false, from, bot))
+                    {
+                        BroadcastPlayerKilledByBot(from, bot);
 
-                //Forward to our script
-                if (!exists("Player.BotKill") || (bool)callsync("Player.BotKill", false, from, bot))
-                {	//Update stats
-                    //from.Deaths++;
-
-                    //Spoof first then route only. Bots dont need rewards
-                    update.type = Helpers.KillType.Computer;
-                    Helpers.Player_RouteKill(Players, update, from, 0, 0, 0, 0);
+                        //Spoof first then route only. Bots dont need rewards
+                        update.type = Helpers.KillType.Computer;
+                        Helpers.Player_RouteKill(Players, update, from, 0, 0, 0, 0);
+                    }
+                    return;
                 }
+
+                if (update.killerPlayerID < 5001 && killer == null)
+                    Log.write(TLog.Warning, "Player {0} gave invalid killer ID {1}.", from, update.killerPlayerID);
             }
             else
             {	//If he was killed by a computer vehicle..
@@ -1703,6 +1737,16 @@ namespace InfServer.Game
             {
                 Log.write(TLog.Warning, "Player {0} attempted to buy invalid skill '{1}'", from, skill.Name);
                 return;
+            }
+
+            //Check class limits before allowing skill change
+            if (!from._bSpectator && skill.SkillId > 0 && ClassesModule != null)
+            {
+                if (!ClassesModule.CanChangeClass(this, from, skill.SkillId))
+                {
+                    from.sendMessage(0, Modules.ClassModule.GetClassChangeBlockedMessage(from, skill.Name));
+                    return;
+                }
             }
 
             //Make sure it's okay with our script...
@@ -2673,31 +2717,58 @@ namespace InfServer.Game
 
             //Find the player in question						
             Player target = _playersIngame.getObjByID(targetPlayerID);
-            if (target == null)
-                return;
-
-            //Can't spectate other spectators
-            if (target.IsSpectator)
-                return;
-
-            //Does the zone allow spectating?
-            if (!target._server._zoneConfig.arena.allowSpectating && player.PermissionLevel < Data.PlayerPermission.Level1)
+            if (target != null)
             {
-                player.sendMessage(-1, "Zone doesn't allow spectating players.");
+                //Can't spectate other spectators
+                if (target.IsSpectator)
+                    return;
+
+                //Does the zone allow spectating?
+                if (!target._server._zoneConfig.arena.allowSpectating && player.PermissionLevel < Data.PlayerPermission.Level1)
+                {
+                    player.sendMessage(-1, "Zone doesn't allow spectating players.");
+                    return;
+                }
+
+                bool forceAllowSpec = target._arena._allowSpec;
+
+                //Check spectator permission
+                if (!forceAllowSpec && !target._bAllowSpectator && player.PermissionLevel < Data.PlayerPermission.Level1)
+                {
+                    player.sendMessage(-1, "Specified player isn't allowing spectators.");
+                    return;
+                }
+
+                //Tell him yes!
+                player.spectate(target);
                 return;
             }
 
-            bool forceAllowSpec = target._arena._allowSpec;
+            // Player-mimic bots share the player id space — allow right-click spectate.
+            Bot botTarget = null;
+            if (_bots != null)
+                botTarget = _bots.getObjByID(targetPlayerID);
+            if (botTarget == null)
+                botTarget = _vehicles.getObjByID(targetPlayerID) as Bot;
 
-            //Check spectator permission
-            if (!forceAllowSpec && !target._bAllowSpectator && player.PermissionLevel < Data.PlayerPermission.Level1)
+            // Allow live bots and dropship-pending corpses (still on the namelist).
+            if (botTarget != null && !botTarget.bCondemned
+                && (!botTarget.IsDead || botTarget.bDropshipRespawnPending))
             {
-                player.sendMessage(-1, "Specified player isn't allowing spectators.");
+                if (!_server._zoneConfig.arena.allowSpectating && player.PermissionLevel < Data.PlayerPermission.Level1)
+                {
+                    player.sendMessage(-1, "Zone doesn't allow spectating players.");
+                    return;
+                }
+
+                if (player.spectate(botTarget))
+                    return;
+
+                player.sendMessage(-1, "Unable to spectate that bot.");
                 return;
             }
 
-            //Tell him yes!
-            player.spectate(target);
+            player.sendMessage(-1, "Unable to find the specified player.");
         }
         #endregion
 
@@ -2935,11 +3006,19 @@ namespace InfServer.Game
         /// Triggered when a bot is killed
         /// </summary>
         public override void handleBotDeath(Bot dead, Player killer, int weaponID)
-        {	//Forward it to our script
-            if (!exists("Bot.Death") || (bool)callsync("Bot.Death", false, dead, killer, weaponID))
-            {	//Route the death to the arena
-                Helpers.Vehicle_RouteDeath(Players, killer, dead, null);
-                if (killer != null && dead._team != killer._team)
+        {	            //Instant death FX for nearby clients; paced killfeed + rewards after script hook.
+            QueueBotDeathKillfeed(dead, killer);
+
+            bool scriptHandled = exists("Bot.Death") && !(bool)callsync("Bot.Death", false, dead, killer, weaponID);
+
+            // Drop namelist after script so handlers can still read bot._alias for stats.
+            // Dropship-respawn bots keep their name and team-list entry until revived or cancelled.
+            if (dead == null || !dead.bDropshipRespawnPending)
+                RemoveBotFromNamelist(dead);
+
+            if (!scriptHandled)
+            {
+                if (killer != null && dead != null && dead._team != killer._team)
                 {//Don't allow rewards for team kills
                     Logic_Rewards.calculateBotKillRewards(dead, killer);
                 }

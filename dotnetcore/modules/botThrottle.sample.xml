@@ -1,0 +1,22 @@
+<!--
+  Sample botThrottle block for server.xml (under <modules>).
+  Copy into your zone's server.xml and dial per process.
+-->
+<botThrottle>
+  <hostileSenseReuseMs>400</hostileSenseReuseMs>
+  <combatPlanBurstPolls>20</combatPlanBurstPolls>
+  <peaceSeekMultiplier>5</peaceSeekMultiplier>
+  <seekEvalMs>180</seekEvalMs>
+  <retreatEvalMs>400</retreatEvalMs>
+  <repositionEvalMs>520</repositionEvalMs>
+  <anchorEvalMs>2200</anchorEvalMs>
+  <fireExecMinMs>50</fireExecMinMs>
+  <retreatExecMinMs>200</retreatExecMinMs>
+  <retreatHealthBypass>10</retreatHealthBypass>
+  <repositionHealthBypass>15</repositionHealthBypass>
+  <combatMotionCommitMs>80</combatMotionCommitMs>
+  <combatPathRequeueMs>2800</combatPathRequeueMs>
+  <defaultSeekRange>2000</defaultSeekRange>
+  <engageTooCloseRaw>220</engageTooCloseRaw>
+  <engageIdealMaxRaw>520</engageIdealMaxRaw>
+</botThrottle>

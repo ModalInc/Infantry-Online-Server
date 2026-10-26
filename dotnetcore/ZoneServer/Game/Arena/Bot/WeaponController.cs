@@ -11,7 +11,7 @@ using Assets;
 namespace InfServer.Bots
 {
 	// WeaponController Class
-	/// Facilitates the use of weapon items for a bot 
+	/// Facilitates the use of weapon items for a bot — same fire/reload timing fields as players.
 	///////////////////////////////////////////////////////
 	public class WeaponController
 	{	// Member variables
@@ -25,15 +25,20 @@ namespace InfServer.Bots
 		private ItemInfo _primaryItem;					//The main item we're using
 		private ItemInfo.Projectile _primaryProjectile;	//The projectile we're paying attention to
 
-		private int _fireDelay;							//The delay between firing shots
-		private int _reloadTime;						//The time taken to reload
+		private int _fireDelay;							//Ms between shots (item fireDelay)
+		private int _fireDelayOther;					//Ms after weapon switch (item fireDelayOther)
+		private int _entryFireDelay;					//Ms before first shot after equip
+		private int _reloadTime;						//Full-clip reload ms (reloadDelayNormal)
+		private int _reloadTimePartial;					//Mid-clip reload ms
+		private int _reloadTimeAsync;					//Async full reload fallback
+		private int _reloadTimeAsyncPartial;			//Async partial reload fallback
 		private int _ammoType;							//Ammo settings
-		private int _ammoCount;							//
-		private int _ammoCapacity;						//
+		private int _ammoCount;							//Ammo consumed per shot
+		private int _ammoCapacity;						//Clip size
 
-		private int _tickShotTime;						//The last time at which we fired a shot
-		private int _tickReloadTime;					//The last time at which we started reloading
-		private int _ammoRemaining;						//The amount of ammo we have remaining in our clip
+		private int _tickNextFireAllowed;				//Earliest tick we may fire again
+		private int _tickReloadDone;					//Reload complete tick (0 = not reloading)
+		private int _ammoRemaining;						//Ammo remaining in clip
 
 		//Properties
 		public ItemInfo.Projectile Projectile
@@ -42,6 +47,11 @@ namespace InfServer.Bots
 			{
 				return _primaryProjectile;
 			}
+		}
+
+		public ItemInfo EquippedItem
+		{
+			get { return _primaryItem; }
 		}
 
 		public short ItemID
@@ -58,6 +68,64 @@ namespace InfServer.Bots
 			{
 				return _ammoCount;
 			}
+		}
+
+		public int AmmoRemaining
+		{
+			get { return _ammoRemaining; }
+		}
+
+		/// <summary>Minimum ms between shots (from item fireDelay).</summary>
+		public int FireDelayMs
+		{
+			get { return _fireDelay; }
+		}
+
+		/// <summary>True while a clip reload timer is active.</summary>
+		public bool IsReloading
+		{
+			get { return _tickReloadDone != 0 && Environment.TickCount < _tickReloadDone; }
+		}
+
+		/// <summary>
+		/// True when this item's prefire sequence is cancelled by movement.
+		/// Weapons without this flag may fire while the bot continues driving.
+		/// </summary>
+		public bool MovementCancelsPrefire
+		{
+			get
+			{
+				if (_primaryItem is ItemInfo.Projectile projectile)
+					return projectile.movementCancelsPrefire;
+				if (_primaryItem is ItemInfo.MultiUse multiUse)
+					return multiUse.movementCancelsPrefire;
+				return false;
+			}
+		}
+
+		/// <summary>Configured prefire delay converted from 10 ms ticks.</summary>
+		public int PrefireDelayMs
+		{
+			get
+			{
+				if (_primaryItem is ItemInfo.Projectile projectile)
+					return Math.Max(0, projectile.prefireDelay * 10);
+				if (_primaryItem is ItemInfo.MultiUse multiUse)
+					return Math.Max(0, multiUse.prefireDelay * 10);
+				return 0;
+			}
+		}
+
+		/// <summary>Whether this weapon must be stationary for its prefire to succeed.</summary>
+		public bool RequiresStationaryFire
+		{
+			get { return MovementCancelsPrefire && PrefireDelayMs > 0; }
+		}
+
+		/// <summary>Movement lock used after committing a stationary shot.</summary>
+		public int StationaryFireLockMs
+		{
+			get { return Math.Max(80, Math.Min(350, PrefireDelayMs)); }
 		}
 
 		///////////////////////////////////////////////////
@@ -99,74 +167,145 @@ namespace InfServer.Bots
 			_settings = settings;
 		}
 
+		static int ItemTicksToMs(int ticks)
+		{
+			return Math.Max(0, ticks * 10);
+		}
+
 		/// <summary>
-		/// Equips the weapon controller with a new item
+		/// Equips the weapon controller with a new item (loads player-style timing fields).
 		/// </summary>
 		public bool equip(ItemInfo item)
 		{
 			_type = item;
 
-			//Find our primary weapon
 			AssetManager am = Helpers._server._assets;
 
 			_primaryItem = item;
 			_primaryItem.getAmmoType(out _ammoType, out _ammoCount, out _ammoCapacity);
 			_ammoRemaining = _ammoCapacity;
 
-			//What sort of item are we dealing with?
+			_fireDelay = 0;
+			_fireDelayOther = 0;
+			_entryFireDelay = 0;
+			_reloadTime = 0;
+			_reloadTimePartial = 0;
+			_reloadTimeAsync = 0;
+			_reloadTimeAsyncPartial = 0;
+			_primaryProjectile = null;
+
 			if (_primaryItem is ItemInfo.MultiUse)
 			{
 				ItemInfo.MultiUse mug = (ItemInfo.MultiUse)_primaryItem;
-				_reloadTime = mug.reloadDelayNormal * 10;
-				_fireDelay = mug.fireDelay * 10;
+				_fireDelay = ItemTicksToMs(mug.fireDelay);
+				_fireDelayOther = ItemTicksToMs(mug.fireDelayOther);
+				_entryFireDelay = ItemTicksToMs(mug.entryFireDelay);
+				_reloadTime = ItemTicksToMs(mug.reloadDelayNormal);
+				_reloadTimePartial = ItemTicksToMs(mug.reloadDelayPartial);
+				_reloadTimeAsync = ItemTicksToMs(mug.reloadDelayAsynchronous);
+				_reloadTimeAsyncPartial = ItemTicksToMs(mug.reloadDelayAsynchronousPartial);
 
-				//Assume the first item is the tracking projectile
-				_primaryProjectile = ((ItemInfo.Projectile)am.getItemByID(mug.childItems[0].id));
+				if (mug.childItems != null && mug.childItems.Count > 0)
+					_primaryProjectile = am.getItemByID(mug.childItems[0].id) as ItemInfo.Projectile;
 			}
 			else if (_primaryItem is ItemInfo.Projectile)
 			{
 				_primaryProjectile = (ItemInfo.Projectile)_primaryItem;
-				_reloadTime = _primaryProjectile.reloadDelayNormal * 10;
-				_fireDelay = _primaryProjectile.fireDelay * 10;
+				_fireDelay = ItemTicksToMs(_primaryProjectile.fireDelay);
+				_fireDelayOther = ItemTicksToMs(_primaryProjectile.fireDelayOther);
+				_entryFireDelay = ItemTicksToMs(_primaryProjectile.entryFireDelay);
+				_reloadTime = ItemTicksToMs(_primaryProjectile.reloadDelayNormal);
+				_reloadTimePartial = ItemTicksToMs(_primaryProjectile.reloadDelayPartial);
+				// Assets typo: Asyncronous (one 'h')
+				_reloadTimeAsync = ItemTicksToMs(_primaryProjectile.reloadDelayAsyncronous);
+				_reloadTimeAsyncPartial = ItemTicksToMs(_primaryProjectile.reloadDelayAsynchronousPartial);
 			}
-            else
-            {	//We can't handle this item
-                Log.write(TLog.Warning, "Weapon controller given invalid equip item {0}", item);
-                return false;
-            }
+			else
+			{
+				Log.write(TLog.Warning, "Weapon controller given invalid equip item {0}", item);
+				return false;
+			}
+
+			if (_reloadTime <= 0 && _reloadTimeAsync > 0)
+				_reloadTime = _reloadTimeAsync;
+			if (_reloadTimePartial <= 0 && _reloadTimeAsyncPartial > 0)
+				_reloadTimePartial = _reloadTimeAsyncPartial;
+			if (_fireDelayOther <= 0)
+				_fireDelayOther = _fireDelay;
+
+			int now = Environment.TickCount;
+			_tickReloadDone = 0;
+			_tickNextFireAllowed = now + _entryFireDelay;
 
 			bEquipped = (_primaryProjectile != null);
-
-			return true;
+			return bEquipped;
 		}
 
 		/// <summary>
 		/// Determines whether the bot is currently able to fire it's weapon
 		/// </summary>
 		public bool ableToFire()
-		{	//If not reloaded yet don't fire
-			int now = Environment.TickCount;
+		{
+			if (!bEquipped)
+				return false;
 
-			if (_tickShotTime + _fireDelay > now ||
-				_tickReloadTime > now)
+			int now = Environment.TickCount;
+			if (_tickReloadDone != 0 && now < _tickReloadDone)
+				return false;
+			if (now < _tickNextFireAllowed)
 				return false;
 
 			return true;
 		}
 
 		/// <summary>
+		/// Apply fireDelayOther after switching to this weapon (player switch cadence).
+		/// </summary>
+		public void NotifyWeaponSwitched()
+		{
+			int now = Environment.TickCount;
+			int delay = _fireDelayOther > 0 ? _fireDelayOther : _fireDelay;
+			int next = now + delay;
+			if (next > _tickNextFireAllowed)
+				_tickNextFireAllowed = next;
+		}
+
+		/// <summary>
+		/// Begin a mid-clip (partial) reload using item reloadDelayPartial.
+		/// </summary>
+		public void BeginPartialReload()
+		{
+			int now = Environment.TickCount;
+			int ms = _reloadTimePartial > 0 ? _reloadTimePartial : _reloadTime;
+			if (ms <= 0)
+				return;
+			_tickReloadDone = now + ms;
+			_ammoRemaining = _ammoCapacity;
+			if (_tickReloadDone > _tickNextFireAllowed)
+				_tickNextFireAllowed = _tickReloadDone;
+		}
+
+		/// <summary>
 		/// Notifies the controller that the bot has fired a shot
 		/// </summary>
 		public void shotFired()
-		{	//We've fired a shot!
+		{
 			int now = Environment.TickCount;
-			_tickShotTime = now;
+			_tickNextFireAllowed = now + _fireDelay;
 
-			//Adjust ammo accordingly            
 			if (_ammoCapacity != 0 && --_ammoRemaining <= 0)
 			{
-				_tickReloadTime = now + _reloadTime;
+				int reloadMs = _reloadTime > 0 ? _reloadTime : _reloadTimeAsync;
+				if (reloadMs <= 0)
+					reloadMs = _fireDelay;
+				_tickReloadDone = now + reloadMs;
 				_ammoRemaining = _ammoCapacity;
+				if (_tickReloadDone > _tickNextFireAllowed)
+					_tickNextFireAllowed = _tickReloadDone;
+			}
+			else
+			{
+				_tickReloadDone = 0;
 			}
 		}
 
@@ -174,7 +313,7 @@ namespace InfServer.Bots
 		/// Retrieves the appropriate angle to aim at to hit the target
 		/// </summary>
 		public bool isAimed(int aimAngle)
-		{	//Calculate the smallest angle difference
+		{
 			int angleDiffHi = aimAngle - _state.yaw;
 			int angleDiffLo = (angleDiffHi < 0) ? 240 - Math.Abs(angleDiffHi) : -(240 - Math.Abs(angleDiffHi));
 
@@ -185,7 +324,6 @@ namespace InfServer.Bots
 			else
 				angleDiff = angleDiffLo;
 
-			//Is it in range according to our fuzziness factor?
 			return (Math.Abs(angleDiff) <= (_settings.aimFuzziness / 2));
 		}
 
@@ -201,10 +339,9 @@ namespace InfServer.Bots
 		/// Determines whether the bot needs to aim to clockwise, anticlockwise or is ontarget
 		/// </summary>
 		public int testAim(Helpers.ObjectState target, out bool bAimed)
-		{	//Compute our lead fire angle
+		{
 			int fireAngle = Helpers.computeLeadFireAngle(_state, target, _primaryProjectile.muzzleVelocity / 1000);
 
-			//Calculate the smallest angle difference
 			int angleDiffHi = fireAngle - _state.yaw;
 			int angleDiffLo = (angleDiffHi < 0) ? 240 - Math.Abs(angleDiffHi) : -(240 - Math.Abs(angleDiffHi));
 
@@ -215,15 +352,11 @@ namespace InfServer.Bots
 			else
 				angleDiff = angleDiffLo;
 
-			//Is it in range according to our fuzziness factor?
 			bAimed = (Math.Abs(angleDiff) <= (_settings.aimFuzziness / 2));
 
-			//Which direction do we need to aim in?
 			if (angleDiff > 0)
-				//Aim clockwise
 				return 1;
 			else
-				//Aim anticlockwise
 				return -1;
 		}
 	}

@@ -27,6 +27,11 @@ namespace InfServer.Game
         protected ObjTracker<Vehicle> _vehicles;			//The vehicles belonging to the arena, indexed by id
         private List<Vehicle> _condemnedVehicles;			//Vehicles to be deleted
         private ushort _lastVehicleKey;						//The last vehicle key which was allocated
+        /// <summary>
+        /// Soft player-mimic bots take free IDs in 1..4999 (client player-linked range).
+        /// Infantry treats id &lt; 5001 as a player hull; IDs &gt;= 5001 are pure vehicles and hop.
+        /// </summary>
+        private ushort _lastBotMimicKey;
 
         public SortedDictionary<ushort, ItemDrop> _items;	//The items belonging to the arena, indexed by id
         public ushort _lastItemKey;							//The last item key which was allocated
@@ -276,9 +281,20 @@ namespace InfServer.Game
             Helpers.Object_Flags(player, _flags.Values);
             Helpers.Object_LIOs(player, _switches.Values);
 
-            //Load the vehicles in the arena
+            // Non-bot vehicles only on join. Soft-mimic bots need PlayerEnter before Vehicles;
+            // dumping every bot here (or Enter+Vehicles twice) crashes late joiners on busy arenas.
             if (_vehicles.Count > 0)
-                Helpers.Object_Vehicles(player, _vehicles);
+            {
+                List<Vehicle> nonBotVehicles = new List<Vehicle>(_vehicles.Count);
+                foreach (Vehicle v in _vehicles)
+                {
+                    if (v == null || v is Bots.Bot)
+                        continue;
+                    nonBotVehicles.Add(v);
+                }
+                if (nonBotVehicles.Count > 0)
+                    Helpers.Object_Vehicles(player, nonBotVehicles);
+            }
 
             //Load the ball state if any
             if (_balls.Count > 0)
@@ -297,7 +313,7 @@ namespace InfServer.Game
             }
 
             //Is this a private arena and are we the first one?
-            if (!player._arena._name.StartsWith("Arena", StringComparison.OrdinalIgnoreCase) && player._arena.TotalPlayerCount == 1)
+            if (!player._arena._bIsPublic && player._arena.TotalPlayerCount == 1)
             {
                 //Give player required privileges
                 player._arena._owner.Add(player._alias);
@@ -334,6 +350,10 @@ namespace InfServer.Game
                     //Consider him loaded!
                     player.spec();
                     player.setIngame();
+
+                    // Soft-mimic roster AFTER EnterArena, streamed in small batches so the
+                    // client does not choke when joining a long-lived persistent arena.
+                    QueueBotNamelistJoinStream(player);
 
                     //Load the tickers
                     Helpers.Arena_Message(player, _tickers.Values);
@@ -412,6 +432,19 @@ namespace InfServer.Game
             //Sob, let him go
             _players.Remove(player);
 
+            // Drop deferred soft-mimic sync for this client.
+            if (_pendingBotNamelistSync != null)
+                _pendingBotNamelistSync.Remove(player);
+            if (player != null)
+            {
+                _botNamelistKnownByPlayerId.Remove(player._id);
+                if (_botNamelistJoinStreams != null)
+                    _botNamelistJoinStreams.Remove(player);
+            }
+
+            // Drop Player refs that would otherwise live for the arena/vehicle lifetime.
+            ClearPlayerRetainedRefs(player);
+
             //Trigger our event for a player leaving a game
             if (!player.IsSpectator)
                 playerLeave(player);
@@ -439,10 +472,19 @@ namespace InfServer.Game
                 }
             }
 
-            //Do we have any players left? Don't close named arenas (We always want these displayed so players know they exist)
+            //Do we have any players left?
+            // persistentArena (server.xml): keep the arena alive so bots / match state continue.
             if (TotalPlayerCount == 0)
+            {
+                if (Arena.persistentArena)
+                {
+                    if (!_bActive)
+                        _bActive = true;
+                    return;
+                }
                 //Nope. It's closing time.
                 close();
+            }
             else
             {
                 //Notify everyone else of his departure
@@ -457,6 +499,43 @@ namespace InfServer.Game
                             Helpers.Object_PlayerLeave(person, player);
                 }
             }
+        }
+
+        /// <summary>
+        /// Clears Player references held by long-lived arena objects (attackers, item owners, produce queue).
+        /// </summary>
+        void ClearPlayerRetainedRefs(Player player)
+        {
+            if (player == null)
+                return;
+
+            try
+            {
+                foreach (Vehicle v in Vehicles)
+                {
+                    if (v?._attackers == null || v._attackers.Count == 0)
+                        continue;
+                    v._attackers.Remove(player);
+                }
+            }
+            catch
+            {
+                // Enumeration can race with vehicle destroy; never block leave on cleanup.
+            }
+
+            try
+            {
+                foreach (ItemDrop drop in _items.Values)
+                {
+                    if (drop != null && drop.owner == player)
+                        drop.owner = null;
+                }
+            }
+            catch
+            {
+            }
+
+            ClearProductionForPlayer(player);
         }
 
         /// <summary>
@@ -812,7 +891,10 @@ namespace InfServer.Game
             id.owner = p; //For bounty abuse upon pickup
 
             int expire = getTerrain(positionX, positionY).prizeExpire;
-            id.tickExpire = (expire > 0 ? (Environment.TickCount + (expire * 1000)) : 0);
+            // Always expire eventually so ItemDrop.owner cannot pin Player refs for arena lifetime.
+            const int defaultPrizeExpireSec = 300;
+            int expireSec = expire > 0 ? expire : defaultPrizeExpireSec;
+            id.tickExpire = Environment.TickCount + (expireSec * 1000);
 
             //Add it to our list
             _items[ik] = id;

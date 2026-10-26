@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
 using System.Xml;
 
@@ -130,7 +131,16 @@ namespace InfServer
             {
                 Log.write(e.Message);
                 if (!create)
-                    throw new Exception(String.Format("xmldoc.Load() failed! File might NOT exist!\nMissing: {0}", filename));
+                {
+                    string cwd = Environment.CurrentDirectory;
+                    string abs = Path.IsPathRooted(filename)
+                        ? filename
+                        : Path.GetFullPath(Path.Combine(cwd, filename));
+                    bool exists = File.Exists(abs);
+                    throw new Exception(String.Format(
+                        "xmldoc.Load() failed for '{0}' (exists={1}, cwd={2}).\n{3}",
+                        abs, exists, cwd, e.Message), e);
+                }
                 else
                 {
                     xmldoc.LoadXml("<xml></xml>");
