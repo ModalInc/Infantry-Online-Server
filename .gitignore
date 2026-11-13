@@ -14,3 +14,6 @@ obj
 .vs
 Debug
 releases/
+
+# Local secrets
+scripts/GameTypes/CTF/SupabaseKeys.txt

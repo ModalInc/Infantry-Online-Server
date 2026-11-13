@@ -15,7 +15,7 @@ namespace InfServer.Bots
     // Bot Class
     /// Represents a bot, inherited from a vehicle
     ///////////////////////////////////////////////////////
-    public class Bot : Vehicle, IEventObject
+    public partial class Bot : Vehicle, IEventObject
     {   // Member variables
         ///////////////////////////////////////////////////
         public new VehInfo.Car _type;                   //The car type we represent
@@ -750,6 +750,9 @@ namespace InfServer.Bots
 
             _tickLastPoll = tickCount;
 
+            // Scripts swap / create guns freely; every one picks up this bot's skill profile.
+            WireWeaponOwners();
+
             //If it's a ridiculous delta, clamp rather than fully skipping the tick
             if (delta > 600)
             {
@@ -797,6 +800,8 @@ namespace InfServer.Bots
                 if (_tickWallEscapeUntil > tickCount)
                     FollowNavigationPath();
 
+                ApplyCombatSenseOverrides(tickCount);
+
                 ApplyMotionRequest();
 
                 //Allow our controller to update our vehicle state
@@ -810,6 +815,8 @@ namespace InfServer.Bots
                 }
 
                 TryWallEscapeRecovery(tickCount);
+                if (MovementMode == BotMovementMode.Api)
+                    EvaluatePinned(tickCount);
 
                 if (shouldBroadcastUpdate(tickCount))
                 {
@@ -847,6 +854,9 @@ namespace InfServer.Bots
             int interval = observed
                 ? (moving ? MovingUpdateIntervalMs : ObservedIdleUpdateIntervalMs)
                 : RadarOnlyUpdateIntervalMs;
+            // Only each human's nearest few bots get the full-rate stream; a crowd on screen cannot flood a client.
+            if (observed && _arena != null && !_arena.IsBotFastRouted(_id, tickCount))
+                interval = Math.Max(interval, BotFeatures.RouteSlowMs);
 
             // interval 0 = every poll while moving under observation
             if (interval > 0 && tickCount - _tickLastUpdate <= interval)

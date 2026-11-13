@@ -33,9 +33,6 @@ namespace InfServer.Script.GameType_Multi
         public BotType type;
         protected bool bOverriddenPoll;         //Do we have custom actions for poll?
 
-        protected List<Vector3> _path;			//The path to our destination
-        protected int _pathTarget;				//The next target node of the path
-        protected int _tickLastPath;			//The time at which we last made a path to the player
         public Conquest _cq;
 
 
@@ -54,6 +51,7 @@ namespace InfServer.Script.GameType_Multi
             Random rnd = new Random();
             _seperation = (float)rnd.NextDouble();
             steering = _movement as SteeringController;
+            MovementMode = BotMovementMode.Api;
             _rand = new Random();
             if (type.InventoryItems[0] != 0)
                 _weapon.equip(AssetManager.Manager.getItemByID(type.InventoryItems[0]));
@@ -82,14 +80,20 @@ namespace InfServer.Script.GameType_Multi
         public override bool poll()
         {
             if (bOverriddenPoll)
+            {
+                HoldPosition();
                 return base.poll();
+            }
 
             //Dead? Do nothing
             if (IsDead)
             {
-                steering.steerDelegate = null;
+                HoldPosition();
                 return base.poll();
             }
+
+            // Steering is per-poll: anything not set again this poll stops.
+            HoldPosition();
 
             int now = Environment.TickCount;
 
@@ -138,29 +142,14 @@ namespace InfServer.Script.GameType_Multi
             return base.poll();
         }
 
-        public void updatePath(int now)
+        void navigateTo(Helpers.ObjectState dest, Func<InfantryVehicle, Vector3> fallback, PathPriority priority)
         {
-            //Does our path need to be updated?
-            if (now - _tickLastPath > c_pathUpdateInterval)
-            {     //Update it!
-                _tickLastPath = int.MaxValue;
-
-                _arena._pathfinder.queueRequest(
-                    (short)(_state.positionX / 16), (short)(_state.positionY / 16),
-                    (short)(_target._state.positionX / 16), (short)(_target._state.positionY / 16),
-                    delegate (List<Vector3> path, int pathLength)
-                    {
-                        if (path != null)
-                        {   //Is the path too long?
-
-                                _path = path;
-                            _pathTarget = 1;
-                        }
-
-                        _tickLastPath = now;
-                    }
-                );
-            }
+            ApplyNavigationApproach(dest, fallback, new BotNavigateOptions
+            {
+                RequeueMinMs = c_pathUpdateInterval,
+                PathStartIndex = 1,
+                Priority = priority,
+            });
         }
     }
 }

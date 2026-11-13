@@ -403,19 +403,8 @@ namespace InfServer.Game
                 return false;
 
             // Do not fire at people out of turret angle limits
-<<<<<<< HEAD
-            double pAngle = Helpers.calcDegreesBetweenPoints(p._state.positionX, p._state.positionY, _state.positionX, _state.positionY);
-            if (_type.AngleStart > 0)
-                if ((short)pAngle < _type.AngleStart)
-                    return false;
-
-            if (_type.AngleLength > 0 && _type.AngleLength < 360)
-                if ((short)pAngle > _type.AngleStart + _type.AngleLength)
-                    return false;
-=======
             if (!InTurretAngle(p._state.positionX, p._state.positionY))
                 return false;
->>>>>>> dependabot/nuget/dotnetcore/DatabaseServerNATS/MessagePack-3.1.9
 
             //Check if player is within turrets vision
             if (_type.ObeyLos != 0)

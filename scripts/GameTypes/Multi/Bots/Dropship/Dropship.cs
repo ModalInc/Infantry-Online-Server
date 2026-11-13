@@ -36,10 +36,6 @@ namespace InfServer.Script.GameType_Multi
         protected bool bOverriddenPoll;         //Do we have custom actions for poll?
         public Script_Multi _script;
 
-        protected List<Vector3> _path;			//The path to our destination
-        protected int _pathTarget;				//The next target node of the path
-        protected int _tickLastPath;			//The time at which we last made a path to the player
-
         private Vehicle _supplyMarker;
         private Vehicle _spawnMarker;
 
@@ -58,6 +54,7 @@ namespace InfServer.Script.GameType_Multi
             Random rnd = new Random();
             _seperation = (float)rnd.NextDouble();
             steering = _movement as SteeringController;
+            MovementMode = BotMovementMode.Api;
             _rand = new Random();
             if (type.InventoryItems[0] != 0)
                 _weapon.equip(AssetManager.Manager.getItemByID(type.InventoryItems[0]));
@@ -100,14 +97,20 @@ namespace InfServer.Script.GameType_Multi
         public override bool poll()
         {
             if (bOverriddenPoll)
+            {
+                HoldPosition();
                 return base.poll();
+            }
 
             //Dead? Do nothing
             if (IsDead)
             {
-                steering.steerDelegate = null;
+                HoldPosition();
                 return base.poll();
             }
+
+            // Steering is per-poll: anything not set again this poll stops.
+            HoldPosition();
 
             if (!_arena._bGameRunning)
                 base.destroy(false, true);
@@ -147,10 +150,10 @@ namespace InfServer.Script.GameType_Multi
 
                 //Get to landing zone
                 if (Helpers.distanceTo(_targetLocation._state, _state) > 45)
-                    steering.steerDelegate = steerForFollowOwner;
+                    ApplySteer(steerForFollowOwner);
                 else
                 {
-                    steering.freezeMovement(10000);
+                    freezeMovement(10000);
                     onSite = true;
                 }
 
@@ -172,10 +175,10 @@ namespace InfServer.Script.GameType_Multi
 
                 //Get to landing zone
                 if (Helpers.distanceTo(_targetLocation._state, _state) > 45)
-                    steering.steerDelegate = steerForFollowOwner;
+                    ApplySteer(steerForFollowOwner);
                 else
                 {
-                    steering.freezeMovement(5000);
+                    freezeMovement(5000);
                     onSite = true;
                 }
 
@@ -190,30 +193,15 @@ namespace InfServer.Script.GameType_Multi
             return base.poll();
         }
 
-        public void updatePath(int now)
+        /// <summary>Path toward <paramref name="dest"/>; walks <paramref name="fallback"/> until the route arrives.</summary>
+        void navigateTo(Helpers.ObjectState dest, Func<InfantryVehicle, Vector3> fallback, PathPriority priority)
         {
-            //Does our path need to be updated?
-            if (now - _tickLastPath > c_pathUpdateInterval)
-            {   //Are we close enough to the team?
-
-                //Update it!
-                _tickLastPath = int.MaxValue;
-
-                _arena._pathfinder.queueRequest(
-                    (short)(_state.positionX / 16), (short)(_state.positionY / 16),
-                    (short)(_targetLocation._state.positionX / 16), (short)(_targetLocation._state.positionY / 16),
-                    delegate (List<Vector3> path, int pathLength)
-                    {
-                        if (path != null)
-                        {
-                            _path = path;
-                            _pathTarget = 1;
-                        }
-
-                        _tickLastPath = now;
-                    }
-                );
-            }
+            ApplyNavigationApproach(dest, fallback, new BotNavigateOptions
+            {
+                RequeueMinMs = c_pathUpdateInterval,
+                PathStartIndex = 1,
+                Priority = priority,
+            });
         }
 
         public Helpers.ObjectState findOpenSpawn(short posX, short posY, int radius)

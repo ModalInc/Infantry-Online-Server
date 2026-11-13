@@ -1313,6 +1313,9 @@ namespace InfServer.Game
                     if (ammoType != 0 && !from.inventoryModify(false, ammoType, -ammoCount))
                         update.itemID = 0;
 
+                if (update.itemID != 0)
+                    NoteProjectileFired(from._team, from, update.positionX, update.positionY, update.yaw, update.itemID);
+
                 //Update last movement with firing, don't want to spec people in stationary turrets;
                 from._lastMovement = now;
                 from._maxTimeCalled = false;

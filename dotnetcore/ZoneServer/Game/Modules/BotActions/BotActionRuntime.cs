@@ -32,6 +32,9 @@ namespace InfServer.Game.Modules.BotActions
         public BotActionId Current { get; private set; } = BotActionId.None;
         public bool IsRunning => Current != BotActionId.None && _current != null;
 
+        /// <summary>Shared combat state (current targets) — read by teammates for target spreading.</summary>
+        public BotActionContext Context => _ctx;
+
         /// <summary>When true, <see cref="Bot.poll"/> ticks the current action before applying motion.</summary>
         public bool AutoTick { get; set; }
 

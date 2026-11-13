@@ -107,6 +107,10 @@ namespace InfServer.Protocol
 			List<Player> audience = getRouteList(update._arena, update._state, update._shouldFire, weaponRouteRange, null, 
 				update._state.positionX, update._state.positionY);
 
+			if (update._shouldFire && update._primaryGun != null)
+				update._arena?.NoteProjectileFired(update._team, update,
+					update._state.positionX, update._state.positionY, update._state.yaw, update._primaryGun.id);
+
 			//Send our updates..
 			foreach (Player player in audience)
 				player._client.send(tu);				
@@ -211,6 +215,8 @@ namespace InfServer.Protocol
 				ItemInfo item = _server._assets.getItemByID(update._itemUseID);
 				if (item != null)
 					item.getRouteRange(out weaponRouteRange);
+				update._arena.NoteProjectileFired(update._team, update,
+					update._state.positionX, update._state.positionY, update._state.yaw, update._itemUseID);
 			}
 
 			// Same audience rules as Update_RoutePlayer (incl. radar factor ticks).

@@ -33,22 +33,21 @@ namespace InfServer.Script.GameType_Multi
 
                     //Too far?
                     if (distance > pursueDist)
-                        steering.steerDelegate = steerForPersuePlayer;
+                        ApplySteer(steerForPersuePlayer);
                     //Quite short?
                     else if (distance < shortDist)
                     {
-                        steering.bSkipRotate = true;
-                        steering.steerDelegate = delegate (InfantryVehicle vehicle)
+                        ApplySteer(delegate (InfantryVehicle vehicle)
                         {
                             if (_target != null)
                                 return vehicle.SteerForFlee(_target._state.position());
                             else
                                 return Vector3.Zero;
-                        };
+                        }, skipBodyRotate: true);
                     }
                     //Just right
                     else
-                        steering.steerDelegate = null;
+                        HoldPosition();
 
 
 
@@ -71,8 +70,7 @@ namespace InfServer.Script.GameType_Multi
                                     _weapon.shotFired();
                                 }
 
-                                steering.bSkipAim = true;
-                                steering.angle = aimResult;
+                                SetAim(aimResult);
                             }
                         }
                         //Should we be firing our incin?
@@ -91,8 +89,7 @@ namespace InfServer.Script.GameType_Multi
                                     _weapon.shotFired();
                                 }
 
-                                steering.bSkipAim = true;
-                                steering.angle = aimResult;
+                                SetAim(aimResult);
                             }
 
                         }
@@ -112,25 +109,18 @@ namespace InfServer.Script.GameType_Multi
                                     _weapon.shotFired();
                                 }
 
-                                steering.bSkipAim = true;
-                                steering.angle = aimResult;
+                                SetAim(aimResult);
                             }
 
                         }
                         else
-                            steering.bSkipAim = false;
+                            SetAim(0, false);
                     }
                 }
                 else
                 {
-                    updatePath(now);
-
                     //Navigate to him
-                    if (_path == null)
-                        //If we can't find out way to him, just mindlessly walk in his direction for now
-                        steering.steerDelegate = steerForPersuePlayer;
-                    else
-                        steering.steerDelegate = steerAlongPath;
+                    navigateTo(_target._state, steerForPersuePlayer, PathPriority.Combat);
                 }
 
 
@@ -170,41 +160,8 @@ namespace InfServer.Script.GameType_Multi
             double distance = (_state.position() - target.position()).Length;
 
 
-            //Does our path need to be updated?
-            if (now - _tickLastPath > c_pathUpdateInterval)
-            {
-                _arena._pathfinder.queueRequest(
-                           (short)(_state.positionX / 16), (short)(_state.positionY / 16),
-                           (short)(target.positionX / 16), (short)(target.positionY / 16),
-                           delegate (List<Vector3> path, int pathLength)
-                           {
-                               if (path != null)
-                               {   //Is the path too long?
-                                   if (pathLength > c_MaxPath)
-                                   {   //Destroy ourself and let another zombie take our place
-                                       //_path = null; Destroying Disasbled for now, may replace with a distance from enemy check
-                                       //destroy(true);
-                                       _path = path;
-                                       _pathTarget = 1;
-                                   }
-                                   else
-                                   {
-                                       _path = path;
-                                       _pathTarget = 1;
-                                   }
-                               }
-
-                               _tickLastPath = now;
-                           }
-                );
-            }
-
             //Navigate to him
-            if (_path == null)
-                //If we can't find out way to him, just mindlessly walk in his direction for now
-                steering.steerDelegate = steerForPersuePlayer;
-            else
-                steering.steerDelegate = steerAlongPath;
+            navigateTo(target, steerForPersuePlayer, PathPriority.Idle);
         }
         public void patrolBetweenFlags(int now)
         {
@@ -258,31 +215,8 @@ namespace InfServer.Script.GameType_Multi
                 _bPatrolEnemy = !_bPatrolEnemy;
             }
 
-            //Does our path need to be updated?
-            if (now - _tickLastPath > c_pathUpdateInterval)
-            {
-                _arena._pathfinder.queueRequest(
-                           (short)(_state.positionX / 16), (short)(_state.positionY / 16),
-                           (short)(target.positionX / 16), (short)(target.positionY / 16),
-                           delegate (List<Vector3> path, int pathLength)
-                           {
-                               if (path != null)
-                               {
-                                   _path = path;
-                                   _pathTarget = 1;
-                               }
-
-                               _tickLastPath = now;
-                           }
-                );
-            }
-
             //Navigate to him
-            if (_path == null)
-                //If we can't find out way to him, just mindlessly walk in his direction for now
-                steering.steerDelegate = steerForPersuePlayer;
-            else
-                steering.steerDelegate = steerAlongPath;
+            navigateTo(target, steerForPersuePlayer, PathPriority.Idle);
         }
 
 
@@ -302,31 +236,8 @@ namespace InfServer.Script.GameType_Multi
                 return;
             }
 
-            //Does our path need to be updated?
-            if (now - _tickLastPath > c_pathUpdateInterval)
-            {
-                _arena._pathfinder.queueRequest(
-                           (short)(_state.positionX / 16), (short)(_state.positionY / 16),
-                           (short)(_targetPoint.positionX / 16), (short)(_targetPoint.positionY / 16),
-                           delegate (List<Vector3> path, int pathLength)
-                           {
-                               if (path != null)
-                               {
-                                   _path = path;
-                                   _pathTarget = 1;
-                               }
-
-                               _tickLastPath = now;
-                           }
-                );
-            }
-
             //Navigate to him
-            if (_path == null)
-                //If we can't find out way to him, just mindlessly walk in his direction for now
-                steering.steerDelegate = steerForPersuePlayer;
-            else
-                steering.steerDelegate = steerAlongPath;
+            navigateTo(_targetPoint, steerForPersuePlayer, PathPriority.Idle);
         }
 
 

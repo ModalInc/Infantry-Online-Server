@@ -23,6 +23,43 @@ namespace InfServer.Game
         // Member Functions
         ///////////////////////////////////////////////////
         /// <summary>
+        /// CTF-tactics bot layer (skill tiers, dodging, wall probing, per-human pose budget).
+        /// Off unless <c>modules/ctftactics</c> is true; <c>modules/ctftacticsSettings</c> tunes it.
+        /// </summary>
+        void LoadCtfTacticsModule()
+        {
+            bool want = false;
+            try { want = _config.Exists("modules/ctftactics") && _config["modules/ctftactics"].boolValue; }
+            catch { want = false; }
+
+            if (!want)
+            {
+                Bots.BotFeatures.DisableModule();
+                Log.write(TLog.Normal, "Module not in use: ctftactics.");
+                return;
+            }
+
+            Bots.BotFeatures.EnableModule();
+            const string s = "modules/ctftacticsSettings/";
+            if (_config.Exists(s + "skill") && !Bots.BotFeatures.SetSkillMode(_config[s + "skill"].Value))
+                Log.write(TLog.Warning, "server.xml {0}skill '{1}' unknown; using '{2}'.",
+                    s, _config[s + "skill"].Value, Bots.BotFeatures.SkillMode);
+            if (_config.Exists(s + "dodge"))
+                Bots.BotFeatures.Dodge = _config[s + "dodge"].boolValue;
+            if (_config.Exists(s + "wallProbe"))
+                Bots.BotFeatures.WallProbe = _config[s + "wallProbe"].boolValue;
+            if (_config.Exists(s + "routeNearCap"))
+                Bots.BotFeatures.RouteNearCap = Math.Max(0, _config[s + "routeNearCap"].intValue);
+            if (_config.Exists(s + "routeSlowMs"))
+                Bots.BotFeatures.RouteSlowMs = Math.Max(16, _config[s + "routeSlowMs"].intValue);
+
+            Log.write(TLog.Normal,
+                "Module loaded: ctftactics (skill={0} dodge={1} wallProbe={2} routeNearCap={3} routeSlowMs={4}).",
+                Bots.BotFeatures.SkillMode, Bots.BotFeatures.Dodge, Bots.BotFeatures.WallProbe,
+                Bots.BotFeatures.RouteNearCap, Bots.BotFeatures.RouteSlowMs);
+        }
+
+        /// <summary>
         /// Performs arena-related initialization
         /// </summary>
         public bool initArenas()
@@ -37,6 +74,8 @@ namespace InfServer.Game
             Arena.persistentArena = false;
             if (_config.Exists("arena/persistentArena"))
                 Arena.persistentArena = _config["arena/persistentArena"].boolValue;
+
+            LoadCtfTacticsModule();
 
             if (_config.Exists("arena/allowArenaCreation"))
             {

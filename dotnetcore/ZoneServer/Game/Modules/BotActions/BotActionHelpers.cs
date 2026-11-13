@@ -52,11 +52,13 @@ namespace InfServer.Game.Modules.BotActions
             }
 
             Player bestPlayer = null;
-            double bestPlayerDist = double.MaxValue;
+            double bestPlayerScore = double.MaxValue;
             List<Player> near = ctx.Arena.getPlayersInRange(
                 ctx.Bot._state.positionX, ctx.Bot._state.positionY, seek);
             if (near != null)
             {
+                // Spread fire: a player already taken by teammates scores worse (+25 % per mate past the first).
+                Dictionary<Player, int> taken = BotFeatures.Enabled && near.Count > 1 ? CountTeammateTargets(ctx) : null;
                 for (int i = 0; i < near.Count; i++)
                 {
                     Player p = near[i];
@@ -64,10 +66,12 @@ namespace InfServer.Game.Modules.BotActions
                         continue;
                     if (ctx.Bot._team != null && p._team == ctx.Bot._team)
                         continue;
-                    double d = Helpers.distanceTo(ctx.Bot._state, p._state);
-                    if (d < bestPlayerDist)
+                    double score = Helpers.distanceTo(ctx.Bot._state, p._state);
+                    if (taken != null && taken.TryGetValue(p, out int mates) && mates > 1)
+                        score *= 1.0 + 0.25 * (mates - 1);
+                    if (score < bestPlayerScore)
                     {
-                        bestPlayerDist = d;
+                        bestPlayerScore = score;
                         bestPlayer = p;
                     }
                 }
@@ -132,6 +136,24 @@ namespace InfServer.Game.Modules.BotActions
             ctx.CurrentPlayerTarget = null;
             ctx.CurrentBotTarget = null;
             return false;
+        }
+
+        /// <summary>Players currently targeted by this bot's teammates, with how many are on each.</summary>
+        static Dictionary<Player, int> CountTeammateTargets(BotActionContext ctx)
+        {
+            Dictionary<Player, int> taken = null;
+            foreach (Bots.Bot other in ctx.Arena.ActiveBots)
+            {
+                if (other == null || other == ctx.Bot || other.IsDead || other._team != ctx.Bot._team)
+                    continue;
+                Player t = other.Actions?.Context?.CurrentPlayerTarget;
+                if (t == null)
+                    continue;
+                taken ??= new Dictionary<Player, int>();
+                taken.TryGetValue(t, out int n);
+                taken[t] = n + 1;
+            }
+            return taken;
         }
 
         /// <summary>Legacy name — prefer <see cref="RefreshHostileTarget"/>.</summary>
