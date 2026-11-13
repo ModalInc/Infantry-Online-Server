@@ -1,0 +1,7 @@
+# Class change gate for ?swap, ?b / ?bw / ?bwd, armory class tiles and the F11 shop. Written by the *classgate mod command.
+# mode: energy (pay 'energy' energy) | cooldown (wait 'cooldown_seconds' between changes) | off
+# downtime_free: 1 = the cooldown is not enforced between rounds or during drafts (it only counts while a round is being played)
+mode=cooldown
+energy=500
+cooldown_seconds=15
+downtime_free=1

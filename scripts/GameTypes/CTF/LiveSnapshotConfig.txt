@@ -1,0 +1,2 @@
+# TP Pub: no live feed to freeinf.org from this zone.
+enabled=false

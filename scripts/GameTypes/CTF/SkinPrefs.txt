@@ -1,0 +1,123 @@
+# alias<TAB>stock item<TAB>option|off - written by the zone (?skin / ?cosmetic / ?champ). Do not push from local.
+Angelus	Kuchler A6 CAW	ovdl1
+Angelus	Maklov AC mk2	ovdl1
+Angelus	Micro Missile Launcher	ovdl1
+Angelus	Mini Missile Launcher	ovdl1
+Angelus	SiG Arms m2 AS	ovdl1
+Axidus	AP Mine	off
+Axidus	AssaultRifle	off
+Axidus	AssaultRifleEOL	duel2
+Axidus	Drop Pack	off
+Axidus	Engy Beamer	off
+Axidus	Flamethrower	off
+Axidus	Grapeshot Mine	off
+Axidus	Incinerator	off
+Axidus	Infil Beamer	off
+Axidus	Kuchler A6 CAW	off
+Axidus	Kuchler PC v2	off
+Axidus	Maklov AC mk2	off
+Axidus	Maklov AR mk 606	off
+Axidus	Maklov g9 Sniper	off
+Axidus	Medic Beamer	off
+Axidus	Micro Missile Launcher	off
+Axidus	Mini Missile Launcher	off
+Axidus	Needler	s2
+Axidus	Plasma Mine	off
+Axidus	RPG	off
+Axidus	SiG Arms m2 AS	off
+Axidus	SL Beamer	off
+Axidus	Stunner	off
+Axidus	Tranq	off
+Axidus	Unittech SC 99r	off
+baal	Flamethrower	s3
+baal	Maklov AR mk 606	s3
+baal	Micro Missile Launcher	s3
+baal	Stunner	s3
+Captain Ax	Engy Beamer	s1
+Captain Ax	Incinerator	s1
+Captain Ax	Infil Beamer	s1
+Captain Ax	Kuchler A6 CAW	s1
+Captain Ax	Kuchler PC v2	s1
+Captain Ax	Maklov AR mk 606	s1
+Captain Ax	Medic Beamer	s1
+Captain Ax	SL Beamer	s1
+Captain Ax	Unittech SC 99r	s1
+Decker	Engy Beamer	carebearmer
+Decker	Incinerator	s1
+Decker	Infil Beamer	carebearmer
+Decker	Kuchler A6 CAW	s1
+Decker	Kuchler PC v2	s1
+Decker	Maklov AR mk 606	s1
+Decker	Medic Beamer	carebearmer
+Decker	SL Beamer	carebearmer
+Decker	Unittech SC 99r	s1
+Dilatory	Flamethrower	off
+Dilatory	Maklov AR mk 606	off
+Dilatory	Micro Missile Launcher	off
+Dilatory	Stunner	off
+Dropped	AssaultRifle	a3
+Flair	Engy Beamer	s1
+Flair	Incinerator	s1
+Flair	Infil Beamer	s1
+Flair	Kuchler A6 CAW	s1
+Flair	Kuchler PC v2	s1
+Flair	Maklov AR mk 606	s1
+Flair	Medic Beamer	s1
+Flair	SL Beamer	s1
+Flair	Unittech SC 99r	s1
+gamefreek321	AP Mine	s2
+gamefreek321	Grapeshot Mine	s2
+gamefreek321	Kuchler A6 CAW	s2
+gamefreek321	Micro Missile Launcher	s2
+gamefreek321	Plasma Mine	s2
+gamefreek321	Tranq	s2
+Ghost Bomber	Flamethrower	s3
+Ghost Bomber	Maklov AR mk 606	s3
+Ghost Bomber	Micro Missile Launcher	s3
+Ghost Bomber	Stunner	s3
+JACKIE	Kuchler A6 CAW	widow
+jay	Flamethrower	off
+jay	Maklov AR mk 606	off
+jay	Micro Missile Launcher	off
+jay	Stunner	off
+juetnihilia	AP Mine	off
+juetnihilia	Flamethrower	off
+juetnihilia	Grapeshot Mine	off
+juetnihilia	Kuchler A6 CAW	off
+juetnihilia	Maklov AR mk 606	off
+juetnihilia	Micro Missile Launcher	off
+juetnihilia	Plasma Mine	off
+juetnihilia	Stunner	off
+juetnihilia	Tranq	off
+kal	Kuchler A6 CAW	prism
+MIGHTS	Engy Beamer	s1
+MIGHTS	Flamethrower	s3
+MIGHTS	Incinerator	s1
+MIGHTS	Infil Beamer	s1
+MIGHTS	Kuchler A6 CAW	s1
+MIGHTS	Kuchler PC v2	s1
+MIGHTS	Maklov AR mk 606	s3
+MIGHTS	Medic Beamer	s1
+MIGHTS	Micro Missile Launcher	s3
+MIGHTS	SL Beamer	s1
+MIGHTS	Stunner	s3
+MIGHTS	Unittech SC 99r	s1
+MysticGohan~	AP Mine	s2
+MysticGohan~	Grapeshot Mine	s2
+MysticGohan~	Kuchler A6 CAW	s2
+MysticGohan~	Micro Missile Launcher	s2
+MysticGohan~	Plasma Mine	s2
+MysticGohan~	Tranq	s2
+posty	Tranq	gold
+Scobrah	Kuchler A6 CAW	rainbow
+Shadeaux	Plasma Mine	lol
+Soriddo	Engy Beamer	pink
+Soriddo	Infil Beamer	pink
+Soriddo	Medic Beamer	pink
+Soriddo	SL Beamer	pink
+thegreatchompy	AssaultRifle	b3
+Thor	Engy Beamer	pumpkin
+Thor	Infil Beamer	pumpkin
+Thor	Medic Beamer	pumpkin
+Thor	SL Beamer	pumpkin
+Trouble	RPG	dl4

@@ -23,28 +23,6 @@ namespace InfServer.Script.GameType_Multi
     {
         #region Steer Delegates
         /// <summary>
-        /// Steers the zombie along the defined path
-        /// </summary>
-        public Vector3 steerAlongPath(InfantryVehicle vehicle)
-        {	//Are we at the end of the path?
-            if (_pathTarget >= _path.Count)
-            {	//Invalidate the path
-                _path = null;
-                _tickLastPath = 0;
-                return Vector3.Zero;
-            }
-
-            //Find the nearest path point
-            Vector3 point = _path[_pathTarget];
-
-            //Are we close enough to go to the next?
-            if (_pathTarget < _path.Count && vehicle.Position.Distance(point) < 0.8f)
-                point = _path[_pathTarget++];
-
-            return vehicle.SteerForSeek(point);
-        }
-
-        /// <summary>
         /// Moves the medic on a persuit course towards the player, while keeping seperated from other medics
         /// </summary>
         public Vector3 steerForPersuePlayer(InfantryVehicle vehicle)

@@ -1,0 +1,23 @@
+# AutoDropConfig.txt - what ?autodrop (?ad) drops. Re-read when it changes: no restart needed.
+#
+# Autodrop automates the buy-extra-and-drop-it-for-the-team routine. It fires when you are summoned or
+# teleported FROM the dropship (once per life):
+#   defense = you land within 40 tiles of a flag your team holds
+#   offense = a Squad Leader summoned you anywhere else (a push)
+# Bundles are "item:quantity, item:quantity", listed TOP OF THE PILE FIRST. Item names as in the store.
+# Unknown items are skipped (the zone console says which).
+
+# enabled=off stops ALL auto-drops zone-wide (damage control). A mod can flip it in game:
+#   *autodrop off / *autodrop on / *autodrop (status). No restart either way.
+enabled=on
+
+# on  = everyone gets it unless they type ?ad.  off = only premades / named ?b builds, or after ?ad.
+default=on
+
+defense=sentry:1, tranq:10, ammo pistol:200, rocket:20, ammo mg:125, plasma mine:2, bullet mine:10
+
+# The SL's kit. Stims are left manual: they only matter at certain SL health.
+offense=haywire grenade:4, grapeshot mine:5, ap mine:5
+
+# Most piles one drop adds (the arena has an item cap).
+max_stacks=8

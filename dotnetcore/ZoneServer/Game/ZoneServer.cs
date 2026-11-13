@@ -45,6 +45,7 @@ namespace InfServer.Game
         private string _name;                   //The zones name
         private string _description;            //The zones description
         private bool _isAdvanced;               //Is the zone normal/advanced?
+        private bool _botCounting;              //Include live bots in the zone list population?
         private string _bindIP;                 //The IP the zone is binded to
         private int _bindPort;                  //The port the zone is binded to
         private Stopwatch _startupStopwatch;
@@ -98,6 +99,17 @@ namespace InfServer.Game
         }
 
         /// <summary>
+        /// server/BotCounting: include live bots in the zone list and arena list populations.
+        /// </summary>
+        public bool BotCounting
+        {
+            get
+            {
+                return _botCounting;
+            }
+        }
+
+        /// <summary>
         /// Gets whether this zone is advanced
         /// </summary>
         public bool IsAdvanced
@@ -142,7 +154,8 @@ namespace InfServer.Game
         }
 
         /// <summary>
-        /// Population shown on the zone directory / ping responder: non-stealth players + live bots.
+        /// Population shown on the zone directory / ping responder: non-stealth players,
+        /// plus live bots when server/BotCounting is true.
         /// </summary>
         public int getReportedPlayerCount()
         {
@@ -155,6 +168,9 @@ namespace InfServer.Game
                         players++;
                 }
             }
+
+            if (!_botCounting)
+                return players;
 
             int bots = 0;
             if (_arenas != null)
@@ -368,6 +384,7 @@ namespace InfServer.Game
             _name = _config["server/zoneName"].Value;
             _description = _config["server/zoneDescription"].Value;
             _isAdvanced = _config["server/zoneIsAdvanced"].boolValue;
+            _botCounting = _config.Exists("server/BotCounting") && _config["server/BotCounting"].boolValue;
             _bindIP = _config["server/bindIP"].Value;
             _bindPort = _config["server/bindPort"].intValue;
             _attemptDelay = _config["database/connectionDelay"].intValue;
@@ -415,11 +432,7 @@ namespace InfServer.Game
 
             // Create the ping/player count responder
             //////////////////////////////////////////////
-<<<<<<< HEAD
-            _pingResponder = new ClientPingResponder(_players, acceptsAllowedIp);
-=======
-            _pingResponder = new ClientPingResponder(this);
->>>>>>> dependabot/nuget/dotnetcore/DatabaseServerNATS/MessagePack-3.1.9
+            _pingResponder = new ClientPingResponder(this, acceptsAllowedIp);
 
             Log.write("Asset Checksum: " + _assets.checkSum());
 
@@ -925,18 +938,11 @@ namespace InfServer.Game
             /// <summary>
             /// Constructor with socket creation
             /// </summary>
-<<<<<<< HEAD
-            public ClientPingResponder(Dictionary<ushort, Player> players, Func<IPEndPoint, bool> acceptsClient)
-            {
-                _pingLogger = Log.createClient("PingResponder");
-                _players = players;
-                _acceptsClient = acceptsClient;
-=======
-            public ClientPingResponder(ZoneServer server)
+            public ClientPingResponder(ZoneServer server, Func<IPEndPoint, bool> acceptsClient)
             {
                 _pingLogger = Log.createClient("PingResponder");
                 _server = server;
->>>>>>> dependabot/nuget/dotnetcore/DatabaseServerNATS/MessagePack-3.1.9
+                _acceptsClient = acceptsClient;
                 _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
                 _clients = new Dictionary<EndPoint, Int32>();
                 _lock = new ReaderWriterLock();

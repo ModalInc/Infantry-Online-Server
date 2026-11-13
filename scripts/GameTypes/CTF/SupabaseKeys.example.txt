@@ -1,0 +1,5 @@
+# Copy to SupabaseKeys.txt beside this file on the zone server and fill in the keys.
+# SupabaseKeys.txt is git-ignored - never commit real keys.
+# (Or set the SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY environment variables instead.)
+anon=REPLACE_WITH_SUPABASE_PUBLISHABLE_KEY
+service=REPLACE_WITH_SUPABASE_SECRET_KEY

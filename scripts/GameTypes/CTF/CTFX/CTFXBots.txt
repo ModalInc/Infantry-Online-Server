@@ -1,0 +1,237 @@
+// CTF:X server-side bots - LOCAL config (never pushed: listed in Deploy-CTF.ps1 $NeverPush).
+// Missing file or enabled=0 = the bots are completely inert. Unknown keys are ignored. '//' starts a comment.
+enabled=1
+autostart=0              // spawn when the first human is in the arena; despawn after 60 s with no humans
+selfRouteShots=auto      // auto | on | off  (local engine erases bot shots unless an enemy human is in LOS)
+statsEverySec=30
+killCash=75
+killExp=5
+killPoints=100
+updateMs=200             // bot state routing: 200 = the engine's own 5 Hz (no extra packets); 100 / 50 = smoother for clients, more packets
+focusEnd=brown-top       // the base everyone vies for (Travis 10-13: top brown is always the busiest base): raids aim at it,
+focusShare=0.9          // this share of raids; a team holding it (3+ inside, not outnumbered) brings its flags there instead of home
+count=100                // autostart scales the team lines below to this many bots (Travis 10-13: 100 is ideal for the zone)
+teamcap=12              // no team line seats more than this (Travis 10-17: Titan was 24 against ~10 and farmed brown)
+mustHave=Cpt,Med,Eng     // every team of mustHaveMin+ bots carries these classes (a roamer / ADHD / plain infantry seat is switched)
+mustHaveMin=7
+utilities=1              // 1 = each bot wears an armour, a generator (on in fights) and an energy item (CTFXUtilities.cs); 0 = none (A/B)
+packs=1                  // movement packs on long trips (hoverboard / flight pack / drop pack, CTFXPacks.cs); 0 = never (10-15: check how the client draws them)
+clan=1                   // the elite clan forms from the best aces / veterans and takes top brown (CTFXClan.cs, Travis 10-15 night)
+milk=1                   // the risen clan milks the flag: a truce partner drops a clan flag in its base so the game never resets (CTFXMilk.cs)
+flagShare=0.72          // Travis 10-14 eve: 70-75 % of each team's free bots on flags (attack, intercept, escort) as the default
+flags=1                  // bots play the event flags: opening dash to the centre rooms, carry home, kill transfers (CTFXFlags.cs)
+chat=1                   // bots speak in team chat now and then (anchoring, inc, storming, turrets up), only to humans on their team
+listen=1                 // bots hear team chat: "sum" (a summoner bot pulls you in), attack calls (%24, "attacking") bring a few to you
+chatTeamGap=45           // seconds: one callout per team at most (replies to you are not held by it)
+chatBotGap=180           // seconds: one line per bot at most
+attackBongs=24           // chat sound numbers that mean attacking
+summonBongs=27           // sounds that mean a summon request ("Summon ..." macros)
+enemySummonBongs=        // sounds that mean "summon me to the enemy" (X / XXX in text works without one)
+homeSummonBongs=         // sounds that mean "summon me home" (S / SSS in text works without one)
+updateNearMs=100         // bots within nearPx of a human (player or spectator) route at this cadence (100 = 10 Hz); 200 = off
+farPx=1200               // a bot no player or spectator is within farPx of ...
+updateFarMs=400          // ... routes this slowly (2.5 Hz): nobody can see it (Travis 10-13: 100 bots made bots phase on his client)
+nearCap=6               // at most this many bots per human (the nearest within nearPx) get the fast cadence
+nearPx=800               // on a human's screen: the screen is ~640 x 480 px, plus a margin for what is about to come into view
+ammo=1                   // bots carry the zone builds' ammo and run dry like players (a dry bot backs off ~5 s and rebuys); 0 = unlimited
+ammoScale=1              // multiplies every starting stock (testing: 0.05 runs bots dry fast)
+knockScale=1             // multiplies every knockback push on bots (10-20: bots fly less than players; set it from the [CTFXKb] lines in ctfxbots.log)
+botAntiwarpBots=flag     // 10-21: an enemy BOT's anti-warp (TD) holds only a bot carrying a flag; on = every bot (old), off = none
+nameWrap={}              // 10-22: bots show as {Jett 45} - sorts under every player in the list; empty = plain (applies when the bots attach)
+rename=Bex 69>Skunky 69  // 10-21: a callsign a player asked for (generated>shown; repeat the line or comma-separate)
+makeRoom=on              // 10-22 (Galaxy / Travis): a human on a bot team sends one of its bots out (to a team short of players, else benched in the dropship); off = never
+viewScale=1              // 10-21: multiplies the bots' view box (420 x 320 px each way; 0.5-2.5); 1 = as before
+engageScale=1            // 10-21: multiplies the bots' engage radii (420-700 px by style) and travelling caps (0.5-2.5); 1 = as before
+botPlayers=1             // bots get player-list entries: a callsign in the player list and their team's uniform (client-side colours)
+botPlayerIds=low         // low = each bot's body and player-list row use one id below 5000, as a player's own body does (the OLD client
+                         //   only treats ids below 5000 as players: names, uniforms, radar, team warps); vehicle = the engine's 5001+ ids
+stun=1                   // anti-effect hits (stunner, tranq, EMP, haywire, disruptor ...) lock a bot's move / turn / fire; 0 = ignore
+
+squads=1                 // teleport grouping, blink storms and defender recalls (CTFXSquads.cs); 0 = off
+warpFx=0                 // 1 = a bot warp sends every client the warp item's item-used notice (everyone hears the warp sound; a
+                         //   player's own warp only reloads his own item, so 0 matches the game, Travis 10-12)
+
+// TEAM COMMANDER (CTFXCommand.cs, Travis 10-12): Titan and Collective keep a few anchors on their base's chokes, call defenders
+// only when the base is really attacked, and every other bot picks its own activity (skirmish, raid, wander, hunt) by its own
+// tastes. The last three knobs self-tune each stats window from CTFXMonitor's measures (CTFXTune.txt beside this file keeps them).
+command=1                // 0 = the styles' own goals (posts, patrols, raid routes) as before
+anchors=2                // bots holding each base's chokes when it is quiet (posts count)
+alarmAt=2                // enemies in the base that raise the alarm (one raider is the anchors' and turrets' job)
+defendRatio=1.5          // defenders wanted per enemy in the base (anchors count), each decides by its own compliance
+pauseScale=1.0           // how long bots stand at a goal (x)
+herdK=1.2                // herd aversion: how much a crowded activity or spot puts a bot off it
+tune=1                   // 0 = keep the knobs above as written
+
+// DROPSHIP (CTFXDropship.cs, Travis 10-12): every bot body starts beside a dropship MapEnter portal like a player's body, walks in,
+// and the portal lands it in a spawn area the head count opens (CTFXEvent.txt mapspawn= / tier=). 0 = bots spawn inside their bases.
+dropship=1
+dropshipHeads=all        // all = bots count as heads for the tiers (more spawn areas open); players = only in-game humans
+
+// team=<titan|collective|private>, <style>:<count>, ..., home=<zone>
+// styles: post guard assault roam sniper drain adhd stormer engineer
+//   assault = a squad, the first one leads it; stormer = the squad's anchor stormer (an Infiltrator or a SciOps). A group with both and
+//   a base end as home runs storm cycles: the squad gathers at its end's mouth, the stormer sneaks into the other end of the building
+//   and hides, the squad blinks onto it, then sweeps that end's flag room. The stormed end's patrol defenders teleport to the fight.
+//   engineer = builds its end's turret sets (the turret= lines below): the first engineer the first set, the second the second.
+// zones: a base end, a building's middle hall (brown-core ...), outside (the neutral landing areas A-H on the mountain sides),
+//   or the old zones brown center top bottom left pockets
+// ends: brown-top brown-bottom blue-left blue-right purple-left purple-right green-top green-bottom; home=pockets = caves
+//
+// ALL 8 STRONGHOLDS (Travis 10-12: "start populating all 8 bases ... handfuls of bots fighting out in the neutral spawns ... but most
+// should have a variety of objectives"; original CTF:X had 100-120 players with 2-3 bases held, bots can keep all 8 held or ready).
+// Every base team gets anchors on its chokes, an engineer with its turret sets, and the commander's own-choice activities (skirmish
+// in its hall, raids on its building's other end or another base, wander, hunt, a few brawling outside). Each team has a flavour:
+//   brown-top     Titan        the turret-room posts, the deepest defence (the elite stack to come)            11
+//   brown-bottom  Collective   the storm squad (blinks onto its stormer in brown-top)                          11
+//   blue-left     private      balanced: guards, a sniper, roamers                                              7
+//   blue-right    private      raiders: an assault four that likes pushing other bases                          7
+//   purple-left   private      bounty hunters: drain packs that roam and hunt                                   7
+//   purple-right  private      chaos: ADHD players all over the place                                           7
+//   green-top     private      a storm team (assault three + stormer) against green-bottom                      7
+//   green-bottom  private      turtles: guards, a sniper, roamers who rarely leave                              7
+//   the four halls             3 each, holding the middle of each building and pushing into its ends          12
+//   outside                    2 brawler packs of 3 in the landing areas                                        6
+// 82 bots. *ctfxbots on N scales every count to N bots in total.
+// ---- default roster: FLOCK TO BROWN (Travis 10-14). Top brown is the coral reef: an elite defending team that fortifies it at once
+// (its engineers out of the ship first), the main attacking team in brown-bottom, a crowd of small 3-bot teams living in the brown hall
+// that raid top brown and run flags, ONE secondary base per game (home=secondary: a random non-brown end, home=secondary-enemy: the
+// other end of that building) instead of all eight ends set up, plus the bounty hunters, the zap ambushers and the maser meme team.
+// Earlier rosters: bak/pre-overnightfix (all 8 ends), runs/*/CTFXBots.base.txt.
+// Travis 10-14 eve: the old zone had an order of magnitude more in brown, 4-5 teams constantly attacking very strong defenders,
+// whose Heavy Weapons with AC took the 30k bounties: Titan's posts are AC Heavies
+// 10-17 (Travis): "not huge pub teams ... more private teams, more stacked private teams, so the team sizes equalize". Titan and Collective
+// (the public teams a joining player lands on) are now 12 / 10 and the weight moved into stacked private teams of 10, two set-up buildings
+// (secondary and tertiary, in different buildings), each with its defenders, engineers, an assault squad and a stormer.
+team=titan, post:3, guard:3, engineer:2, sniper:1, roam:1, home=brown-top
+team=collective, guard:1, engineer:1, assault:5, stormer:1, sniper:1, roam:1, home=brown-bottom
+team=private, guard:2, engineer:2, assault:3, stormer:1, sniper:1, roam:1, home=secondary
+team=private, guard:1, engineer:1, assault:5, stormer:1, roam:2, home=secondary-enemy
+team=private, guard:2, engineer:2, assault:3, stormer:1, sniper:1, roam:1, home=tertiary
+team=private, guard:1, engineer:1, assault:5, stormer:1, roam:2, home=tertiary-enemy
+// stacked teams in the brown hall: attackers on top brown, flag runners
+team=private, roam:3, guard:1, sniper:1, home=brown-core
+team=private, roam:3, adhd:1, sniper:1, home=brown-core
+team=private, roam:3, guard:1, adhd:1, home=brown-core
+// solo bountiers (engineer trap / SciOps pick / Infiltrator pick / sniper in turn, each its own team)
+team=private, bountier:1, home=outside
+team=private, bountier:1, home=outside
+team=private, bountier:1, home=outside
+// the drop pack Jump Trooper sniper (Travis 10-15: one of the most effective solo 30k bountiers)
+team=private, droppack:1, home=outside
+// Zap Glove ambushers: a cloaked SciOps each, waiting on a straggler's path in the landing areas
+team=private, zapper:1, home=outside
+team=private, zapper:1, home=outside
+// the maser meme team: in the dropship until a siege of the focus base, then on the building's outside corner by the flag
+team=private, maser:3, home=outside
+// two hunt packs: five Medic drainers, the elite killer (first bountier) and a cloaked Infiltrator runner
+team=private, drain:5, bountier:2, home=outside      // 5 drainers, the killer (first bountier) and a cloaked Infiltrator runner
+outsideShare=0.02        // at most this share of the base teams' bots brawl in the landing areas at once (plus the 2 outside packs)
+brownWander=0.60        // share of the other teams wanders that go through the brown building (Travis 10-13: brown the biggest hotspot)
+brownTarget=0           // OFF (Travis 10-13: no forced quota; brown has to draw bots organically)
+
+// TURRET SETS (Travis 10-11): per turret room 2 MG, 1 rocket, 2 plasma, 1 sentry; sentries up front as blockers + teleport
+// disruption, MGs slightly forward, the rocket back, the plasmas deepest (by the flag in the flag room). Made by scratchpad
+// turrets/place.mts from the map (forward/back = walking distance from the base's hall) and checked against the zone's
+// computer limits (ctfpl.veh): sentries are capped at 2 per TEAM, so each room gets 1 (not the 2 of the X setup); and a team
+// may have at most 6 computers within 1500 px of a new MG/rocket/plasma, so each base's two sets stay 1500 px apart (the left
+// sets sit in the west part of their room). Built in this order; engineers check the same limits live, players' turrets
+// included. turret=<end>,<set>,<role mg|rocket|plasma|sentry>,<tile x>,<tile y>
+turret=brown-top,left,mg,695,1431
+turret=brown-top,left,mg,703,1419
+turret=brown-top,left,rocket,698,1418
+turret=brown-top,left,plasma,695,1417
+turret=brown-top,left,plasma,699,1414
+turret=brown-top,left,sentry,702,1431
+turret=brown-top,right,mg,803,1450
+turret=brown-top,right,mg,819,1439
+turret=brown-top,right,rocket,814,1450
+turret=brown-top,right,plasma,803,1457
+turret=brown-top,right,plasma,806,1457
+turret=brown-top,right,sentry,808,1437
+turret=brown-bottom,left,mg,696,1699
+turret=brown-bottom,left,mg,704,1708
+turret=brown-bottom,left,rocket,698,1705
+turret=brown-bottom,left,plasma,700,1719
+turret=brown-bottom,left,plasma,694,1707
+turret=brown-bottom,left,sentry,704,1702
+turret=brown-bottom,right,mg,811,1692
+turret=brown-bottom,right,mg,804,1681
+turret=brown-bottom,right,rocket,819,1693
+turret=brown-bottom,right,plasma,813,1696
+turret=brown-bottom,right,plasma,821,1690
+turret=brown-bottom,right,sentry,805,1694
+// the six other ends (10-12, scratchpad turrets/place_all.mts from ends.json turretRooms: same depth rules, the two sets of an end
+// 1550+ px apart, every build replayed through the limits)
+turret=blue-left,north,mg,358,1258
+turret=blue-left,north,mg,339,1256
+turret=blue-left,north,rocket,375,1263
+turret=blue-left,north,plasma,384,1256
+turret=blue-left,north,plasma,387,1259
+turret=blue-left,north,sentry,352,1260
+turret=blue-left,south,mg,371,1376
+turret=blue-left,south,mg,356,1367
+turret=blue-left,south,rocket,355,1373
+turret=blue-left,south,plasma,347,1381
+turret=blue-left,south,plasma,336,1381
+turret=blue-left,south,sentry,387,1375
+// blue-right (Travis 10-14): its most defensible part is dead centre of the block (the flag L-room + the east room between
+// the north and south rooms), not the top / bottom rooms; it rarely gets a 2nd set, so one centre set: sentry on the north door
+// into the east room, MGs in that room, the rocket at its back, the plasmas deepest by Flag2
+turret=blue-right,centre,mg,636,1310
+turret=blue-right,centre,mg,652,1344
+turret=blue-right,centre,rocket,657,1336
+turret=blue-right,centre,plasma,615,1345
+turret=blue-right,centre,plasma,619,1336
+turret=blue-right,centre,sentry,650,1302
+turret=purple-left,north,mg,369,1752
+turret=purple-left,north,mg,358,1756
+turret=purple-left,north,rocket,353,1752
+turret=purple-left,north,plasma,338,1757
+turret=purple-left,north,plasma,336,1748
+turret=purple-left,north,sentry,381,1755
+turret=purple-left,south,mg,384,1863
+turret=purple-left,south,mg,365,1870
+turret=purple-left,south,rocket,352,1865
+turret=purple-left,south,plasma,344,1873
+turret=purple-left,south,plasma,336,1873
+turret=purple-left,south,sentry,372,1863
+turret=purple-right,north,mg,639,1756
+turret=purple-right,north,mg,650,1759
+turret=purple-right,north,rocket,656,1760
+turret=purple-right,north,plasma,656,1753
+turret=purple-right,north,plasma,663,1748
+turret=purple-right,north,sentry,620,1757
+turret=purple-right,south,mg,632,1872
+turret=purple-right,south,mg,644,1858
+turret=purple-right,south,rocket,646,1871
+turret=purple-right,south,plasma,659,1870
+turret=purple-right,south,plasma,663,1873
+turret=purple-right,south,sentry,618,1857
+turret=green-top,west,mg,187,1433
+turret=green-top,west,mg,179,1416
+turret=green-top,west,rocket,183,1449
+turret=green-top,west,plasma,179,1453
+turret=green-top,west,plasma,179,1458
+turret=green-top,west,sentry,190,1417
+turret=green-top,east,mg,286,1433
+turret=green-top,east,mg,300,1437
+turret=green-top,east,rocket,293,1422
+turret=green-top,east,plasma,305,1424
+turret=green-top,east,plasma,310,1411
+turret=green-top,east,sentry,286,1450
+turret=green-bottom,west,mg,184,1722
+turret=green-bottom,west,mg,191,1689
+turret=green-bottom,west,rocket,188,1685
+turret=green-bottom,west,plasma,180,1681
+turret=green-bottom,west,plasma,179,1677
+turret=green-bottom,west,sentry,188,1707
+turret=green-bottom,east,mg,297,1694
+turret=green-bottom,east,mg,286,1708
+turret=green-bottom,east,rocket,302,1705
+turret=green-bottom,east,plasma,310,1714
+turret=green-bottom,east,plasma,310,1724
+turret=green-bottom,east,sentry,295,1683
+
+// brown base turret rooms (tiles) - validated / nudged to the nearest open tile at load, final tile is logged
+post=708,1424                     // left turret room (Travis 10-11: turrets span 694,1414 - 722,1435)
+post=810,1445                     // right turret room (Travis 10-11: turrets span 799,1433 - 822,1458)

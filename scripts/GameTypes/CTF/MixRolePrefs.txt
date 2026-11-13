@@ -1,0 +1,205 @@
+# CTF mix / OvD role preferences - ORDERED, most preferred FIRST.
+#
+# Format:   alias<TAB>build1,build2,build3
+# Also accepted (easier to hand-write):   alias = build1, build2, build3
+# Comments start with #. Blank lines are fine.
+#
+# The FIRST build is the player's MAIN; the rest are SECONDARIES in descending
+# willingness. Captains read down that list when filling a hole, so order matters.
+#
+# In game:  ?role list                  - every build, grouped by class
+#           ?role dinfcaw, oinf, dhvy   - set your own, main first
+#           ?role clear                 - remove yours
+#           ?lr                         - the whole pool's roles during a draft
+#
+# Valid names are the zone's OWN builds (same list ?build uses). Unknown names are
+# dropped on load rather than voiding the line. This file is re-read at the start of
+# every mix, so edits take effect without a zone restart.
+#
+# Builds currently loaded in this zone:
+#   Combat Engineer  eng, engstandard
+#   Field Medic      med, medbonds, medstandard
+#   Heavy Weapons    dhvy, dhvyaxi, hvymg, ohvy, ohvy2
+#   Infantry         dinf, dinfcara, dinfcaw, oinf, oinfcara
+#   Infiltrator      infil, infilstandard, sgtketch-all
+#   Jump Trooper     footjt, jt, jtstandard
+#   Squad Leader     slbonds, slbr, slherth
+#
+1	oinf
+1992	dinf,oinf
+Abacus	dinf
+Abbath	med,sl,eng
+abyss	dinf,oinf
+albert	oinf,dinf,infil
+An RR User	eng
+Angelus	oinf,infil,dinf
+anjro	oinf,dinf
+AriesVeil	ohvy,dhvy
+AttemPT	oinf,dinf
+Axel	med,dinf
+Axidus	dhvy,ohvy,oinf,dinf,med,eng
+B o o g	ohvy,dinf
+b2u.	med,sl,ohvy,dhvy
+baal	dinf,oinf
+barracuda	dinf,oinf
+Bes	dinf,oinf,dhvy,ohvy
+Beso	dhvy,ohvy
+Bio Dude	oinf,dinf
+Blastbark	oinf,dinf,med
+Bob Lazar	oinf,med
+bonds	slbonds,medbonds,med
+bt	eng,dinf,oinf
+Bucees	dinf,oinf
+Callous	dinf,oinf
+Captain Ax	sl
+Cara Tank	dinf,oinf,med
+Carie	dinf,oinf
+Chuck	infil,dinf,eng
+Chuckie	jt
+CT	med
+CTF Marine{INF}	oinf,dinf
+CTFPL[Ref] MIGHTS	dinf,sl,oinf
+CTFPL[Ref] Way	med,dinf,oinf
+ctf[ref] designer	eng,ohvy,dhvy,sl
+CTF[Ref] RRUser	oinf,infil,eng,sl
+CTF[Ref] Way	med,oinf
+dark	oinf
+DarkBoMer	eng,med,dinf,ohvy
+Debris	oinf,dinf,sl
+Decker	eng,sl
+DIESEL	med,dinf,jt,ohvy
+Dilatory	med,sl,dinf,eng
+Dinobot	ohvy,oinf
+Donkev	dinf,oinf,ohvy,dhvy
+dp	oinf
+e	oinf,dhvy,infil,dinf
+eric	dinf,oinf
+Evade	oinf,dinf
+fallenchompy	oinf,sl
+Farao	dinf
+Flair	dinf
+FlyMolo	sl
+fsociety	ohvy
+G	oinf,dinf
+Galaxy	oinf,jt,sl
+gamefreek321	dhvy,ohvy,jt
+Genocide	oinf,dhvy
+Ghost Bomber	oinf,infil,dinf,jt,ohvy
+goldstone	dinf
+Got Tsolvy?	med
+Greed	oinf,dinf
+guido	jt,oinf
+GunBoy	ohvy,dinf,eng,oinf
+hAcKy	dinf,oinf
+Half-Cut	dhvy,ohvy
+hchamber	oinf,infil
+hed	med,jt,oinf,ohvy
+Henry	dinf,oinf
+Heretic	oinf,ohvy,sl
+Herthbul	slherth
+hi	oinf,eng,ohvy
+i	oinf,ohvy
+IRAN	oinf,sl,ohvy,jt
+JACKIE	oinf,eng,infil,med
+Jaguar	dinf,oinf
+jay	oinf,jt
+Jeff Bezos	infil,oinf,dinf,sl
+Jim	oinf,sl
+JJ	oinf,dinf,sl
+juetnihilia	oinf,sl,ohvy
+JuVE	med,eng,ohvy
+kal	sl,oinf,dinf
+Ketchup	infil,dhvy,oinf,ohvy
+Keyser	oinf
+Krog	jt,dinf,oinf
+kylauf	oinf,dinf
+lammainazu	dinf,oinf
+lanc	oinf,dinf
+loafy	med
+LT	oinf,dinf,infil
+Lucifer	oinf,dinf,med
+Magic 8 ball	infil,oinf
+Marqui2156	oinf,dinf
+Mecca	oinf,jt
+Meep	oinf,med,jt,ohvy
+melantho	dinf,oinf,jt
+mercy	oinf,jt,dinf
+metal	slbr,oinfcara
+Might	dinf,oinf
+Mighty Mouse	dinf,jt,oinf
+MIKE	med,eng
+MikeDaPimp	eng,med,sl
+mixm	eng,med
+MUSHBERG	oinf,dinf
+MysticGohan~	ohvy,dhvy
+Nightowl	oinf,dinf
+Northeast	ohvy,oinf
+Novocaine	dinf
+NY-MikeJones	oinf,dinf
+Oct	ohvy,jt
+one	sl,oinf,jt
+OPEN THE DOOR	oinf,sl,infil
+p	ohvy
+Paperboy	dinf,oinf,dhvy
+Penguin	oinf
+PEOPLE'S REPUBLIC OF CHINA	oinf,dinf,med,ohvy
+Phlow	oinf,dinf,dhvy,ohvy
+posty	med,ohvy,sl
+r	oinf,ohvy
+radiance	dinf,sl,oinf
+Raikage	ohvy,oinf
+Reginald	oinf,eng,dinf
+Revenge	oinf,dinf,eng
+Rogue	dinf,infil,oinf,dhvy
+Roman Reigns	oinf,dinf,dinfcara
+ron	eng,dinf
+RRU	oinf,sl
+Ruler	oinf,dinf,eng
+Rupture	oinf,dinf
+S	ohvy,infil,oinf
+Sabotage	dhvy,ohvy
+Scarface	dinf,oinf,infil
+scheherazade	oinf,sl
+Scobrah	oinf,sl,dinf
+SgtKetchup	ohvy,infil,oinf,dhvy
+Shadeaux	dinf,oinf
+Sin	dinf,oinf,med,ohvy
+slim shady	jt,dinf,med,dhvy
+SoloCamo	ohvy,dhvy
+Soriddo	oinf,sl,dinf,med
+Sorrido	dinf
+Soup	dinf,med
+SPAIN	dinf,oinf
+spark	dhvy,ohvy
+ssj*cloud	oinf,dinf
+Steven Seagal	oinf,med,jt,sl
+Tactical	dhvy,ohvy
+tgc	oinf,dinf
+THE MOUNTAIN	oinf,dinf,jt
+The |<orean	eng,sl
+thegreatchompy	oinf,sl
+Thiz	eng,dinf,oinf,med
+thugs	dinf,oinf
+tony	eng,sl
+Tony Montana	med,eng
+tpblah	sl,med
+TrentonM	jt
+Trouble	ohvy,oinf,dhvy,med
+True	dhvy
+TTGFTW	infil,dinf
+Typ	med,infil
+TyraeL	jt,ohvy,dhvy
+UnorthodoX	eng,sl
+Verb	oinf,dinf,eng
+Vice	dinf,oinf
+ViN	dinf,oinf,jt
+vintage	dinf,oinf
+Waldo	med,infil,oinf
+Witness	jt,oinf,sl
+Worth	ohvy
+X5	eng,sl
+y	dinf,oinf,eng
+YAO MING	oinf,med,infil,ohvy
+yosh	oinf,dhvy,jt,ohvy
+Zmn	eng,oinf,med,infil
+Zmn Teams	ohvy,dinf,infil,med

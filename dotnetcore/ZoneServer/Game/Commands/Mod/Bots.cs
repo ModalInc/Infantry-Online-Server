@@ -131,6 +131,46 @@ namespace InfServer.Game.Commands.Mod
 		}
 
 		/// <summary>
+		/// Shows or changes the zone-wide bot behaviour layer (skill spread, dodge, wall probe).
+		/// </summary>
+		static public void botSkill(Player player, Player recipient, string payload, int bong)
+		{
+			if (!BotFeatures.Enabled)
+			{
+				player.sendMessage(0, "Module not in use: ctftactics. Enable it with <ctftactics value=\"true\" /> in the server.xml modules section.");
+				return;
+			}
+
+			if (!String.IsNullOrWhiteSpace(payload))
+			{
+				string[] args = payload.Trim().Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+				string key = args[0].ToLowerInvariant();
+				bool on = args.Length < 2 || args[1] == "1" || args[1].Equals("on", StringComparison.OrdinalIgnoreCase);
+				if (key == "dodge")
+					BotFeatures.Dodge = on;
+				else if (key == "wallprobe")
+					BotFeatures.WallProbe = on;
+				else if (!BotFeatures.SetSkillMode(key))
+				{
+					player.sendMessage(0, "Usage: *botskill [mix|rookie|regular|veteran|ace|elite|weak|off]  or  *botskill dodge|wallprobe on|off");
+					return;
+				}
+			}
+
+			int[] tiers = new int[4];
+			foreach (Bot b in player._arena.ActiveBots)
+			{
+				BotSkillProfile s = b?.Skill;
+				if (s == null) continue;
+				tiers[s.Tier == "rookie" ? 0 : s.Tier == "regular" ? 1 : s.Tier == "veteran" ? 2 : 3]++;
+			}
+			player.sendMessage(0, String.Format(
+				"Bots: skill={0} (rookie {1} / regular {2} / veteran {3} / ace {4}) dodge={5} wallprobe={6}",
+				BotFeatures.SkillMode, tiers[0], tiers[1], tiers[2], tiers[3],
+				BotFeatures.Dodge ? "on" : "off", BotFeatures.WallProbe ? "on" : "off"));
+		}
+
+		/// <summary>
 		/// Registers all handlers
 		/// </summary>
 		[Commands.RegistryFunc(HandlerType.ModCommand)]
@@ -140,6 +180,11 @@ namespace InfServer.Game.Commands.Mod
 				"Spawns a bot using a specified vehicle type and script.",
 				"*spawnbot [scriptType], [vehicleID] OR *spawnbot [scriptType], [vehicleID], [location](xx,yy OR A4)", 
 				InfServer.Data.PlayerPermission.Level2, true);
+
+			yield return new HandlerDescriptor(botSkill, "botskill",
+				"Shows or sets the ctftactics module's bot skill spread and dodge / wall-probe behaviour.",
+				"*botskill [mix|rookie|regular|veteran|ace|elite|weak|off]  or  *botskill dodge|wallprobe on|off",
+				InfServer.Data.PlayerPermission.Level2, false);
 		}
     }
 }

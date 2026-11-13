@@ -1,0 +1,26 @@
+# alias<TAB>class<TAB>item:qty, ...[<TAB>carry] - remembered ?ap lists, written by the zone. Do not push from local.
+Angelus	Infiltrator	Repulsor Coil:3, Stim Pack:1	carry
+Axidus	Heavy Weapons	Ammo MG:30, Ammo Pistol:50, Repulsor Coil:3, Stim Pack:1	carry
+bonds	Field Medic	tranq:10
+bonds	Squad Leader	ap mine:1, grapeshot mine:3
+ctf[ref] designer	Combat Engineer	sentry:1
+CTF[Ref] Way	Field Medic	tranq:10, stim pack:1
+Galaxy	Heavy Weapons	rocket:12, ammo mg:70
+Jaguar	Heavy Weapons	rocket:40, ammo mg:60
+posty	Field Medic	Repulsor Coil:1, Stim Pack:1, Pandora's Element:35, Ammo Pistol:50, Tsolvy Crystals:113	carry
+ron	Infantry	Ammo Pistol:350, Ammo Rifle:50, Repulsor Coil:3, Stim Pack:1	carry
+ron	Squad Leader	grapeshot mine:5
+Soriddo	Field Medic	tranq:10
+Soriddo	Heavy Weapons	rocket:40, ammo mg:30
+Soriddo	Jump Trooper	LIGHT HE:50
+spark	Heavy Weapons	rocket:30, ammo mg:50
+Tactical	Heavy Weapons	ammo mg:70, rocket:30
+Vintage	Infantry	ammo rifle:100, plasma mine:1
+vin	Infantry	ammo rifle:100, plasma mine:1
+Waldo	Squad Leader	Fuel Canister:30, Ammo Pistol:50, AP Mine:2, Grapeshot Mine:5, ammo mg:2
+Waylander	Field Medic	tranq:10, stim pack:1
+X5	Combat Engineer	Sentry:1, Stim Pack:1, Ammo Rifle:75, Repulsor Coil:3, Haywire Grenade:4, Plasma Mine:1, Grapeshot Mine:5	carry
+X5	Field Medic	Repulsor Coil:3, Stim Pack:1, Tranq:10, Ammo Pistol:100	carry
+X5	Heavy Weapons	Repulsor Coil:1, Stim Pack:1, Ammo MG:136, Rocket:18, AP Mine:2	carry
+X5	Jump Trooper	Repulsor Coil:3, Stim Pack:1, Ammo Rifle:100, Light HE:50, Plasma Mine:1	carry
+X5	Squad Leader	Repulsor Coil:3, Stim Pack:1, Haywire Grenade:4, Ammo Rifle:65, AP Mine:5, Grapeshot Mine:4	carry

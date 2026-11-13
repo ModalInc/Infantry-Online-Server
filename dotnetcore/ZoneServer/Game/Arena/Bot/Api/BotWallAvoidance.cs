@@ -36,6 +36,36 @@ namespace InfServer.Bots
             }
         }
 
+        /// <summary>
+        /// Free run in raw px from (x, y) along Infantry yaw (0 = north, 1 unit = 1.5°), sampled one tile
+        /// apart up to <paramref name="dist"/>: the distance of the last open sample before a wall
+        /// (<paramref name="dist"/> when nothing is in the way). Map y is squished 7/10.
+        /// </summary>
+        public static int ProbeOpen(Bot bot, int x, int y, double yaw, int dist)
+        {
+            double r = yaw * 1.5 * Math.PI / 180.0;
+            double ux = Math.Sin(r);
+            double uy = -0.7 * Math.Cos(r);
+            double n = Math.Sqrt(ux * ux + uy * uy);
+            if (n < 1e-6)
+                return dist;
+            ux /= n;
+            uy /= n;
+            for (int s = TileSizeRaw; s <= dist; s += TileSizeRaw)
+            {
+                if (IsImpassable(bot, (short)(x + (int)Math.Round(ux * s)), (short)(y + (int)Math.Round(uy * s))))
+                    return s - TileSizeRaw;
+            }
+            return dist;
+        }
+
+        /// <summary>Wrap a yaw into [0, 240).</summary>
+        public static double WrapYaw(double yaw)
+        {
+            yaw %= 240.0;
+            return yaw < 0 ? yaw + 240.0 : yaw;
+        }
+
         public static bool ProbeAheadClear(Bot bot, int lookAheadTiles = DefaultLookAheadTiles)
         {
             if (bot == null)

@@ -34,8 +34,6 @@ namespace InfServer.Script.GameType_Multi
         protected bool bOverriddenPoll;         //Do we have custom actions for poll?
         public Script_Multi _script;
 
-        protected List<Vector3> _path;			//The path to our destination
-        protected int _pathTarget;				//The next target node of the path
         protected int _tickLastPath;			//The time at which we last made a path to the player
 
         private Vehicle _target;
@@ -70,6 +68,7 @@ namespace InfServer.Script.GameType_Multi
             Random rnd = new Random();
             _seperation = (float)rnd.NextDouble();
             steering = _movement as SteeringController;
+            MovementMode = BotMovementMode.Api;
             _rand = new Random();
             if (type.InventoryItems[0] != 0)
                 _weapon.equip(AssetManager.Manager.getItemByID(type.InventoryItems[0]));
@@ -101,9 +100,12 @@ namespace InfServer.Script.GameType_Multi
         {   //Dead? Do nothing
             if (IsDead)
             {
-                steering.steerDelegate = null;
+                HoldPosition();
                 return base.poll();
             }
+
+            // Steering is per-poll: anything not set again this poll stops.
+            HoldPosition();
             int now = Environment.TickCount;
 
             //Radar Dot
@@ -149,10 +151,10 @@ namespace InfServer.Script.GameType_Multi
 
                 //Get to landing zone
                 if (Helpers.distanceTo(target._state, _state) > 45)
-                    steering.steerDelegate = steerForSeekTarget;
+                    ApplySteer(steerForSeekTarget);
                 else
                 {
-                    steering.freezeMovement(5000);
+                    freezeMovement(5000);
                     onSite = true;
                 }
 
@@ -179,25 +181,23 @@ namespace InfServer.Script.GameType_Multi
                 //Too far?
                 if (Helpers.distanceTo(this, target) > 420)
                 {
-                    steering.bSkipRotate = false;
-                    steering.steerDelegate = steerForSeekTarget;
+                    ApplySteer(steerForSeekTarget);
                 }
                 //Too short?
                 else if (Helpers.distanceTo(this, target) < 370)
                 {
                     bBackPedal = true;
-                    steering.bSkipRotate = false;
-                    steering.steerDelegate = delegate (InfantryVehicle vehicle)
+                    ApplySteer(delegate (InfantryVehicle vehicle)
                     {
                         if (target != null)
                             return vehicle.SteerForFlee(target._state.position());
                         else
                             return Vector3.Zero;
-                    };
+                    });
                 }
                 else
                 {
-                    steering.steerDelegate = null;
+                    HoldPosition();
                     //Can we shoot?
                     if (_weapon.ableToFire() && !bBackPedal)
                     {
@@ -213,11 +213,10 @@ namespace InfServer.Script.GameType_Multi
                             _shotsFired.Add(proj);
                         }
 
-                        steering.bSkipAim = true;
-                        steering.angle = aimResult;
+                        SetAim(aimResult);
                     }
                     else
-                        steering.bSkipAim = false;
+                        SetAim(0, false);
                 }
                 followBot(now);
             }
@@ -285,28 +284,6 @@ namespace InfServer.Script.GameType_Multi
         }
 
         /// <summary>
-        /// Steers the zombie along the defined path
-        /// </summary>
-        public Vector3 steerAlongPath(InfantryVehicle vehicle)
-        {   //Are we at the end of the path?
-            if (_pathTarget >= _path.Count)
-            {   //Invalidate the path
-                _path = null;
-                _tickLastPath = 0;
-                return Vector3.Zero;
-            }
-
-            //Find the nearest path point
-            Vector3 point = _path[_pathTarget];
-
-            //Are we close enough to go to the next?
-            if (_pathTarget < _path.Count && vehicle.Position.Distance(point) < 0.8f)
-                point = _path[_pathTarget++];
-
-            return vehicle.SteerForSeek(point);
-        }
-
-        /// <summary>
         /// Keeps the combat bot around the engineer
         /// </summary>
         public Vector3 steerForFollowOwner(InfantryVehicle vehicle)
@@ -321,34 +298,18 @@ namespace InfServer.Script.GameType_Multi
 
         public void followPlayer(int now)
         {
-            //Does our path need to be updated?
-            if (now - _tickLastPath > c_pathUpdateInterval)
-            {   //Update it!
-                _tickLastPath = int.MaxValue;
+            navigateTo(_creator._state, steerForFollowOwner, PathPriority.Idle);
+        }
 
-                _arena._pathfinder.queueRequest(
-                    (short)(_state.positionX / 16), (short)(_state.positionY / 16),
-                    (short)(_creator._state.positionX / 16), (short)(_creator._state.positionY / 16),
-                    delegate (List<Vector3> path, int pathLength)
-                    {
-                        if (path != null)
-                        {   //Is the path too long?
-                          
-                                _path = path;
-                                _pathTarget = 1;
-                        }
-
-                        _tickLastPath = now;
-                    }
-                );
-            }
-
-            //Navigate to him
-            if (_path == null)
-                //If we can't find out way to him, just mindlessly walk in his direction for now
-                steering.steerDelegate = steerForFollowOwner;
-            else
-                steering.steerDelegate = steerForFollowOwner;
+        /// <summary>Path toward <paramref name="dest"/>; walks <paramref name="fallback"/> until the route arrives.</summary>
+        void navigateTo(Helpers.ObjectState dest, Func<InfantryVehicle, Vector3> fallback, PathPriority priority)
+        {
+            ApplyNavigationApproach(dest, fallback, new BotNavigateOptions
+            {
+                RequeueMinMs = c_pathUpdateInterval,
+                PathStartIndex = 1,
+                Priority = priority,
+            });
         }
 
         public void followBot(int now)
@@ -358,28 +319,18 @@ namespace InfServer.Script.GameType_Multi
             {   //Update it!
                 _tickLastPath = int.MaxValue;
 
-                _arena._pathfinder.queueRequest(
+                _arena.QueueBotPathRequest(this,
                     (short)(_state.positionX / 16), (short)(_state.positionY / 16),
                     (short)(target._state.positionX / 16), (short)(target._state.positionY / 16),
                     delegate (List<Vector3> path, int pathLength)
                     {
-                        if (path != null)
-                        {   //Is the path too long?
-                            if (pathLength > c_MaxPath)
-                            {   //Destroy ourself and let another zombie take our place
-                                _path = null;
-                                destroy(true);
-                            }
-                            else
-                            {
-                                _path = path;
-                                _pathTarget = 1;
-                            }
-                        }
+                        //Is the path too long? Destroy ourself and let another take our place
+                        if (path != null && pathLength > c_MaxPath)
+                            destroy(true);
 
                         _tickLastPath = now;
-                    }
-                );
+                    },
+                    PathPriority.Combat);
             }
         }
     }

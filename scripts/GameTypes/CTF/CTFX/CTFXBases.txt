@@ -1,0 +1,44 @@
+// CTF:X base shapes for the bots (CTFXBase.cs), Travis 10-16 morning: "the chokes used to be heavily contested and it used to be a
+// longer war of attrition of gaining ground, and most of the fighting did NOT occur in those hallways".
+// A brown end is a row of rooms with one way in: three lanes out of the hall reach the front corridor, the entrance (C1) opens
+// into the left turret room, then one door at a time to the flag room (C4 = the last stand). All tiles. Geometry checked against
+// the map (scratchpad ctfx/night/gaps.mts, walkcheck.mts); attach corners picked by attach.mts (a corner, solid cover, out of
+// sight of every door and of the push path).
+//   base=<end>                         starts a base
+//   row=x0,y0,x1,y1                    the room row (inside = "in the base")
+//   lane=<name>,hx,hy,mx,my            a lane: its hall end, its mouth in the front corridor
+//   choke=<name>,x,y,ax,ay             the doors in the order an attack takes them: the door tile, the tile on the attackers' side
+//   side=<name>,x,y,ax,ay              a side door defenders also hold (not on the way to the flag)
+//   attach=x,y                         a base-runner attach corner
+//   flag=x,y                           where the flags go (as CTFXEvent.txt flaghome)
+
+base=brown-bottom
+row=687,1673,828,1726
+lane=west,718,1641,718,1668
+lane=centre,757,1641,757,1668
+lane=east,795,1641,795,1668
+choke=C1,718,1674,718,1667
+choke=C2,726,1710,716,1704
+choke=C3,774,1710,764,1713
+choke=C4,798,1714,788,1714
+side=C3b,774,1688,784,1694
+attach=771,1676
+attach=770,1723
+attach=795,1723
+attach=777,1676
+flag=821,1676
+
+base=brown-top
+row=687,1407,828,1460
+lane=west,718,1497,718,1466
+lane=centre,757,1497,757,1466
+lane=east,795,1497,795,1466
+choke=C1,718,1460,718,1467
+choke=C2,726,1420,718,1426
+choke=C3,774,1451,764,1451
+choke=C4,798,1417,788,1420
+attach=771,1410
+attach=728,1457
+attach=776,1410
+attach=795,1428
+flag=821,1457

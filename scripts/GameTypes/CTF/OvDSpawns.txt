@@ -1,0 +1,49 @@
+# OvD attacker starting positions, per base.
+#
+# Format:   BASE = tileX,tileY
+# Comments start with #. A base left blank is simply "not configured yet".
+#
+# WHAT THIS IS FOR
+# At the start of an OvD match the script places both sides:
+#   DEFENCE  - the Combat Engineer and Field Medic are dropped onto the base's resource pile
+#              (the same coordinate SetupBase spawns the 150 Titanium Oxide stacks on). Those
+#              coords come from the `bases` table in CTF.cs, so nothing is needed here for them.
+#   OFFENCE  - everyone is warped to that base's ENTRY POINT, which is what this file supplies.
+#              e.g. A7 is entered via the A3 elevator, so A7's attacker start is the A3 landing.
+#
+# A base with no entry configured simply skips the offence warp and says so in the arena, rather
+# than dumping the attackers somewhere wrong.
+#
+# This file is re-read at the START OF EVERY OvD MATCH, so you can fill these in, run a match,
+# adjust, and run again without restarting the zone.
+#
+# Coordinates are TILE coordinates (the same units *setup and the bases table use), not pixels.
+# To find one in game: stand where the attackers should start and read your position.
+#
+# ---------------------------------------------------------------------------------------------
+# Base pile coordinates, for reference (where the defence support gets placed):
+#
+#   A7   pile=(19,463)    A5   pile=(57,369)    B6   pile=(153,445)
+#   D7   pile=(277,495)   B8   pile=(147,596)   A8   pile=(22,574)
+#   F8   pile=(450,610)   A10  pile=(100,733)   F6   pile=(440,456)
+#   F5   pile=(422,370)   H4   pile=(600,280)
+#
+# ---------------------------------------------------------------------------------------------
+# ATTACKER START POSITIONS - fill these in.
+#
+# Titan-side bases (Titan defends these):
+D7 = 319,158
+F6 = 413,107
+F5 = 385,258
+
+# Collective-side bases (Collective defends these):
+A7 = 20,211
+A5 = 42,285
+B6 = 153,349     # shares B8's portal - deliberately the same entry point
+B8 = 153,349
+# H4 = REMOVED - base is walled off and no longer usable (excluded in CTFMixes.cs)
+
+# EXPERIMENTAL bases - not easily reachable on the main map, so they are EXCLUDED from the OvD
+# base picker (EXPERIMENTAL_BASES in CTFMixes.cs). A mod can still force one with *setup <base>.
+# No attacker start is needed unless they are ever brought into rotation.
+# F8, A8, A10

@@ -50,8 +50,10 @@ namespace InfServer.Protocol
 				Write((byte)TypeID);
 
 				Write(arena._name, 32);
-                // Players + bots for the list pop (join caps still use TotalPlayerCount alone).
-                int listed = arena.TotalPlayerCount + arena.BotCount;
+                // Bots only count toward the list pop when server/BotCounting is on (join caps use TotalPlayerCount alone).
+                int listed = arena.TotalPlayerCount;
+                if (requestee._server != null && requestee._server.BotCounting)
+                    listed += arena.BotCount;
                 if (requestee._arena == arena)
                     Write((short)(listed * -1));
                 else

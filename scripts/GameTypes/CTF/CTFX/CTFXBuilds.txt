@@ -1,0 +1,24 @@
+// CTF:X bot shopping: the zone builds (copied from CTF.cs buildInputs). name|class|?buy string
+
+ohvy|Heavy Weapons|?buy kev,pf,ssc,RPG,AC,LMG,ammo mg:40,rocket:20,ammo rifle:40,Basic
+ohvy2|Heavy Weapons|?buy kev,pf,CellH,rpg,smg1,ac,ammo mg:#50,ammo pistol:#70,rocket:#20,frag grenade:#2,emp mine:#3,basic
+dhvy|Heavy Weapons|?buy kev,pf,ssc,MML,AC,ammo mg:125,rocket:26,bullet mine:#5,plasma mine:#1,ap mine:#1,Basic
+hvyMG|Heavy Weapons|?buy kev,pf,ac,@mg:250,bullet mine:20,CellM,mg,basic,nades
+oinf|Infantry|?buy p6,pf,ssc,ar,ar3,sg,Ammo Rifle:#60,Ammo Shotgun:#60,rgs1:#4,rgs3:#4,nades:4,basic,bullet mine:#5
+dinf|Infantry|?buy cmp6,pf,ssc,es,ar,sg2,rg:4,nades,basic,plasma mine:2,bullet mine:#10,ammo rifle:#140,ammo shotgun:#155
+dinfcaw|Infantry|?buy cmp6,pf,ssc,caw,ar,es,basic,nades,rg:4,ammo pistol:#300,plasma mine:2,bullet mine:#10,ammo rifle:#100
+dinfcara|Infantry|?buy cara,pf,ssc,ar, sg2, bullet mine:15,@ri:50, @sh:80, rgs1:4, es,pM,maklov rg 2 holder, basic, nades
+oinfcara|Infantry|?buy cara,pf,ssc,ar,sg2,nades,basic,rg:4,Ammo Rifle:#120,Ammo Shotgun:#120,Bullet Mine:#10
+slBR|Squad Leader|?buy P6,PF,SSC,EB,TD,BR,CR,nades,basic,Ammo Pistol:#50,Ammo Rifle:#50,Ammo MG:#5,grapeshot mine:5,ap mine:#3
+slbonds|Squad Leader|?buy cmp6,emp,ssc,sl beamer,td,kuchler cr 102,unittech br2000,ammo rifle:#35,ammo pistol:#40,basic,nades,emp mine:#4,grapeshot mine:#1,ap mine:#4,ammo mg:#4
+medbonds|Field Medic|?buy cmp4,emp,medic beamer,ssc,td,teleport summoner,needler,medikit,deluxe medikit,smg1,es,stunner,ammo pistol:#120,basic,frag grenade:4,tranq:10
+med|Field Medic|?buy cmp4,emp,medic beamer,ssc,td,teleport summoner,needler,medikit,deluxe medikit,smg1,es,stunner,ammo pistol:#120,basic,frag grenade:4,tranq:10
+medstandard|Field Medic|?buy cmp4,emp,medic beamer,ssc,td,teleport summoner,needler,medikit,deluxe medikit,smg1,es,stunner,ammo pistol:#120,basic,frag grenade:4,tranq:10
+eng|Combat Engineer|?buy engineer repair kit,hb,incinerator,kevlite combat armor,pf,ssc,reprogramming kit,eb,basic,nades,autogun mg (new),autogun plasma (new),autogun rocket (new),bullet mine:#5
+engstandard|Combat Engineer|?buy basic,nades,fr,inc,eb,kev,ssc,pf,hoverboard,tbox,nades,basic,grapeshot mine:5,repair,ammo pistol:500,fuel canister:#50,ammo shotgun:#100
+jt|Jump Trooper|?buy drop,pf,CellH,ar2,ar,ar3,gl,dp,rgs1,rgs2,rgs3,nades,aM,pM,Ammo Rifle:#200,Light HE:#50,Ammo MG:#1,basic
+jtstandard|Jump Trooper|?buy drop,pf,CellH,ar2,ar,ar3,gl,dp,rgs1,rgs2,rgs3,nades,aM,pM,Ammo Rifle:#200,Light HE:#50,Ammo MG:#1,basic
+footjt|Jump Trooper|?buy drop,pf,CellM,ar,gl,rgs1,nades,Ammo Rifle:#50,Light HE:#50,basic
+infil|Infiltrator|?buy pr,dis,blink,eb,ssc,cloak,basic
+infilstandard|Infiltrator|?buy pr,dis,blink,eb,ssc,cloak,basic
+slherth|Squad Leader|?buy p6,emp,CellM,eb,cr,td,inc,ammo pistol:100,gM:5,aM:2,ammo mg:3,fuel canister:40,basic,nades

@@ -1,0 +1,30 @@
+// ArenaTips.txt - one line goes out to the arena per hour (4+ players in game, never during a draft).
+// Edit this file ON THE SERVER any time; it is re-read when it changes. No restart needed.
+// One tip per line. First character is the colour code (& green, * white, ! red, ~ grey).
+// Put "|" inside a line to send it as two lines. Lines starting with // are ignored.
+// Refs: *tips sends the next one now, *tips list shows them all, *tips reload forces a re-read.
+
+&Running an OvD by hand? *ovd base D7 sets it up: flag, drops, Tox on the pile, Tso straight to your medic, defence warped in.|*Then *ovd go stages offence and starts the clock. Your teams, your draft - it just does the typing.
+&Games run through *ovd or *mix show up on freeinf.org as OvDs and Mixes, with offense/defense and who captained. Pub games do not.
+&?role dinf, ohvy, med tells captains what you play, main first. ?role list shows every option, ?lr shows the pool's roles.
+&?classtime shows how long you have played each class this game. That spread is exactly what your stats on freeinf.org record now.
+&*ovd starts a full 5v5 draft: ?p to play, ?c to run for captain, ?np to sit out. The defending captain picks the base with ?base D7.
+&F11 -> "Classes - Premades" gives you a class AND its full kit in one buy, restocked every respawn. Buy a normal class to go back to manual.
+&Refs: *mix fill puts everyone in the arena into the pool at once - no typing names. *mix go skips a phase, *mix off cancels.
+&Base setup now hands the Tsolvy Crystals straight to the medic. No medic yet? It waits and prizes whoever switches - nothing on the floor for the other side to steal.
+
+// --- ? commands, one idea per tip (2026-10-07). Full list: the help menu (axicmdlst.txt). ---
+&?swap <class> changes class: inf hvy jt sl med eng infil. Dead? It switches you when you respawn.
+&?b list shows the ready-made builds for your class. ?b <name> buys one, ?b <name> info explains it.
+&?bw <build or items> wipes your inventory first, then buys. One command, a clean loadout.
+&?short prints your current inventory as a ?bw line. Paste it in a macro to rebuy exactly this kit.
+&?ab (autobuy) rebuys your ?b / ?bw build every time you die or recall to the dropship.
+&?ap (autopickup) tops you up from ammo piles you walk over, up to your build's amounts.
+&?ao (autooccupy) puts you in your ride on respawn: hoverboard (eng/med), drop pack (jt), flight pack (inf/sl).
+&?auto switches on autobuy, autodrop and autopickup at once (and autooccupy for jt / eng).
+&?bwd <build> buys your build plus spare ammo, then ?d drops the spare for your team.
+&?stim and ?energizer use those items. Put them in a macro and free up two keys.
+&?as (autosummon) asks for a summon to your team's X every time you respawn.
+&?stats shows everyone's accuracy. ?stats <alias> shows one player.
+&?itemusage shows what players still had when they died. Carrying too much ammo? It'll tell you.
+&?duel takes you to the dueling arena. ?p puts you in spec as ready for the next mix / OvD round.

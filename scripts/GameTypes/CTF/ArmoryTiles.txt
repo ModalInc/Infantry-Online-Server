@@ -1,0 +1,42 @@
+// ArmoryTiles.txt - stand on a tile, get the thing. Hot-reloaded; no restart needed.
+//   x1,y1,x2,y2 = build <name>     bought now + re-bought every respawn (autobuy on)
+//   x1,y1,x2,y2 = class <alias>    inf hvy med eng sl jt infil
+//   x1,y1,x2,y2 = base <name>      during an OvD base pick, the defending captain's ?base
+// Tile coordinates, inclusive. A player must stand on the cell ~2s; it fires once per visit.
+//
+// FIX IN-GAME: stand where the cell should be and type  *armory set build dinfcaw  (2x2 from your
+// tile; add "4 2" for 4 wide x 2 tall). *armory alone tells you your tile. *armory list / clear / reload.
+//
+// These first cells are GUESSES read off the floor labels in ctfdls4.lvl around 584,526 - the pad is
+// x574-595, y518-534; the label text sits just west of it and to the south. Correct them in-game.
+
+// ---- west labels: the cell is the 4 tiles just inside the pad, on the label's row and the row below
+574,519,577,520 = build dinfcaw        // label: CAW
+574,521,577,522 = build dinf           // label: SG
+574,523,577,524 = build oinf           // label: DOUBLE RG   (rgs1 + rgs3)
+574,525,577,526 = build ohvy           // label: LMG RPG AC
+574,527,577,528 = build ohvy2          // label: MG AC       (smg + ac)
+574,529,577,530 = build dhvy           // label: MML AC
+// 574,531,577,532 = build ???          // label: DEFAULT     - which build did you mean here?
+574,533,577,534 = build slbonds        // label: DOUBLE BR
+
+// ---- inside the pad, next to CAW / SG: the jump trooper pair
+578,519,581,520 = build jtstandard     // label: PACK
+578,521,581,522 = build footjt         // label: FOOT
+
+// ---- south class row (labels ME EG IF HY JT at y543): the cell is the 2 tiles above each label
+575,541,576,542 = class med            // ME
+579,541,580,542 = class eng            // EG
+583,541,584,542 = class inf            // IF
+587,541,588,542 = class hvy            // HY
+591,541,592,542 = class jt             // JT
+
+// ---- north CHOOSE BASE: the cell is the label itself plus the row below
+574,506,575,507 = base A5
+593,506,594,507 = base F5
+575,509,576,510 = base B8
+593,509,594,510 = base F6
+575,512,576,513 = base A7
+593,512,594,513 = base D7
+
+// Not mapped yet: "DEFAULT BUILD" (580-592,535), "CUSTOMIZE BUILD" (596-604,525), "DEFENSE" (582-588,539).

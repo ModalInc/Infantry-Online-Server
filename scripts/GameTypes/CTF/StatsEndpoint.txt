@@ -1,0 +1,2 @@
+# TP Pub: end-of-game stats go nowhere (this economy must not move the real TP ELO / player_stats). Delete this file to record games on the site.
+http://127.0.0.1:9

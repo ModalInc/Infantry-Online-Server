@@ -40,6 +40,9 @@ namespace InfServer.Bots
 		private int _tickReloadDone;					//Reload complete tick (0 = not reloading)
 		private int _ammoRemaining;						//Ammo remaining in clip
 
+		/// <summary>Bot using this gun; applies its skill profile (reaction, settle, aim error). Null = exact aim.</summary>
+		public Bot Owner { get; set; }
+
 		//Properties
 		public ItemInfo.Projectile Projectile
 		{
@@ -292,6 +295,7 @@ namespace InfServer.Bots
 		{
 			int now = Environment.TickCount;
 			_tickNextFireAllowed = now + _fireDelay;
+			Owner?.OnHumanShotFired();
 
 			if (_ammoCapacity != 0 && --_ammoRemaining <= 0)
 			{
@@ -314,6 +318,10 @@ namespace InfServer.Bots
 		/// </summary>
 		public bool isAimed(int aimAngle)
 		{
+			// Reaction + settle after a new target: keep turning onto it, but no shot yet.
+			if (Owner != null && !Owner.HumanReadyToFire())
+				return false;
+
 			int angleDiffHi = aimAngle - _state.yaw;
 			int angleDiffLo = (angleDiffHi < 0) ? 240 - Math.Abs(angleDiffHi) : -(240 - Math.Abs(angleDiffHi));
 
@@ -332,7 +340,8 @@ namespace InfServer.Bots
 		/// </summary>
 		public int getAimAngle(Helpers.ObjectState target)
 		{
-			return Helpers.computeLeadFireAngle(_state, target, _primaryProjectile.muzzleVelocity / 1000);
+			int lead = Helpers.computeLeadFireAngle(_state, target, _primaryProjectile.muzzleVelocity / 1000);
+			return Owner != null ? Owner.ApplyHumanAim(target, lead) : lead;
 		}
 
 		/// <summary>
@@ -340,7 +349,7 @@ namespace InfServer.Bots
 		/// </summary>
 		public int testAim(Helpers.ObjectState target, out bool bAimed)
 		{
-			int fireAngle = Helpers.computeLeadFireAngle(_state, target, _primaryProjectile.muzzleVelocity / 1000);
+			int fireAngle = getAimAngle(target);
 
 			int angleDiffHi = fireAngle - _state.yaw;
 			int angleDiffLo = (angleDiffHi < 0) ? 240 - Math.Abs(angleDiffHi) : -(240 - Math.Abs(angleDiffHi));
@@ -352,7 +361,8 @@ namespace InfServer.Bots
 			else
 				angleDiff = angleDiffLo;
 
-			bAimed = (Math.Abs(angleDiff) <= (_settings.aimFuzziness / 2));
+			bAimed = (Math.Abs(angleDiff) <= (_settings.aimFuzziness / 2))
+				&& (Owner == null || Owner.HumanReadyToFire());
 
 			if (angleDiff > 0)
 				return 1;

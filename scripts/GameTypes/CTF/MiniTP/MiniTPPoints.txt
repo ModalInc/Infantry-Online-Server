@@ -1,0 +1,95 @@
+# MiniTP key points - THE place anchors are edited. Tile coordinates (pixel / 16); a waypoint is the tile centre.
+# point=AREA,name,x,y,kind,note        (the note may contain commas; areas: A7 D7 FIELD DST DSC)
+# gen_routes.py reads this file as input. A point on a solid tile is moved to the nearest open tile for routing and logged in
+# validation.txt (this file is left alone). `--seed-points` rebuilds this file from the built-in defaults and the LIO.
+# Two names on one tile are aliases: only the first gets routes.
+
+# ---- A7
+point=A7,landA,974,674,landing,SMALL entering A7a (LIO 455, warp grp 564, rect 6.25x1.56 tiles centred here)
+point=A7,landB,983,668,landing,SMALL entering A7b (LIO 456, warp grp 565, rect 1.56x4.4 tiles centred here)
+point=A7,exitSw,978,673,switch,SMALL a7 exit switch (LIO 533): opens doors 534-545 around the exit chamber
+point=A7,exitPortal,973,667,portal,SMALL exit A7 (LIO 428, dest grp 552 -> field) - inside the door chamber
+point=A7,hideA7a,999,664,hide,green-portal hide WP tp A7a (LIO 501): Titan builds here
+point=A7,hideA7b,998,637,hide,green-portal hide WP tp A7b (LIO 513): Titan builds here
+point=A7,gaunt,1013,630,gauntlet,start of the turret gauntlet (north hall NE corner) = the BOX anchor tile
+point=A7,mouth,976,634,mouth,flag-room mouth: opening x971-982 in the wall at y634-635
+point=A7,flag1,965,651,flag,Collective flag (west)
+point=A7,flag2,986,651,flag,Collective flag (east)
+point=A7,home,976,649,home,home portal / structure
+point=A7,BOX,1013,630,anchor,attackers lob frag/WP at the turrets (PROPOSED, spec 14.2)
+point=A7,SL,1016,650,anchor,far-back summon anchor (PROPOSED)
+point=A7,TB,1022,654,anchor,spot an enemy medic could plant a beacon (PROPOSED)
+point=A7,REP1,971,636,anchor,defender Repulsor Coil field (PROPOSED)
+point=A7,REP2,982,636,anchor,defender Repulsor Coil field (PROPOSED)
+point=A7,DHVY,980,644,anchor,defensive heavy (PROPOSED)
+point=A7,DINF1,967,638,anchor,defensive infantry (PROPOSED)
+point=A7,DINF2,988,641,anchor,defensive infantry (PROPOSED)
+point=A7,ENG,973,641,anchor,engineer behind the plasma turret (PROPOSED)
+point=A7,MED,978,651,anchor,medic by the home portal (PROPOSED)
+
+# ---- D7
+point=D7,landA,1080,607,landing,SMALL entering D7a (LIO 454, warp grp 560, rect 6.25x1.56 tiles centred here)
+point=D7,landB,1091,613,landing,SMALL entering D7b (LIO 457, warp grp 561, rect 1.56x6.25 tiles centred here)
+point=D7,exitSw,1088,611,switch,SMALL d7 exit switch (LIO 526): opens doors 522-525,527-530,558 around the exit chamber
+point=D7,exitPortal,1080,617,portal,SMALL exit D7 (LIO 427, dest grp 550 -> field) - inside the door chamber
+point=D7,hideD7a,1096,576,hide,green-portal hide WP tp D7a (LIO 514): Collective builds here
+point=D7,hideD7b,1136,613,hide,green-portal hide WP tp D7b (LIO 515): Collective builds here
+point=D7,chanTop,1108,623,channel,top of the "channel" x1107-1108 (spec 14.1); x1107 is wall, the open column is x1108 [seed moved 1107,623 -> 1108,623: was on a wall]
+point=D7,chanBot,1107,632,channel,bottom of the channel / start of the run west from (1107,633)
+point=D7,eastEntry,1118,631,gauntlet,east entry of the lower gallery = the BOX anchor tile
+point=D7,flag1,1077,624,flag,Titan flag (north)
+point=D7,flag2,1073,628,flag,Titan flag (south-west)
+point=D7,home,1077,628,home,home portal / structure
+point=D7,BOX,1118,631,anchor,attackers lob frag/WP at the turrets (PROPOSED, spec 14.2)
+point=D7,SL,1129,614,anchor,far-back summon anchor (PROPOSED)
+point=D7,TB,1133,619,anchor,spot an enemy medic could plant a beacon (PROPOSED)
+point=D7,REP1,1103,631,anchor,defender Repulsor Coil field (PROPOSED)
+point=D7,REP2,1096,632,anchor,defender Repulsor Coil field (PROPOSED)
+point=D7,DHVY,1087,631,anchor,defensive heavy (PROPOSED)
+point=D7,DINF1,1098,637,anchor,defensive infantry (PROPOSED)
+point=D7,DINF2,1092,629,anchor,defensive infantry (PROPOSED)
+point=D7,ENG,1078,641,anchor,engineer behind the plasma turret (PROPOSED)
+point=D7,MED,1079,630,anchor,medic by the home portal (PROPOSED)
+
+# ---- DST
+point=DST,spawn,654,519,spawn,SMALL start 10-max (LIO 512): Titan spawn warp, rect 2.5x2.5 centred here
+point=DST,home,648,512,portal,Event Portal yellow Copy (1) (LIO 608, dest grp 204 = WP Warp yellow, relative warp): the dropship HOME portal
+point=DST,green,648,525,portal,Event Portal green Copy (2) (LIO 611, dest grp 200): green (enemy) portal
+point=DST,menu,688,526,menu,Event Class Menu hide (LIO 326) in a sealed pocket behind doors 478-481 (switch 483 "Allow CTFX Classes")
+point=DST,E5,660,511,exit,SMALL DropShip Exit Copy (4) (LIO 585) -> grp 584 = EVENT PORTAL EXIT5
+point=DST,E6,666,516,exit,SMALL DropShip Exit Copy (5) (LIO 586) -> grp 585 = EVENT PORTAL EXIT6
+point=DST,E7,665,524,exit,SMALL DropShip Exit Copy (6) (LIO 587) -> grp 586 = EVENT PORTAL EXIT7
+point=DST,E8,658,526,exit,SMALL DropShip Exit Copy (7) (LIO 588) -> grp 587 = EVENT PORTAL EXIT8
+
+# ---- DSC
+point=DSC,spawn,648,565,spawn,SMALL start 10-max2 (LIO 499): Collective spawn warp, rect 2.5x2.5 centred here
+point=DSC,home,642,560,portal,Event Portal yellow Copy (2) (LIO 609, dest grp 204): the dropship HOME portal
+point=DSC,green,642,570,portal,Event Portal green Copy (1) (LIO 610, dest grp 200): green (enemy) portal
+point=DSC,menu,688,575,menu,Event Class Menu Copy (1) (LIO 613) in a sealed pocket behind doors 604-607 (switch 517)
+point=DSC,E1,654,560,exit,SMALL DropShip Exit (LIO 451) -> grp 580 = EVENT PORTAL EXIT1
+point=DSC,E2,648,574,exit,SMALL DropShip Exit Copy (1) (LIO 582) -> grp 581 = EVENT PORTAL EXIT2
+point=DSC,E3,648,555,exit,SMALL DropShip Exit Copy (2) (LIO 583) -> grp 582 = EVENT PORTAL EXIT3
+point=DSC,E4,654,571,exit,SMALL DropShip Exit Copy (3) (LIO 584) -> grp 583 = EVENT PORTAL EXIT4
+
+# ---- FIELD
+point=FIELD,exit1,1119,792,landing,zone primary (open tile nearest the zone centre): EVENT PORTAL EXIT1 (LIO type 4, warp grp 580), centre 1119,792, 12.5x62.5 tiles
+point=FIELD,exit2,1116,877,landing,zone primary (open tile nearest the zone centre): EVENT PORTAL EXIT2 (LIO type 4, warp grp 581), centre 1116,877, 75.0x6.2 tiles
+point=FIELD,exit3,1086,733,landing,zone primary (open tile nearest the zone centre): EVENT PORTAL EXIT3 (LIO type 4, warp grp 582), centre 1086,733, 37.5x6.2 tiles
+point=FIELD,exit4,1118,846,landing,zone primary (open tile nearest the zone centre): EVENT PORTAL EXIT4 (LIO type 4, warp grp 583), centre 1118,846, 12.5x31.2 tiles
+point=FIELD,exit5,1172,771,landing,zone primary (open tile nearest the zone centre): EVENT PORTAL EXIT5 (LIO type 4, warp grp 584), centre 1172,771, 12.5x31.2 tiles
+point=FIELD,exit6,1206,794,landing,zone primary (open tile nearest the zone centre): EVENT PORTAL EXIT6 (LIO type 4, warp grp 585), centre 1206,794, 31.2x6.2 tiles
+point=FIELD,exit7,1221,865,landing,zone primary (open tile nearest the zone centre): EVENT PORTAL EXIT7 (LIO type 4, warp grp 586), centre 1221,865, 18.8x18.8 tiles
+point=FIELD,exit8,1162,877,landing,zone primary (open tile nearest the zone centre): EVENT PORTAL EXIT8 (LIO type 4, warp grp 587), centre 1162,877, 31.2x6.2 tiles
+point=FIELD,toxS2,1107,682,mineral,zone primary (open tile nearest the zone centre): TOX Small2 + Tsolvy Small + Pan Small hides, TOX Small2 centre 1107,682, union box 38.4x14.5 tiles
+point=FIELD,toxS1,1144,847,mineral,zone primary (open tile nearest the zone centre): TOX Small1 + Tsolvy Small2 + Pan Small2 hides, TOX Small1 centre 1144,847, union box 27.0x25.0 tiles
+point=FIELD,bridge3,1241,887,flag,Bridge3 (5th flag, neutral) in the SE corner
+point=FIELD,toA7a,1075,790,portal,EXTRA: SMALL to A7a (LIO 416, dest grp 564 = landing A7a) inside the A7 entry chamber
+point=FIELD,toA7b,1071,790,portal,EXTRA: SMALL to A7b (LIO 417, dest grp 565 = landing A7b) inside the A7 entry chamber
+point=FIELD,swA7,1078,796,switch,EXTRA: SMALL a7 entry switch (LIO 531): opens doors 546-557
+point=FIELD,toD7a,1190,754,portal,EXTRA: SMALL to D7a (LIO 421, dest grp 560 = landing D7a) inside the D7 entry chamber
+point=FIELD,toD7b,1195,754,portal,EXTRA: SMALL to D7b (LIO 422, dest grp 561 = landing D7b) inside the D7 entry chamber
+point=FIELD,swD7,1202,749,switch,EXTRA: SMALL d7 entry switch (LIO 532): opens doors 559-566
+point=FIELD,outA7s,1073,797,landing,EXTRA: SMALL A7 exit to2 (LIO 431, grp 552): where the A7 exit portal drops you (rect 6.25x1.56 centred here)
+point=FIELD,outA7e,1082,793,landing,EXTRA: SMALL A7 exit to1 (LIO 432, grp 552) (rect 1.56x6.25 centred here)
+point=FIELD,outD7n,1193,746,landing,EXTRA: SMALL D7 exit to1 (LIO 425, grp 550): where the D7 exit portal drops you (rect 6.25x1.56 centred here)
+point=FIELD,outD7e,1203,751,landing,EXTRA: SMALL D7 exit to2 (LIO 426, grp 550) (rect 1.56x6.25 centred here)

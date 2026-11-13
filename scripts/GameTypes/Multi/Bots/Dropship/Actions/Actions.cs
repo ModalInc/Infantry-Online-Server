@@ -39,10 +39,10 @@ namespace InfServer.Script.GameType_Multi
             }
             //Get to landing zone
             if (Helpers.distanceTo(_targetLocation._state, _state) > 45)
-                steering.steerDelegate = steerForFollowOwner;
+                ApplySteer(steerForFollowOwner);
             else
             {
-                steering.freezeMovement(5000);
+                freezeMovement(5000);
                 onSite = true;
             }
 
@@ -54,33 +54,7 @@ namespace InfServer.Script.GameType_Multi
                 _bDropped = true;
             }
 
-            //Does our path need to be updated?
-            if (now - _tickLastPath > c_pathUpdateInterval)
-            {
-                _arena._pathfinder.queueRequest(
-                           (short)(_state.positionX / 16), (short)(_state.positionY / 16),
-                           (short)(_targetLocation._state.positionX / 16), (short)(_targetLocation._state.positionY / 16),
-                           delegate (List<Vector3> path, int pathLength)
-                           {
-                               if (path != null)
-                               {
-
-                                   _path = path;
-                                   _pathTarget = 1;
-
-                               }
-
-                               _tickLastPath = now;
-                           }
-                );
-            }
-
-            //Navigate to him
-            if (_path == null)
-                //If we can't find out way to him, just mindlessly walk in his direction for now
-                steering.steerDelegate = steerForFollowOwner;
-            else
-                steering.steerDelegate = steerAlongPath;
+            navigateTo(_targetLocation._state, steerForFollowOwner, PathPriority.Idle);
         }
 
         public void leaveMap(int now)
@@ -98,10 +72,10 @@ namespace InfServer.Script.GameType_Multi
             }
             //Get to landing zone
             if (Helpers.distanceTo(_targetLocation._state, _state) > 45)
-                steering.steerDelegate = steerForFollowOwner;
+                ApplySteer(steerForFollowOwner);
             else
             {
-                steering.freezeMovement(5000);
+                freezeMovement(5000);
                 onSite = true;
             }
             //Cya
@@ -111,14 +85,7 @@ namespace InfServer.Script.GameType_Multi
             }
 
 
-            updatePath(now);
-
-            //Navigate to him
-            if (_path == null)
-                //If we can't find out way to him, just mindlessly walk in his direction for now
-                steering.steerDelegate = steerForPersuePlayer;
-            else
-                steering.steerDelegate = steerAlongPath;
+            navigateTo(_targetLocation._state, steerForPersuePlayer, PathPriority.Idle);
         }
 
 

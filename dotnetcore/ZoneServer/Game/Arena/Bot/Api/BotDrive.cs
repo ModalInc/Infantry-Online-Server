@@ -255,6 +255,8 @@ namespace InfServer.Bots
             float targetF = ClampAxis(forward);
             float targetS = ClampAxis(strafe);
             float cr = ClampAxis(rotate);
+            if (BotFeatures.WallProbe)
+                ProbeCombatDrive(bot, now, ref targetF, ref targetS);
 
             float cf = bot._combatDriveCommitF;
             float cs = bot._combatDriveCommitS;
@@ -284,6 +286,51 @@ namespace InfServer.Bots
             {
                 BotWallAvoidance.AdjustDrive(bot, ref cf, ref cs, ref cr);
                 SetDrive(steering, cf, cs, cr);
+            }
+        }
+
+        /// <summary>
+        /// Probe the combat move before committing it: a wall within 48 px on the strafe side flips the
+        /// strafe (held 0.6–1.2 s); walls on both sides keep only a move with 32 px of room, so a bot in a
+        /// corridor still sidesteps briefly while one against a wall never drives into it.
+        /// </summary>
+        static void ProbeCombatDrive(Bot bot, int now, ref float forward, ref float strafe)
+        {
+            if (bot?._state == null || (Math.Abs(forward) < 0.05f && Math.Abs(strafe) < 0.05f))
+                return;
+
+            bool flipActive = bot._probeStrafeFlipUntil != 0 && now - bot._probeStrafeFlipUntil < 0;
+            if (flipActive)
+                strafe = -strafe;
+
+            int px = bot._state.positionX;
+            int py = bot._state.positionY;
+            double yaw = bot._state.yaw;
+            double travel = BotWallAvoidance.WrapYaw(yaw + Math.Atan2(strafe, forward) * 120.0 / Math.PI);
+            int room = BotWallAvoidance.ProbeOpen(bot, px, py, travel, 48);
+            if (room >= 48)
+                return;
+
+            if (Math.Abs(strafe) > 0.15f)
+            {
+                double mirror = BotWallAvoidance.WrapYaw(yaw + Math.Atan2(-strafe, forward) * 120.0 / Math.PI);
+                int other = BotWallAvoidance.ProbeOpen(bot, px, py, mirror, 48);
+                if (other > room)
+                {
+                    strafe = -strafe;
+                    room = other;
+                    bot._probeStrafeFlipUntil = flipActive ? 0 : (now + 600 + (now & 0x1FF) + 1) | 1;
+                }
+            }
+            if (room >= 32)
+                return;
+
+            strafe = 0f;
+            if (Math.Abs(forward) > 0.05f)
+            {
+                double line = BotWallAvoidance.WrapYaw(yaw + (forward >= 0 ? 0.0 : 120.0));
+                if (BotWallAvoidance.ProbeOpen(bot, px, py, line, 32) < 32)
+                    forward = 0f;
             }
         }
 

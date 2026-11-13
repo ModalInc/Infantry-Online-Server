@@ -1,0 +1,2 @@
+# TP Pub: the league match queue belongs to CTF - Twin Peaks 2.0 only.
+enabled=false

@@ -96,6 +96,8 @@ namespace InfServer.Bots
 		public float AnalogForward => _analogForward;
 		public float AnalogStrafe => _analogStrafe;
 		public float AnalogRotate => _analogRotate;
+		/// <summary>True while a <see cref="freezeMovement"/> hold is in effect.</summary>
+		public bool IsMovementFrozen => _tickMovementFrozenUntil != 0 && _tickMovementFrozenUntil - Environment.TickCount > 0;
 		// Member Functions
 		///////////////////////////////////////////////////
 		/// <summary>

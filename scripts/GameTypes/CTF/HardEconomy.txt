@@ -1,0 +1,11 @@
+// Twin Peaks HARD: builds cost cash and skill logic, classes need experience (CTFHardEconomy.cs). Delete this file (or set 0) and the zone is plain TP 2.0 again.
+enabled=1
+// End-of-game reward (replaces the engine jackpot; Travis 11-07: losers must get something, winners a bonus, longer games more).
+// Per minute PLAYED this game (capped), x (1 + winnerBonus) for the winning team. Nothing below minSeconds / minPlayers (a false start).
+rewardCashPerMin=120
+rewardExpPerMin=3
+rewardPointsPerMin=6
+rewardWinnerBonus=0.5
+rewardMaxMinutes=120
+rewardMinSeconds=120
+rewardMinPlayers=1

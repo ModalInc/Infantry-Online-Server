@@ -1,0 +1,4 @@
+// CTF:X bot knobs the self-tuning settled on (CTFXCommand.Tune). Read at each start; delete to go back to CTFXBots.txt.
+pauseScale=1.60
+herdK=1.50
+defendRatio=1.20

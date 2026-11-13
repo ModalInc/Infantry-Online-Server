@@ -1,0 +1,11 @@
+# CTF live arena snapshot (CTFLiveSnapshot.cs, mod command *live)
+# Copy to LiveSnapshotConfig.txt beside this file on the zone server and fill in api_key.
+# LiveSnapshotConfig.txt must NOT be committed or pushed by Deploy-CTF.ps1 - it holds the shared secret.
+#
+# Once a minute the script POSTs the arena's player list (by team, with classes and who is
+# spectating), the game clock / score and the ticker bubbles to the freeinf.org home page panel.
+enabled=true
+interval_s=60                # seconds between snapshots (30..600); the site drops an arena after ~150s of silence
+api_key=REPLACE_WITH_USL_MIX_INGEST_KEY    # the site's USL_MIX_INGEST_KEY (same secret the USL zones use)
+#endpoint=https://www.freeinf.org/api/live/ingest   # default; a StatsEndpoint.txt base URL is honoured for local dev
+#zone_name=CTF - Twin Peaks 2.0             # label override (defaults to server.xml zoneName)
