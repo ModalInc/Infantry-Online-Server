@@ -48,6 +48,19 @@ namespace InfServer.Script.GameType_Eol
         /// so spawn/cap logic does not treat it as live. Actual <c>destroy</c> (and the client
         /// packet) happens in <see cref="DrainDespawnQueue"/>.
         /// </summary>
+        /// <summary>
+        /// Local 2026-11-14: bots never "spec out" and get replaced - a live bot in the play area stays until it
+        /// dies (its HQ falling, a prune, etc. no longer removes it). Only full teardowns (game end / reset, mod
+        /// clears) open this window, plus bots left outside the open sectors after a sector change.
+        /// </summary>
+        int _forceLiveBotDespawnUntil;
+
+        /// <summary>Call at the start of a full teardown so live bots may be removed for the next moment.</summary>
+        void AllowLiveBotDespawnNow()
+        {
+            _forceLiveBotDespawnUntil = Environment.TickCount + 250;
+        }
+
         public void EnqueueVehicleDespawn(Vehicle v)
         {
             if (v == null || v.IsDead)
@@ -55,6 +68,10 @@ namespace InfServer.Script.GameType_Eol
             // Already gone / being torn down by the engine.
             if (v.bCondemned)
                 return;
+            if (v is Bots.Bot liveBot && _arena != null && _arena._bGameRunning && !_bbetweengames
+                && Environment.TickCount - _forceLiveBotDespawnUntil > 0
+                && liveBot._state != null && InPlayArea(liveBot._state.positionX, liveBot._state.positionY, 0))
+                return;   // it fights on until it dies
             if (!_despawnQueuedIds.Add(v._id))
                 return;
 

@@ -125,6 +125,8 @@ namespace InfServer.Game
         {	//If it isn't a turret then send an update tick every now and then for health
             int now = Environment.TickCount;
 
+            ResolveTurretShotsInFlight(now);   // bullets fired at bots land (or miss) when they arrive
+
             if (_primaryGun == null)
             {
                 if (now - _tickLastUpdate > 2000)
@@ -308,40 +310,122 @@ namespace InfServer.Game
         /// </summary>
         public static bool TurretShotsDamageBots = true;
 
+        /// <summary>
+        /// Local change 2026-11-14 - the bullet has to CONNECT: a turret shot at a bot used to hurt it the instant it
+        /// was fired, wherever the bot went. Now the shot flies like the real projectile: it travels along the
+        /// turret's lead aim at the projectile's muzzle speed, stops at walls it can't fly over, and only when it
+        /// arrives does it check whether a bot is actually there. A bot that strafed or ducked behind a wall is
+        /// missed; splash rounds burst at the impact point and hurt by distance from it.
+        /// </summary>
+        struct TurretShotInFlight
+        {
+            public Vehicle Target;
+            public short FromX, FromY, ImpactX, ImpactY;
+            public int Due;
+            public ItemInfo.Projectile Proj;
+        }
+
+        readonly List<TurretShotInFlight> _shotsInFlight = new List<TurretShotInFlight>();
+
         protected void applyTurretShotToBot(Vehicle target)
         {
             if (!TurretShotsDamageBots || target == null || target.IsDead || target.bCondemned || _primaryProjectile == null)
                 return;
+            if (_shotsInFlight.Count >= 32)
+                return;
             try
             {
-                //(bots: damage + knockback recoil; any other bot-owned vehicle: damage)
-                short ix = target._state.positionX, iy = target._state.positionY;
-                if (target is InfServer.Bots.Bot hurtBot)
-                {
-                    hurtBot.NoteHurtBy(this);
-                    target.applyExplosion(null, ix, iy, _primaryProjectile);
-                }
+                // Same lead the turret's visible fire angle uses (Helpers.computeLeadFireAngle): 10 ms ticks,
+                // velocities in 1/1000 px per tick, map y scaled by ZoneLevelYScale.
+                double ys = Helpers.ZoneLevelYScale > 0 ? Helpers.ZoneLevelYScale : 1.0;
+                double x1 = target._state.positionX - _state.positionX;
+                double x2 = (target._state.positionY - _state.positionY) / ys;
+                double v1 = target._state.velocityX / 1000.0, v2 = target._state.velocityY / 1000.0;
+                double r = Math.Max(0.5, _primaryProjectile.muzzleVelocity / 1000.0);
+                double a = v1 * v1 + v2 * v2 - r * r, b = 2 * (x1 * v1 + x2 * v2), c = x1 * x1 + x2 * x2;
+                double tTicks;
+                double disc = b * b - 4 * a * c;
+                if (Math.Abs(a) < 1e-9 || disc < 0)
+                    tTicks = Math.Sqrt(c) / r;
                 else
-                    target.applyExplosionDamage(true, null, ix, iy, _primaryProjectile);
-
-                // Splash / friendly fire (local 2026-11-13): every other bot inside the blast takes it too - the
-                // turret's OWN team included (turrets can team-kill, like a player's would).
-                int blast = Helpers.getMaxBlastRadius(_primaryProjectile);
-                if (blast > 0 && _arena != null)
                 {
-                    foreach (Vehicle v in _arena.getVehiclesInRange(ix, iy, blast + 32))
-                    {
-                        if (v == target || v == this || v.IsDead || v.bCondemned || !(v is InfServer.Bots.Bot splashBot))
-                            continue;
-                        splashBot.NoteHurtBy(this);
-                        v.applyExplosion(null, ix, iy, _primaryProjectile);
-                    }
+                    double t0 = (-b + Math.Sqrt(disc)) / (2 * a), t1 = (-b - Math.Sqrt(disc)) / (2 * a);
+                    tTicks = (t0 > 0 && t1 > 0) ? Math.Min(t0, t1) : Math.Max(t0, t1);
+                    if (tTicks <= 0)
+                        tTicks = Math.Sqrt(c) / r;
                 }
+                double ix = target._state.positionX + v1 * tTicks;
+                double iy = target._state.positionY + v2 * tTicks * ys;
+                int flightMs = (int)Math.Max(20, Math.Min(2000, tTicks * 10));
+
+                _shotsInFlight.Add(new TurretShotInFlight
+                {
+                    Target = target,
+                    FromX = _state.positionX,
+                    FromY = _state.positionY,
+                    ImpactX = (short)Math.Max(0, Math.Min(short.MaxValue, ix)),
+                    ImpactY = (short)Math.Max(0, Math.Min(short.MaxValue, iy)),
+                    Due = Environment.TickCount + flightMs,
+                    Proj = _primaryProjectile,
+                });
             }
             catch (Exception ex)
             {
                 Log.write(TLog.Warning, "Turret shot at bot failed: " + ex.Message);
             }
+        }
+
+        void ResolveTurretShotsInFlight(int now)
+        {
+            if (_shotsInFlight.Count == 0)
+                return;
+            for (int i = _shotsInFlight.Count - 1; i >= 0; i--)
+            {
+                TurretShotInFlight s = _shotsInFlight[i];
+                if (now - s.Due < 0)
+                    continue;
+                _shotsInFlight.RemoveAt(i);
+                try { LandTurretShot(s); }
+                catch (Exception ex) { Log.write(TLog.Warning, "Turret shot at bot failed: " + ex.Message); }
+            }
+        }
+
+        void LandTurretShot(TurretShotInFlight s)
+        {
+            if (_arena == null || s.Proj == null)
+                return;
+            // stopped by a wall on the way (it flies over low green / yellow physics only, like a bot's shots)
+            if (!InfServer.Bots.BotCombat.ShotLineClear(_arena, InfServer.Bots.BotCombat.DefaultFireHeight, s.FromX, s.FromY, s.ImpactX, s.ImpactY))
+                return;
+
+            int blast = Helpers.getMaxBlastRadius(s.Proj);
+            if (blast > 0)
+            {
+                // splash round: bursts at the impact point - every bot in the blast (the turret's own team too,
+                // turrets can team-kill) takes damage by its distance from the burst
+                foreach (Vehicle v in _arena.getVehiclesInRange(s.ImpactX, s.ImpactY, blast + 24))
+                {
+                    if (v == this || v.IsDead || v.bCondemned || !(v is InfServer.Bots.Bot splashBot))
+                        continue;
+                    splashBot.NoteHurtBy(this);
+                    v.applyExplosion(null, s.ImpactX, s.ImpactY, s.Proj);
+                }
+                return;
+            }
+
+            // bullet: only the body it actually reaches
+            Vehicle t = s.Target;
+            if (t == null || t.IsDead || t.bCondemned || t._state == null)
+                return;
+            int body = Math.Max(10, t._type != null ? (int)t._type.PhysicalRadius : 10) + 4;
+            double dx = t._state.positionX - s.ImpactX, dy = t._state.positionY - s.ImpactY;
+            if (dx * dx + dy * dy > (double)body * body)
+                return;   // it moved - clean miss
+            // a bullet that connects does its listed damage (applyBotHit: direct-fire rounds have damage radius 0,
+            // which the blast path would treat as no damage)
+            if (t is InfServer.Bots.Bot hurtBot)
+                hurtBot.NoteHurtBy(this);
+            t.applyBotHit(s.Proj);
         }
 
         /// <summary>

@@ -61,7 +61,9 @@ namespace InfServer.Bots
 		{
 			get
 			{
-				return (short)_type.id;
+				// 0 = nothing equipped (local fix 2026-11-14: player-class bots whose inventory slot holds no gun
+				// left this null, and every spawn threw - the red "Exception whilst polling arena" spam)
+				return _type == null ? (short)0 : (short)_type.id;
 			}
 		}
 
@@ -82,6 +84,12 @@ namespace InfServer.Bots
 		public int FireDelayMs
 		{
 			get { return _fireDelay; }
+		}
+
+		/// <summary>Ms before a DIFFERENT weapon may fire after this one (item fireDelayOther, like a player).</summary>
+		public int FireDelayOtherMs
+		{
+			get { return _fireDelayOther > 0 ? _fireDelayOther : _fireDelay; }
 		}
 
 		/// <summary>True while a clip reload timer is active.</summary>
@@ -349,7 +357,7 @@ namespace InfServer.Bots
 		/// </summary>
 		public int getAimAngle(Helpers.ObjectState target)
 		{
-			int lead = Helpers.computeLeadFireAngle(_state, target, _primaryProjectile.muzzleVelocity / 1000);
+			int lead = Helpers.computeLeadFireAngle(_state, target, _primaryProjectile != null ? _primaryProjectile.muzzleVelocity / 1000 : 0);
 			return Owner != null ? Owner.ApplyHumanAim(target, lead) : lead;
 		}
 

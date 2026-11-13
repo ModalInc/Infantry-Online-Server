@@ -449,7 +449,8 @@ namespace InfServer.Game.Modules.BotActions
             // bots stood still aiming at targets far out of range, never firing).
             int gunReach = gun != null && gun.ItemID != 0 ? BotWeaponUtil.GetCombatRangeRaw(AssetManager.Manager?.getItemByID(gun.ItemID)) : 0;
             bool inReach = gunReach <= 0 || dist <= Math.Max(gunReach * 1.5, 320);
-            bool holdForShot = gun != null && inReach && gun.RequiresStationaryFire && gun.ableToFire() && InEngageFireBurst(ctx, thr, now);
+            // (local 2026-11-14: off - bots always strafe while they aim and fire, they never stop to turn and shoot)
+            bool holdForShot = AllowStationaryFirePlant && gun != null && inReach && gun.RequiresStationaryFire && gun.ableToFire() && InEngageFireBurst(ctx, thr, now);
             if (holdForShot)
             {
                 int aimYaw = Helpers.computeLeadFireAngle(bot._state, target, 10);
@@ -681,10 +682,16 @@ namespace InfServer.Game.Modules.BotActions
             return ResolveEngageWeapon(bot, target, hasLos, distanceRaw, minRaw, maxRaw);
         }
 
-        /// <summary>Flak and other anti-vehicle guns (by name).</summary>
+        /// <summary>Flak, LAW rockets and other anti-vehicle guns (by name) - never fired at soldiers on foot.</summary>
+        /// <summary>False = bots never stop to fire charge-up weapons; they strafe while firing (local 2026-11-14).</summary>
+        public static bool AllowStationaryFirePlant = false;
+
         public static bool IsAntiVehicleWeapon(ItemInfo item)
         {
-            return item?.name != null && item.name.IndexOf("flak", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (item?.name == null)
+                return false;
+            return item.name.IndexOf("flak", StringComparison.OrdinalIgnoreCase) >= 0
+                || System.Text.RegularExpressions.Regex.IsMatch(item.name, @"\bLAW\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         }
 
         /// <summary>

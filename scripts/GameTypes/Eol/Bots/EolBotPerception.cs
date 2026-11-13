@@ -98,11 +98,9 @@ namespace InfServer.Script.GameType_Eol
             int t; bool v;
             if (k.LosTick.TryGetValue(p, out t) && now - t >= 0 && now - t < LosCacheMs && k.LosVal.TryGetValue(p, out v))
                 return v;
-            Bot lookerBot;
-            bool maserSight = BotByState.TryGetValue(from, out lookerBot) && BotWeaponUtil.WallPiercingWeapon(lookerBot) != null;
+            // nobody sees through walls (masers included) - local 2026-11-14
             v = Helpers.isInRange(SightRaw, from, p._state)
-                && (maserSight   // maser carriers see through walls
-                    || BotCombat.SightLineClear(p._arena, from.positionX, from.positionY, p._state.positionX, p._state.positionY));
+                && BotCombat.SightLineClear(p._arena, from.positionX, from.positionY, p._state.positionX, p._state.positionY);
             k.LosTick[p] = now;
             k.LosVal[p] = v;
             if (v)
@@ -141,7 +139,10 @@ namespace InfServer.Script.GameType_Eol
             if (BotByState.TryGetValue(from, out self) && ReferenceEquals(self.LastHurtBy, p)
                 && now - self.LastHurtTick >= 0 && now - self.LastHurtTick <= HurtRevealMs)
             {
+                // got shot: it knows roughly WHERE the shot came from (that spot - it searches there), nothing more
                 k.LastSeen[p] = now;
+                if (!k.Where.ContainsKey(p) || now - k.Where[p].Tick > HurtRevealMs)
+                    k.Where[p] = new Sighting { X = p._state.positionX, Y = p._state.positionY, Tick = now };
                 return true;
             }
 

@@ -159,7 +159,11 @@ namespace InfServer.Script.GameType_Eol
 
             // Only seek straight at the target when we can actually see it. When LOS is blocked,
             // hop/last-clear seek keeps them moving without a full mesh solve every tick.
-            Func<InfantryVehicle, Vector3> fallback = (losClear && pursueFallback != null)
+            // Direct seek only when the WALKING line is clear too - shots fly over low walls but bots can't walk
+            // through them (local fix 2026-11-14: this seeked straight into low physics and bots hugged it).
+            bool walkLineClear = losClear && bot._arena != null && bot._state != null
+                && EolHqPatrol.TileLineClear(bot._arena, bot._state.positionX, bot._state.positionY, dest.positionX, dest.positionY);
+            Func<InfantryVehicle, Vector3> fallback = (walkLineClear && pursueFallback != null)
                 ? pursueFallback
                 : EolHqPatrol.MakeLineClearPendingSeek(bot, () => dest);
 
@@ -1505,7 +1509,7 @@ namespace InfServer.Script.GameType_Eol
                 return false;
 
             ItemInfo.Projectile proj = weapon.Projectile;
-            if (proj == null || !weapon.ableToFire())
+            if (proj == null || !weapon.ableToFire() || !shooter.CanFireWeaponNow(weapon))
                 return false;
             if (!lineClearVerified
                 && !EolBotTargetUtil.TileLineClearForWeaponFire(
@@ -1531,6 +1535,7 @@ namespace InfServer.Script.GameType_Eol
 
             target.applyExplosionDamage(true, null, target._state.positionX, target._state.positionY, proj);
             weapon.shotFired();
+            shooter.NoteWeaponFired(weapon);
             OnCombatShotFired(shooter, weapon);
             return true;
         }

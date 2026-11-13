@@ -25,7 +25,13 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>Total AlienHorde spawns queued for one invasion wave (three batches of <see cref="AlienWaveMaxConcurrentAlive"/>).</summary>
         public const int AlienWaveTotalSpawns = 60;   // 3 batches of 20
         /// <summary>Never more than this many AlienHorde bots alive at once during a wave.</summary>
-        public const int AlienWaveMaxConcurrentAlive = 20;   // local 2026-11-13: Bot - Aliens 10 + two elite packs of 5
+        public const int AlienWaveMaxConcurrentAlive = 18;   // local 2026-11-14 roster: Skrall Swarm 10 + an elite pack of 5-8
+        /// <summary>
+        /// Local 2026-11-14: the invasion never runs out - dead aliens are replaced (after a short delay) so the
+        /// alien packs are always in the field, part of the fixed 80-bot roster.
+        /// </summary>
+        public const bool AlienWaveEndless = true;
+        const int AlienEndlessRefillMinMs = 3000, AlienEndlessRefillMaxMs = 6000;
         /// <summary>Number of spawn waves (each up to <see cref="AlienWaveMaxConcurrentAlive"/> concurrent; total <see cref="AlienWaveTotalSpawns"/>).</summary>
         public const int AlienWaveSpawnBatchCount = 3;
         /// <summary>Delay between each <see cref="AlienHorde"/> spawn during a wave — random 12–22 seconds (inclusive).</summary>
@@ -74,6 +80,9 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>Max aliens on the main "Bot - Aliens" team.</summary>
         public const int AlienMainPackSize = 10;
 
+        /// <summary>Crash site of each alien pack this wave (main + elite ships).</summary>
+        readonly Dictionary<Team, Helpers.ObjectState> _alienTeamAnchor = new Dictionary<Team, Helpers.ObjectState>();
+
         int CountLiveAliensOn(Team team)
         {
             if (team == null || _arena == null)
@@ -104,7 +113,7 @@ namespace InfServer.Script.GameType_Eol
 
         bool IsManagedEolBotFactionTeam(Team t)
         {
-            return IsDefenseBotTeam(t) || IsRoamBotTeam(t) || IsAlienBotTeam(t) || IsAssassinTeam(t) || IsEliteSquadTeam(t);
+            return IsDefenseBotTeam(t) || IsRoamBotTeam(t) || IsAlienBotTeam(t) || IsAssassinTeam(t) || IsEliteSquadTeam(t) || IsStrikeTeam(t);
         }
 
         /// <summary>The two always-on elite roaming squads (local 2026-11-13).</summary>
@@ -147,7 +156,7 @@ namespace InfServer.Script.GameType_Eol
         {
             if (_arena != null)
             {
-                foreach (Vehicle v in _arena.Vehicles.Where((Vehicle x) => x._type.Id == AlienCrashVehicleId && x._team == botTeam7).ToList())
+                foreach (Vehicle v in _arena.Vehicles.Where((Vehicle x) => x._type.Id == AlienCrashVehicleId && IsAlienBotTeam(x._team)).ToList())
                     EnqueueVehicleDespawn(v);
             }
             _alienWaveActive = false;
@@ -183,7 +192,7 @@ namespace InfServer.Script.GameType_Eol
             if (_alienWaveActive)
                 EnqueueExplosionRoute(AlienCrashExplosionProjectileId, _alienCrashPosX, _alienCrashPosY, 0, 0, 0);
 
-            foreach (Vehicle v in _arena.Vehicles.Where((Vehicle x) => x._type.Id == AlienCrashVehicleId && x._team == botTeam7).ToList())
+            foreach (Vehicle v in _arena.Vehicles.Where((Vehicle x) => x._type.Id == AlienCrashVehicleId && IsAlienBotTeam(x._team)).ToList())
                 EnqueueVehicleDespawn(v);
 
             if (_bots != null)
@@ -278,6 +287,8 @@ namespace InfServer.Script.GameType_Eol
                     continue;
                 if (_arena.getTerrain(open.positionX, open.positionY).safety)
                     continue;
+                if (!IsOpenConnectedGround(open.positionX, open.positionY))
+                    continue;   // not inside a sealed building (local 2026-11-14)
                 return open;
             }
             return null;
@@ -315,6 +326,34 @@ namespace InfServer.Script.GameType_Eol
             AlienHordeAnchorY = site.positionY;
 
             createSDU(AlienCrashVehicleId, 0, 0, botTeam7, site);
+            _alienTeamAnchor.Clear();
+            _alienTeamAnchor[botTeam7] = site;
+
+            // local 2026-11-14: each elite alien pack crash-lands its OWN ship somewhere else (well apart), so the
+            // packs come from different places instead of one pile
+            foreach (Team eliteTeam in new[] { botTeamAlienElite1 })   // (2026-11-14 roster: one elite pack)
+            {
+                if (eliteTeam == null)
+                    continue;
+                Helpers.ObjectState eSite = null;
+                for (int tries = 0; tries < 30 && eSite == null; tries++)
+                {
+                    Helpers.ObjectState cand = TryFindAlienCrashOpenPoint();
+                    if (cand == null)
+                        continue;
+                    bool apart = true;
+                    foreach (Helpers.ObjectState other in _alienTeamAnchor.Values)
+                        if (Helpers.distanceTo(cand.positionX, cand.positionY, other.positionX, other.positionY) < 1800)
+                            apart = false;
+                    if (apart)
+                        eSite = cand;
+                }
+                if (eSite == null)
+                    continue;   // no room - this pack uses the main ship
+                createSDU(AlienCrashVehicleId, 0, 0, eliteTeam, eSite);
+                _alienTeamAnchor[eliteTeam] = eSite;
+                EnqueueExplosionRoute(AlienCrashExplosionProjectileId, eSite.positionX, eSite.positionY, 0, 0, 0);
+            }
 
             if (!_arena.Vehicles.Any((Vehicle v) => v._type.Id == AlienCrashVehicleId && v._team == botTeam7))
                 Log.write(TLog.Warning, "[Eol] Alien wave: crash vehicle {0} not visible immediately after createVehicle (may appear next tick); continuing wave at ({1},{2}).", AlienCrashVehicleId, site.positionX, site.positionY);
@@ -335,7 +374,7 @@ namespace InfServer.Script.GameType_Eol
             {
                 if (_aliensAliveThisWave >= AlienWaveMaxConcurrentAlive)
                     break;
-                if (_aliensSpawnedThisWave >= AlienWaveTotalSpawns)
+                if (!AlienWaveEndless && _aliensSpawnedThisWave >= AlienWaveTotalSpawns)
                     break;
                 if (_alienSpawnQueue == null || _alienSpawnQueue.Count == 0)
                     break;
@@ -348,19 +387,17 @@ namespace InfServer.Script.GameType_Eol
 
         void SpawnOneAlienFromQueue(int now)
         {
+            if (AlienWaveEndless && _alienSpawnQueue != null && _alienSpawnQueue.Count < 8)
+                _alienSpawnQueue.AddRange(BuildAlienSpawnIdList());
             if (_alienSpawnQueue == null || _alienSpawnQueue.Count == 0)
                 return;
             if (_aliensAliveThisWave >= AlienWaveMaxConcurrentAlive)
                 return;
-            if (_aliensSpawnedThisWave >= AlienWaveTotalSpawns)
+            if (!AlienWaveEndless && _aliensSpawnedThisWave >= AlienWaveTotalSpawns)
                 return;
 
             ushort vid = _alienSpawnQueue[0];
             _alienSpawnQueue.RemoveAt(0);
-
-            Helpers.ObjectState openPoint = findOpenWarpBot(_arena, AlienHordeAnchorX, AlienHordeAnchorY, 140);
-            if (openPoint == null)
-                openPoint = new Helpers.ObjectState { positionX = AlienHordeAnchorX, positionY = AlienHordeAnchorY };
 
             if (_bots == null)
                 _bots = new List<Bots.Bot>();
@@ -369,13 +406,25 @@ namespace InfServer.Script.GameType_Eol
             // main "Bot - Aliens" pack of up to 10 (mixed types). All three are allied.
             Team alienTeam = botTeam7;
             bool elitePack = false;
-            if (CountLiveAliensOn(botTeamAlienElite1) < AlienElitePackSize && botTeamAlienElite1 != null) { alienTeam = botTeamAlienElite1; elitePack = true; }
-            else if (CountLiveAliensOn(botTeamAlienElite2) < AlienElitePackSize && botTeamAlienElite2 != null) { alienTeam = botTeamAlienElite2; elitePack = true; }
-            else if (CountLiveAliensOn(botTeam7) >= AlienMainPackSize)
+            // (2026-11-14 roster: one elite pack of 5-8 + the main pack of 10)
+            if (botTeamAlienElite1 != null && CountLiveAliensOn(botTeamAlienElite1) < RosterAlienElite) { alienTeam = botTeamAlienElite1; elitePack = true; }
+            else if (CountLiveAliensOn(botTeam7) >= RosterAlienMainSize)
             {
                 _alienSpawnQueue.Insert(0, vid);   // every pack full - try again later
                 return;
             }
+
+            // spawn at this pack's own crash ship (falls back to the main one)
+            short ax = AlienHordeAnchorX, ay = AlienHordeAnchorY;
+            Helpers.ObjectState packSite;
+            if (_alienTeamAnchor.TryGetValue(alienTeam, out packSite) && packSite != null)
+            {
+                ax = packSite.positionX;
+                ay = packSite.positionY;
+            }
+            Helpers.ObjectState openPoint = findOpenWarpBot(_arena, ax, ay, 140);
+            if (openPoint == null)
+                openPoint = new Helpers.ObjectState { positionX = ax, positionY = ay };
 
             AlienHorde bot = _arena.newBot(typeof(AlienHorde), vid, alienTeam, null, openPoint, this, null) as AlienHorde;
             if (bot != null)
@@ -393,6 +442,11 @@ namespace InfServer.Script.GameType_Eol
             }
 
             _aliensSpawnedThisWave++;
+            if (AlienWaveEndless)
+            {
+                _tickNextAlienSpawn = now + (_rand != null ? _rand.Next(AlienEndlessRefillMinMs, AlienEndlessRefillMaxMs + 1) : AlienEndlessRefillMinMs);
+                return;
+            }
             if ((_aliensSpawnedThisWave == AlienWaveMaxConcurrentAlive || _aliensSpawnedThisWave == AlienWaveMaxConcurrentAlive * 2)
                 && _aliensSpawnedThisWave < AlienWaveTotalSpawns
                 && _alienSpawnQueue.Count > 0)
@@ -531,11 +585,11 @@ namespace InfServer.Script.GameType_Eol
 
                 if (_alienSpawnQueue != null && _alienSpawnQueue.Count > 0 && now >= _tickNextAlienSpawn
                     && _aliensAliveThisWave < AlienWaveMaxConcurrentAlive
-                    && _aliensSpawnedThisWave < AlienWaveTotalSpawns
+                    && (AlienWaveEndless || _aliensSpawnedThisWave < AlienWaveTotalSpawns)
                     && (_tickAlienInterBatchGateUntil == 0 || now >= _tickAlienInterBatchGateUntil))
                     SpawnOneAlienFromQueue(now);
 
-                if ((_alienSpawnQueue == null || _alienSpawnQueue.Count == 0)
+                if (!AlienWaveEndless && (_alienSpawnQueue == null || _alienSpawnQueue.Count == 0)
                     && _aliensSpawnedThisWave >= AlienWaveTotalSpawns
                     && _aliensAliveThisWave <= 0)
                     FinishAlienWaveCleanup(now);

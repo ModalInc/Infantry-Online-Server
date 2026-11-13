@@ -106,6 +106,37 @@ namespace InfServer.Game.Modules
             return name.Length > 31 ? name.Substring(0, 31) : name;
         }
 
+        /// <summary>Give bots realistic names (callsigns / Skrall names) instead of ~BotN.</summary>
+        public static bool UseClassNames = true;
+
+        readonly Random _nameRng = new Random();
+
+        static readonly string[] Callsigns =
+        {
+            "Havoc", "Razor", "Ghost", "Nomad", "Viper", "Reaper", "Maverick", "Blitz", "Rook", "Outlaw",
+            "Saber", "Talon", "Spectre", "Grim", "Hawk", "Jackal", "Kestrel", "Lynx", "Mako", "Onyx",
+            "Phantom", "Quake", "Rogue", "Shade", "Torque", "Vandal", "Wraith", "Zealot", "Apex", "Brick",
+            "Cinder", "Dagger", "Echo", "Flint", "Gunner", "Hex", "Iron", "Jinx", "Kilo", "Lancer",
+            "Mantis", "Nova", "Oxide", "Pyro", "Raptor", "Sly", "Tango", "Uzi", "Vex", "Warden",
+            "Xenon", "Yeti", "Zulu", "Ajax", "Bishop", "Cobra", "Dusk", "Ember", "Fang", "Grizzly",
+            "Hunter", "Ion", "Jester", "Knox", "Locust", "Mercer", "Nightshade", "Omen", "Prowler", "Quill",
+            "Rampage", "Sniper", "Thorn", "Umbra", "Valkyrie", "Wolf", "Axel", "Boomer", "Crusader", "Drifter",
+            "Enigma", "Frost", "Gator", "Hydra", "Icarus", "Juggernaut", "Kraken", "Legion", "Moth", "Nitro",
+            "Orca", "Pike", "Rebel", "Scythe", "Titan", "Vulture", "Wasp", "Zero", "Ash", "Bane",
+            "Colt", "Diesel", "Edge", "Fury", "Gauge", "Hammer", "Ivy", "Jolt", "Krait", "Lotus",
+            "Mongoose", "Nash", "Ozzy", "Patch", "Riot", "Steel", "Trigger", "Venom", "Whisper", "Zane",
+        };
+
+        static readonly string[] AlienStart = { "Vr", "Zh", "Thr", "Kr", "Sk", "Gr", "Xa", "Ny", "Qu", "Sz", "Dr", "Ul", "Ix", "Vh", "Kz" };
+        static readonly string[] AlienMid = { "a", "u", "o", "ae", "ix", "ul", "ar", "ee", "or", "y" };
+        static readonly string[] AlienEnd = { "sk", "kar", "xis", "rath", "zz", "gul", "mok", "thar", "vex", "nak", "ss", "rr", "lith", "krai" };
+
+        string AlienName()
+        {
+            string n = AlienStart[_nameRng.Next(AlienStart.Length)] + AlienMid[_nameRng.Next(AlienMid.Length)] + AlienEnd[_nameRng.Next(AlienEnd.Length)];
+            return char.ToUpper(n[0]) + n.Substring(1);
+        }
+
         /// <summary>Assign the next ~BotN name to a bot.</summary>
         public string Acquire(Bot bot, Func<string, bool> isTakenElsewhere = null)
         {
@@ -118,7 +149,31 @@ namespace InfServer.Game.Modules
                     return existing;
 
                 string chosen = null;
-                for (int attempt = 0; attempt < 256; attempt++)
+
+                // Realistic names, no numbers (local 2026-11-14): player-style callsigns for humans, Skrall-style
+                // names for aliens. Unique; once single callsigns run out, two are combined ("Ghost Viper").
+                if (UseClassNames)
+                {
+                    bool alien = bot._type?.Name != null && bot._type.Name.StartsWith("Alien", StringComparison.OrdinalIgnoreCase);
+                    for (int attempt = 0; attempt < 400 && chosen == null; attempt++)
+                    {
+                        string candidate;
+                        if (alien)
+                            candidate = AlienName();
+                        else if (attempt < 150)
+                            candidate = Callsigns[_nameRng.Next(Callsigns.Length)];
+                        else
+                            candidate = Callsigns[_nameRng.Next(Callsigns.Length)] + " " + Callsigns[_nameRng.Next(Callsigns.Length)];
+                        candidate = NormalizeName("{" + candidate + "}");   // {Name} marks a bot (local 2026-11-14)
+                        if (string.IsNullOrEmpty(candidate) || _inUse.Contains(candidate))
+                            continue;
+                        if (isTakenElsewhere != null && isTakenElsewhere(candidate))
+                            continue;
+                        chosen = candidate;
+                    }
+                }
+
+                for (int attempt = 0; attempt < 256 && chosen == null; attempt++)
                 {
                     int n = Interlocked.Increment(ref _botSeq);
                     string candidate = "~Bot" + n;

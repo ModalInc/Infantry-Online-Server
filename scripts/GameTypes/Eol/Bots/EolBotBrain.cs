@@ -45,6 +45,8 @@ namespace InfServer.Script.GameType_Eol
         public bool Hunter;
         /// <summary>Retreats backpedalling and shooting (good players) rather than turning tail.</summary>
         public bool Backpedals;
+        /// <summary>0..1: how far it hears fights and how readily it goes to look (aliens and elites: high).</summary>
+        public double Curiosity;
         /// <summary>How long it keeps trying to get round cover to a target it lost sight of before giving up.</summary>
         public int PatienceMs;
 
@@ -65,7 +67,7 @@ namespace InfServer.Script.GameType_Eol
             p.StrafePower = (float)(0.60 + r.NextDouble() * 0.40);
             p.ChaseEagerness = 0.5 + r.NextDouble() * 0.5;
             p.HelpRange = 700 + r.Next(700);
-            p.Hunter = alien && r.NextDouble() < 0.35;          // the rest guard their ship (no ship = all hunt)
+            p.Hunter = alien;                                    // aliens have no base: they all range out hunting
             if (alien)
             {   // wild animal: never still, darting side to side on a jittery rhythm
                 p.StrafePower = (float)(0.85 + r.NextDouble() * 0.15);
@@ -74,6 +76,7 @@ namespace InfServer.Script.GameType_Eol
                 p.ChaseEagerness = 0.8 + r.NextDouble() * 0.2;
             }
             p.PatienceMs = 1800 + r.Next(2200);
+            p.Curiosity = alien ? 0.7 + r.NextDouble() * 0.3 : 0.3 + r.NextDouble() * 0.7;
             return p;
         }
 
@@ -142,6 +145,7 @@ namespace InfServer.Script.GameType_Eol
             public short HuntGoalX, HuntGoalY;
             public Helpers.ObjectState RoamDest;
             public int RoamPickTick;
+            public int SeenEscapeTick;
             public short IdleX, IdleY;
             public int IdleTick;
             public int OddsTick;
@@ -151,6 +155,40 @@ namespace InfServer.Script.GameType_Eol
             public int IdleStareTick;
             public short IdleStareX, IdleStareY;
             public readonly Dictionary<object, int> IgnoreUntil = new Dictionary<object, int>();
+            // progress tracking (MakingProgress)
+            public int ProgTick;
+            public double ProgBest;
+            public short ProgGoalX, ProgGoalY, ProgX, ProgY;
+            // curiosity
+            public short InvestX, InvestY;
+            public int InvestUntil, InvestPickTick;
+            // areas searched recently (packed x<<16|y), for logical sweeping
+            public readonly Queue<long> Searched = new Queue<long>();
+            // extra weapons (human-class bots)
+            public WeaponController Opener, Grenade;
+            public object OpenerTarget;
+            public int OpenerShotsLeft, GrenadesLeft, NextGrenade;
+        }
+
+        /// <summary>
+        /// Give a bot an opener gun (fired for one clip at each new human target - e.g. Kamenev AP mk2 to strip the
+        /// shield) and/or a few grenades thrown at mid range on a cooldown.
+        /// </summary>
+        public static void SetExtraWeapons(Bot b, WeaponController opener, WeaponController grenade, int grenades)
+        {
+            if (b == null)
+                return;
+            Mind m = Get(b);
+            m.Opener = opener;
+            m.Grenade = grenade;
+            m.GrenadesLeft = grenade != null ? grenades : 0;
+            m.OpenerTarget = null;
+        }
+
+        static int ClipOf(WeaponController w)
+        {
+            ItemInfo.Projectile p = w?.Projectile;
+            return p != null && p.ammoCapacity > 0 ? p.ammoCapacity : 10;
         }
 
         const int IgnoreAfterGiveUpMs = 8000;
@@ -203,6 +241,7 @@ namespace InfServer.Script.GameType_Eol
                 m.P.StrafePower = (float)(0.85 + m.R.NextDouble() * 0.15);
                 m.P.PatienceMs = 3500 + m.R.Next(2500);
                 m.P.HelpRange = 1400;
+                m.P.Curiosity = Math.Max(m.P.Curiosity, 0.85);
                 if (assassin)
                 {
                     m.P.ReactMs = 90 + m.R.Next(80);
@@ -281,6 +320,10 @@ namespace InfServer.Script.GameType_Eol
                             continue;
                         if (!IsHostileTarget(self, script, ally.LastHurtBy))
                             continue;
+                        // only an attacker it can SEE itself (no shared wall-hack knowledge)
+                        if (ally.LastHurtBy is Player ap ? !EolBotPerception.SeesNow(self._state, ap)
+                            : !(ally.LastHurtBy is Vehicle av && BotCombat.CanDirectEngage(self, av._state)))
+                            continue;
                         Helpers.ObjectState s = StateOf(ally.LastHurtBy);
                         if (s == null || !Helpers.isInRange(Script_Eol.EolBotCombatSeekRangeRaw, self._state, s))
                             continue;
@@ -288,8 +331,6 @@ namespace InfServer.Script.GameType_Eol
                     }
                     if (best != null)
                     {
-                        if (!ReferenceEquals(best, m.Protect) && LogPersonas)
-                            Log.write(TLog.Normal, "[bot brain] {0} (team player) protects a teammate - targeting its attacker", self._id);
                         m.Protect = best;
                         m.ProtectUntil = now + ProtectHoldMs;
                     }
@@ -307,8 +348,6 @@ namespace InfServer.Script.GameType_Eol
 
                 if (want != null)
                 {
-                    if (want is Player wp)
-                        EolBotPerception.Reveal(self._state, wp);   // knows where the shooter is
                     m.Committed = want;
                     m.CommitUntil = now + P.CommitMs;
                     SuggestTarget(self, want, ref playerTarget);
@@ -332,12 +371,40 @@ namespace InfServer.Script.GameType_Eol
         public static bool CombatMove(Bot self, Script_Eol script, int now, object target, Helpers.ObjectState dest,
             Func<InfantryVehicle, Vector3> fallback)
         {
+            // The caller's pursuit steer only chases PLAYER targets (it returns zero for a bot target), so two bots
+            // that spotted each other far apart just stood there in limbo. If that steer gives nothing, seek the
+            // target ourselves (wall-aware, EolWallMemory) - bots run at each other to fight (local fix 2026-11-14).
+            if (dest != null && self != null)
+            {
+                Func<InfantryVehicle, Vector3> given = fallback;
+                Func<InfantryVehicle, Vector3> seek = EolHqPatrol.MakeLineClearPendingSeek(self, () => dest);
+                fallback = v =>
+                {
+                    Vector3 r = Vector3.Zero;
+                    try { if (given != null) r = given(v); } catch { }
+                    if (target is Bot || r.x * r.x + r.y * r.y < 1e-6)
+                        return seek(v);
+                    return r;
+                };
+            }
             if (!Enabled || self == null || dest == null || self._arena == null || self._state == null)
                 return EolBotCombatUtil.ChaseTargetWithoutLos(self, now, dest, fallback);
             try
             {
                 Mind m = Get(self);
                 EolBotPersona P = m.P;
+                // just had to back out of a corner / wall: a target it can't shoot from here is what walled it
+                // in - drop it and go somewhere else instead of walking straight back into the corner
+                if (self.LastWallEscapeTick != 0 && self.LastWallEscapeTick != m.SeenEscapeTick)
+                {
+                    m.SeenEscapeTick = self.LastWallEscapeTick;
+                    m.RoamDest = null;
+                    if (target != null && !BotCombat.CanDirectEngage(self, dest))
+                    {
+                        GiveUp(self, m, target);
+                        return false;
+                    }
+                }
                 if (!m.Logged && LogPersonas)
                 {
                     m.Logged = true;
@@ -448,8 +515,11 @@ namespace InfServer.Script.GameType_Eol
                 // aliens fight at their spit/plasma range when they have one, not on top of you
                 if (self is AlienHorde && self._weaponFarItem != null)
                     range = Math.Max(range, EolBotCombatUtil.GetCombatRangeRaw(self._weaponFarItem));
-                range = Math.Max(140, Math.Min(700, range));
-                double pref = Math.Max(150, range * P.RangeFrac);   // never run into the target
+                // melee only (board slash, bites - reach under 140): it has to get in close to land a hit
+                bool meleeOnly = range < 140
+                    && (self._weaponFarItem == null || EolBotCombatUtil.GetCombatRangeRaw(self._weaponFarItem) < 140);
+                range = meleeOnly ? Math.Max(40, range) : Math.Max(140, Math.Min(700, range));
+                double pref = meleeOnly ? Math.Max(18, range * 0.5) : Math.Max(150, range * P.RangeFrac);   // never run into the target (guns)
                 // splash-only bots (grenade launcher etc.) keep outside their minimum fire distance
                 int minFire = BotWeaponUtil.GetMinFireRangeRaw(self._weaponCloseItem);
                 int minFar = self._weaponFarItem != null ? BotWeaponUtil.GetMinFireRangeRaw(self._weaponFarItem) : minFire;
@@ -472,20 +542,6 @@ namespace InfServer.Script.GameType_Eol
                 // anywhere within its patience, give up on that target like a player would.
                 if (!los)
                 {
-                    if (m.NoLosTick == 0)
-                    {
-                        m.NoLosTick = now; m.NoLosX = self._state.positionX; m.NoLosY = self._state.positionY;
-                    }
-                    else if (now - m.NoLosTick >= P.PatienceMs)
-                    {
-                        int mx = self._state.positionX - m.NoLosX, my = self._state.positionY - m.NoLosY;
-                        if (mx * mx + my * my < 64 * 64)
-                        {
-                            GiveUp(self, m, target);
-                            return false;
-                        }
-                        m.NoLosTick = now; m.NoLosX = self._state.positionX; m.NoLosY = self._state.positionY;
-                    }
                     // Lost sight of a player: go where we last SAW them (a little ahead in the way they were
                     // running) to get eyes on them again - not to wherever they really are now. Reached that spot
                     // and they're not there: give up like a person would.
@@ -513,6 +569,21 @@ namespace InfServer.Script.GameType_Eol
                         else
                             m.SearchArrivedTick = 0;
                     }
+                    else if (target is Player && !EolBotPerception.SeesNow(self._state, (Player)target))
+                    {   // never seen where they are: nothing to go on - no tracking through walls
+                        GiveUp(self, m, target);
+                        return false;
+                    }
+
+                    // Real progress only: getting closer to where it's going, or actually travelling a found route.
+                    // (Sliding along a red wall toward someone on the other side is NOT progress - that used to
+                    // count as "moving", so bots ground against walls forever.) No progress within its patience:
+                    // give up and go back to roaming / patrol.
+                    if (!MakingProgress(self, m, chaseDest, now, P.PatienceMs))
+                    {
+                        GiveUp(self, m, target);
+                        return false;
+                    }
                     if (!EolBotCombatUtil.ChaseTargetWithoutLos(self, now, chaseDest, fallback))
                     {
                         GiveUp(self, m, target);
@@ -523,20 +594,35 @@ namespace InfServer.Script.GameType_Eol
                 m.NoLosTick = 0;
                 m.SearchArrivedTick = 0;
 
-                // far away (but visible): path-chase, shooting when the gun reaches
+                // can shoot over it (low physics) but can't walk through it?
+                bool walkClear = EolHqPatrol.TileLineClear(self._arena, self._state.positionX, self._state.positionY,
+                    dest.positionX, dest.positionY);
+
+                // EVERY approach (far chase, straight chase, route round) must actually be closing the gap; a bot
+                // that isn't getting closer / travelling a route within its patience drops the target and goes
+                // back to its own business - no grinding on walls, no standing off out of range.
+                if (dist > range * 1.05 && !MakingProgress(self, m, dest, now, P.PatienceMs + 1000))
+                {
+                    GiveUp(self, m, target);
+                    return false;
+                }
+
+                // far away (but visible): path-chase, shooting when the gun reaches. When the straight line is
+                // blocked, the stop-gap steering follows open ground (never seeks straight into the wall).
                 if (dist > range * 1.8)
                 {
-                    bool chasing = EolBotCombatUtil.ChaseTargetWithoutLos(self, now, dest, fallback);
+                    Func<InfantryVehicle, Vector3> far = walkClear ? fallback : EolHqPatrol.MakeLineClearPendingSeek(self, () => dest);
+                    bool chasing = EolBotCombatUtil.ChaseTargetWithoutLos(self, now, dest, far);
                     AimFire(self, dest, target, dist, Helpers.computeLeadFireAngle(self._state, dest, 10));
                     return chasing;
                 }
-
-                // can shoot over it (low physics) but can't walk through it: if it needs to close in, take the
-                // route round - still facing and shooting - instead of pushing into the obstacle
-                bool walkClear = EolHqPatrol.TileLineClear(self._arena, self._state.positionX, self._state.positionY,
-                    dest.positionX, dest.positionY);
                 if (!walkClear && dist > pref * 1.15)
                 {
+                    if (!MakingProgress(self, m, dest, now, P.PatienceMs + 1500))
+                    {
+                        GiveUp(self, m, target);
+                        return false;
+                    }
                     Helpers.ObjectState goal = new Helpers.ObjectState { positionX = dest.positionX, positionY = dest.positionY };
                     self.ApplyNavigationApproach(goal, EolHqPatrol.MakeLineClearPendingSeek(self, () => goal), new BotNavigateOptions
                     {
@@ -627,14 +713,76 @@ namespace InfServer.Script.GameType_Eol
             int gunAim = gun != null && gun.Projectile != null ? gun.getAimAngle(dest) : aimYaw;
             self.SetAim(gunAim, true);
 
+            Mind xm = Get(self);
+            int xnow = Environment.TickCount;
+
+            // grenade: mid range, clear (low-wall) line, on its own cooldown, a few per life
+            if (xm.Grenade != null && xm.GrenadesLeft > 0 && xnow - xm.NextGrenade >= 0 && xm.Grenade.ableToFire())
+            {
+                int gReach = BotWeaponUtil.GetCombatRangeRaw(xm.Grenade.ItemID != 0 ? AssetManager.Manager?.getItemByID(xm.Grenade.ItemID) : null);
+                int gMin = BotWeaponUtil.GetMinFireRangeRaw(xm.Grenade);
+                if (gReach > 0 && dist <= gReach && dist >= Math.Max(100, gMin)
+                    && BotCombat.TryAimAndFire(self, xm.Grenade, dest, requireLineOfSight: true, freezeMs: 0))
+                {
+                    xm.GrenadesLeft--;
+                    xm.NextGrenade = xnow + 6000 + xm.R.Next(5000);
+                    _fFired++;
+                    return;
+                }
+            }
+
+            // opener: one clip of it at every new human target (strip the shield), then the normal guns
+            if (xm.Opener != null && target is Player)
+            {
+                if (!ReferenceEquals(xm.OpenerTarget, target))
+                {
+                    xm.OpenerTarget = target;
+                    xm.OpenerShotsLeft = ClipOf(xm.Opener);
+                }
+                if (xm.OpenerShotsLeft > 0)
+                {
+                    int oReach = BotWeaponUtil.GetCombatRangeRaw(xm.Opener.ItemID != 0 ? AssetManager.Manager?.getItemByID(xm.Opener.ItemID) : null);
+                    // only when it can actually fire it from here - otherwise the normal guns keep shooting
+                    // (local fix 2026-11-14: it held fire waiting on an opener it was too far to use)
+                    if ((oReach <= 0 || dist <= BotCombat.MaxFireDistance(oReach, BotCombat.IsMeleeWeapon(xm.Opener)))
+                        && self.CanFireWeaponNow(xm.Opener))
+                    {
+                        if (xm.Opener.ableToFire()
+                            && BotCombat.TryAimAndFire(self, xm.Opener, dest, requireLineOfSight: true, freezeMs: 0))
+                        {
+                            xm.OpenerShotsLeft--;
+                            _fFired++;
+                            return;
+                        }
+                        if (!xm.Opener.ableToFire() && !xm.Opener.IsReloading)
+                            return;   // between opener shots
+                    }
+                }
+            }
+
             if (gun == null)
             {
                 _fNoGun++;
                 return;
             }
+            // Stay on the gun it is already shooting while that one is ready and in reach - swapping costs the
+            // weapon's switch delay (fireDelayOther, 1-3 s on most guns). Swap only when the current one is
+            // reloading / out of reach (fire on reload, like a player).
+            WeaponController last = self.LastFiredWeapon;
+            if (last != null && !ReferenceEquals(gun, last) && !self.CanFireWeaponNow(gun)
+                && (ReferenceEquals(last, self._weaponClose) || ReferenceEquals(last, self._weaponFar)) && last.ableToFire())
+            {
+                int lReach = BotWeaponUtil.GetCombatRangeRaw(last.ItemID != 0 ? AssetManager.Manager?.getItemByID(last.ItemID) : null);
+                int lMin = BotWeaponUtil.GetMinFireRangeRaw(last);
+                if ((lReach <= 0 || dist <= BotCombat.MaxFireDistance(lReach, BotCombat.IsMeleeWeapon(last))) && (lMin <= 0 || dist >= lMin))
+                {
+                    gun = last;
+                    self._weapon = gun;
+                }
+            }
             // out of the gun's reach: aim, don't waste shots
             int reach = BotWeaponUtil.GetCombatRangeRaw(gun.ItemID != 0 ? AssetManager.Manager?.getItemByID(gun.ItemID) : null);
-            if (reach > 0 && dist > Math.Max(reach * 1.5, 320))
+            if (reach > 0 && dist > BotCombat.MaxFireDistance(reach, BotCombat.IsMeleeWeapon(gun)))
             {
                 _fOutOfReach++;
                 return;
@@ -642,6 +790,8 @@ namespace InfServer.Script.GameType_Eol
             // Unload: fire every time the gun is ready and on target. (Hits on enemy BOTS are resolved for every
             // bot shot in OnBotShotFired below, whichever code path fired it.)
             if (!gun.ableToFire()) { _fCooldown++; return; }
+            // Every bot fires on the move - strafing while it aims, never stopping to turn and shoot (local
+            // 2026-11-14; the old charge-up "plant" made bots stand still and only rotate).
             if (BotCombat.TryAimAndFire(self, gun, dest, requireLineOfSight: true, freezeMs: 0))
                 _fFired++;
             else
@@ -683,7 +833,7 @@ namespace InfServer.Script.GameType_Eol
                 return;
             double dist = Helpers.distanceTo(shooter._state, targetState);
             int reach = BotWeaponUtil.GetCombatRangeRaw(gun.ItemID != 0 ? AssetManager.Manager?.getItemByID(gun.ItemID) : null);
-            if (reach > 0 && dist > Math.Max(reach * 1.5, 320))
+            if (reach > 0 && dist > BotCombat.MaxFireDistance(reach, BotCombat.IsMeleeWeapon(gun)))
                 return;
 
             _shotsAtBots++;
@@ -699,7 +849,11 @@ namespace InfServer.Script.GameType_Eol
                 victim.NoteHurtBy(shooter);
                 shooter._arena?.NoteBotDamagedByBot(victim, shooter);
             }
-            hitVeh.applyBotHit(gun.Projectile);
+            if (hitVeh is Computer turretHit)
+                // turrets: their own damage path (health update to clients + proper destroy when it hits 0)
+                turretHit.applyExplosion(null, turretHit._state.positionX, turretHit._state.positionY, gun.Projectile);
+            else
+                hitVeh.applyBotHit(gun.Projectile);
 
             int now = Environment.TickCount;
             if (LogPersonas && now - _tickHitLog > 15000)
@@ -708,6 +862,107 @@ namespace InfServer.Script.GameType_Eol
                 Log.write(TLog.Normal, "[bot brain] bot-vs-bot: {0} hits from {1} shots so far (e.g. {2} hit {3}, now {4} hp)",
                     _hitsLanded, _shotsAtBots, shooter._id, victim._id, victim._state.health);
             }
+        }
+
+        // ---------------------------------------------------------------- curiosity
+        struct Noise { public short X, Y; public int Tick; public Team Team; }
+        static readonly List<Noise> Noises = new List<Noise>(64);
+        const int NoiseLifeMs = 5000;
+
+        /// <summary>Something loud happened here (gunfire, a death): curious bots nearby go and have a look.</summary>
+        public static void NoteNoise(Team team, short x, short y)
+        {
+            int now = Environment.TickCount;
+            lock (Noises)
+            {
+                // merge with a recent noise close by (a firefight is one place, not 200 events)
+                for (int i = 0; i < Noises.Count; i++)
+                {
+                    Noise n = Noises[i];
+                    int dx = n.X - x, dy = n.Y - y;
+                    if (dx * dx + dy * dy < 250 * 250 && now - n.Tick < NoiseLifeMs)
+                    {
+                        n.Tick = now; n.X = x; n.Y = y; n.Team = team;
+                        Noises[i] = n;
+                        return;
+                    }
+                }
+                if (Noises.Count >= 64)
+                    Noises.RemoveAt(0);
+                Noises.Add(new Noise { X = x, Y = y, Tick = now, Team = team });
+            }
+        }
+
+        static void OnGunfireNoise(Team team, object owner, short x, short y)
+        {
+            NoteNoise(team, x, y);
+        }
+
+        /// <summary>
+        /// Natural curiosity when not fighting: head for recent gunfire / deaths within earshot (how far depends
+        /// on the bot) to find enemies - like a player hearing a fight. Returns true while investigating.
+        /// Base guards don't call this (they hold the base).
+        /// </summary>
+        public static bool TryInvestigate(Bot self, Script_Eol script, int now)
+        {
+            if (!Enabled || self?._arena == null || self._state == null || self.IsDead)
+                return false;
+            Mind m = Get(self);
+            if (m.Retreating)
+                return false;
+            int earshot = 900 + (int)(900 * m.P.Curiosity);
+
+            // keep going to the current spot until reached / stale
+            if (m.InvestUntil != 0 && now - m.InvestUntil < 0)
+            {
+                Helpers.ObjectState spot = new Helpers.ObjectState { positionX = m.InvestX, positionY = m.InvestY };
+                if (Helpers.distanceTo(self._state, spot) < 160 || !MakingProgress(self, m, spot, now, 4000))
+                {
+                    m.InvestUntil = 0;
+                    ResetProgress(m);
+                    return false;
+                }
+                GoTo(self, spot, PathPriority.Combat);
+                return true;
+            }
+
+            if (now - m.InvestPickTick < 700)
+                return false;
+            m.InvestPickTick = now;
+            Noise best = default(Noise); double bestD = double.MaxValue; bool found = false;
+            lock (Noises)
+            {
+                foreach (Noise n in Noises)
+                {
+                    if (now - n.Tick > NoiseLifeMs)
+                        continue;
+                    if (!InArea(n.X, n.Y))
+                        continue;
+                    double d = Helpers.distanceTo(self._state.positionX, self._state.positionY, n.X, n.Y);
+                    if (d < 200 || d > earshot)
+                        continue;
+                    if (d < bestD) { bestD = d; best = n; found = true; }
+                }
+            }
+            if (!found || m.R.NextDouble() > 0.35 + 0.6 * m.P.Curiosity)
+                return false;
+
+            m.InvestX = best.X; m.InvestY = best.Y;
+            m.InvestUntil = now + 9000;
+            ResetProgress(m);
+            GoTo(self, new Helpers.ObjectState { positionX = best.X, positionY = best.Y }, PathPriority.Combat);
+            return true;
+        }
+
+        static void GoTo(Bot self, Helpers.ObjectState spot, PathPriority pri)
+        {
+            Helpers.ObjectState dest = new Helpers.ObjectState { positionX = spot.positionX, positionY = spot.positionY };
+            self.ApplyNavigationApproach(dest, EolHqPatrol.MakeLineClearPendingSeek(self, () => dest), new BotNavigateOptions
+            {
+                RequeueMinMs = 1500,
+                PathStartIndex = 0,
+                Priority = pri,
+            });
         }
 
         // ---------------------------------------------------------------- turrets
@@ -721,7 +976,9 @@ namespace InfServer.Script.GameType_Eol
                 delegate (Vehicle x) { return x is Computer c && c._primaryGun != null && !x.IsDead && x._team != self._team; }))
             {
                 Computer c = (Computer)v;
-                if (c._team != null && c._team._name != null && c._team._name.StartsWith("Bot", StringComparison.OrdinalIgnoreCase)
+                if (IsTargetIgnored(self, c, Helpers.distanceTo(self._state, c._state)))
+                    continue;   // couldn't reach it recently
+                if (c._team != null && c._team._name != null && Arena.IsManagedBotTeamName(c._team._name)
                     && script != null && !script.ShouldEolBotTeamsFight(self._team, c._team))
                     continue;   // allied bot turret
                 if (!BotCombat.SightLineClear(self._arena, self._state.positionX, self._state.positionY, c._state.positionX, c._state.positionY))
@@ -768,7 +1025,15 @@ namespace InfServer.Script.GameType_Eol
                     turret._state.positionX, turret._state.positionY);
 
                 if (!shotClear || dist > range * 1.05)
-                {   // get into a firing spot: path toward it, aiming/firing when possible
+                {   // get into a firing spot: path toward it, aiming/firing when possible - unless it can't get there
+                    if (!MakingProgress(self, m, turret._state, now, 4000))
+                    {
+                        m.IgnoreUntil[turret] = now + 12000;
+                        m.Turret = null;
+                        ResetProgress(m);
+                        self.Navigation?.Clear();
+                        return false;
+                    }
                     Helpers.ObjectState goal = new Helpers.ObjectState { positionX = turret._state.positionX, positionY = turret._state.positionY };
                     self.ApplyNavigationApproach(goal, EolHqPatrol.MakeLineClearPendingSeek(self, () => goal), new BotNavigateOptions
                     {
@@ -797,6 +1062,37 @@ namespace InfServer.Script.GameType_Eol
             }
         }
 
+        /// <summary>
+        /// Progress toward <paramref name="goal"/>: true while the bot has got at least 48 px closer, or travelled
+        /// 96 px along a real navigation route, within the last <paramref name="patienceMs"/>. Shared by every
+        /// chase / hunt so no bot grinds against a wall toward a target it can't reach.
+        /// </summary>
+        static bool MakingProgress(Bot self, Mind m, Helpers.ObjectState goal, int now, int patienceMs)
+        {
+            double d = Helpers.distanceTo(self._state, goal);
+            int gx = goal.positionX - m.ProgGoalX, gy = goal.positionY - m.ProgGoalY;
+            bool newGoal = m.ProgTick == 0 || gx * gx + gy * gy > 300 * 300;   // a genuinely different goal: restart
+            if (newGoal)
+            {
+                m.ProgTick = now; m.ProgBest = d;
+                m.ProgGoalX = goal.positionX; m.ProgGoalY = goal.positionY;
+                m.ProgX = self._state.positionX; m.ProgY = self._state.positionY;
+                return true;
+            }
+            int mx = self._state.positionX - m.ProgX, my = self._state.positionY - m.ProgY;
+            bool closer = d < m.ProgBest - 48;
+            bool onRoute = self.Navigation != null && self.Navigation.HasPath && mx * mx + my * my >= 96 * 96;
+            if (closer || onRoute)
+            {
+                m.ProgTick = now; m.ProgBest = Math.Min(m.ProgBest, d);
+                m.ProgX = self._state.positionX; m.ProgY = self._state.positionY;
+                return true;
+            }
+            return now - m.ProgTick < patienceMs;
+        }
+
+        static void ResetProgress(Mind m) { m.ProgTick = 0; }
+
         /// <summary>Stop chasing a target it can't reach / see: forget it, drop the lock, back to its own business.</summary>
         static void GiveUp(Bot self, Mind m, object target)
         {
@@ -804,6 +1100,9 @@ namespace InfServer.Script.GameType_Eol
                 EolBotPerception.Forget(self._state, p);
             else if (target is Bot)
                 EolBotSenseUtil.SetStickyHostileBot(self._id, null);
+            // Only a bot that was really chasing this target drops its route; one that merely had it picked
+            // (never seen, never chased) keeps walking its patrol / roam - no stop-and-replan stutter.
+            bool wasChasing = ReferenceEquals(m.Committed, target) || ReferenceEquals(m.HuntTarget, target) || m.ProgTick != 0;
             if (ReferenceEquals(m.Committed, target))
             {
                 m.Committed = null;
@@ -813,11 +1112,41 @@ namespace InfServer.Script.GameType_Eol
                 m.HuntTarget = null;
             if (target != null)
                 m.IgnoreUntil[target] = Environment.TickCount + IgnoreAfterGiveUpMs;
+            ResetProgress(m);
             m.NoLosTick = 0;
-            try { self.Actions?.Clear(); } catch { }
-            self.Navigation?.Clear();
-            if (LogPersonas)
-                Log.write(TLog.Normal, "[bot brain] {0} lost its target behind cover - giving up the chase", self._id);
+            if (wasChasing)
+            {
+                try { self.Actions?.Clear(); } catch { }
+                self.Navigation?.Clear();
+            }
+            _giveUps++;
+            int now = Environment.TickCount;
+            if (LogPersonas && now - _tickGiveUpLog > 30000)
+            {   // one summary line every 30 s instead of a line per give-up (the log was 15k lines of this)
+                _tickGiveUpLog = now;
+                Log.write(TLog.Normal, "[bot brain] {0} give-ups (lost behind cover / unreachable) so far", _giveUps);
+            }
+        }
+
+        static int _giveUps, _tickGiveUpLog;
+
+        /// <summary>
+        /// A bot that has stood still without firing too long: drop whatever it was locked on (and ignore it for a
+        /// while) so it goes and does something else. Returns true if it had a target.
+        /// </summary>
+        public static bool DropStaleTarget(Bot self)
+        {
+            if (self == null)
+                return false;
+            Mind m;
+            if (!Minds.TryGetValue(self, out m) || m == null)
+                return false;
+            object t = m.Committed ?? m.HuntTarget;
+            m.RoamDest = null;
+            if (t == null)
+                return false;
+            GiveUp(self, m, t);
+            return true;
         }
 
         /// <summary>A bot of this persona hunts when idle (aliens: some; any alien whose ship is gone: all).</summary>
@@ -845,6 +1174,17 @@ namespace InfServer.Script.GameType_Eol
                 Mind m = Get(self);
                 Arena arena = self._arena;
 
+                // backed out of a corner: whatever it was walking to walled it in - pick a new destination
+                if (self.LastWallEscapeTick != 0 && self.LastWallEscapeTick != m.SeenEscapeTick)
+                {
+                    m.SeenEscapeTick = self.LastWallEscapeTick;
+                    if (m.HuntTarget != null)
+                        m.IgnoreUntil[m.HuntTarget] = now + 12000;
+                    m.HuntTarget = null;
+                    m.RoamDest = null;
+                    ResetProgress(m);
+                }
+
                 // pick / keep a quarry (hunters "track" by radar, but path to it - no aiming through walls)
                 if (now - m.HuntPickTick >= 1000 || m.HuntTarget == null || !IsHostileTarget(self, script, m.HuntTarget))
                 {
@@ -858,7 +1198,14 @@ namespace InfServer.Script.GameType_Eol
                             continue;
                         if (EolBotSenseUtil.PlayerHasActiveCloak(p))
                             continue;
+                        if (!InArea(p._state.positionX, p._state.positionY))
+                            continue;   // don't chase people into the toxic zone
+                        // no radar: only someone it has actually seen / been shot by (local 2026-11-14)
+                        if (!EolBotPerception.Knows(self._state, p))
+                            continue;
                         double d = Helpers.distanceTo(self._state, p._state);
+                        if (IsTargetIgnored(self, p, d))
+                            continue;   // gave up reaching them recently
                         if (ReferenceEquals(p, m.HuntTarget)) d *= 0.7;   // keep the same quarry
                         if (d < bestD) { bestD = d; best = p; }
                     }
@@ -870,6 +1217,10 @@ namespace InfServer.Script.GameType_Eol
                             if (!IsHostileTarget(self, script, v))
                                 continue;
                             double d = Helpers.distanceTo(self._state, v._state);
+                            if (d > EolBotPerception.SightRaw || !BotCombat.CanDirectEngage(self, v._state))
+                                continue;   // only bots it can see
+                            if (IsTargetIgnored(self, v, d))
+                                continue;
                             if (d < bestD) { bestD = d; best = v; }
                         }
                     }
@@ -877,7 +1228,19 @@ namespace InfServer.Script.GameType_Eol
                 }
 
                 Helpers.ObjectState goal = StateOf(m.HuntTarget);
+                // out of sight: go where it was LAST SEEN, never to its live position
+                if (m.HuntTarget is Player hp && goal != null && !EolBotPerception.SeesNow(self._state, hp))
+                {
+                    EolBotPerception.Sighting hs;
+                    goal = EolBotPerception.TryGetLastSighting(self._state, hp, out hs)
+                        ? new Helpers.ObjectState { positionX = hs.X, positionY = hs.Y }
+                        : null;
+                    if (goal == null)
+                        m.HuntTarget = null;
+                }
                 bool hunting = goal != null;
+                if (!hunting && TryInvestigate(self, script, now))
+                    return;   // nobody tracked: go and look where the fighting is
                 if (!hunting)
                 {
                     bool needPick = m.RoamDest == null || now - m.RoamPickTick > 25000
@@ -892,6 +1255,23 @@ namespace InfServer.Script.GameType_Eol
                 }
                 if (goal == null)
                     return;
+
+                // Can't actually get to the quarry (e.g. it's on the other side of a red wall and no route comes):
+                // drop it for a while and roam instead of grinding toward it.
+                if (hunting && !MakingProgress(self, m, goal, now, 4000))
+                {
+                    m.IgnoreUntil[m.HuntTarget] = now + 12000;
+                    m.HuntTarget = null;
+                    ResetProgress(m);
+                    self.Navigation?.Clear();
+                    m.RoamDest = PickRoamPoint(self, m, home);
+                    m.RoamPickTick = now;
+                    goal = m.RoamDest;
+                    hunting = false;
+                    if (goal == null)
+                        return;
+                    _giveUps++;   // counted in the 30 s give-up summary (was one log line each)
+                }
 
                 // stuck watchdog: no real progress in 3 s -> new roam point / fresh route
                 if (m.IdleTick == 0 || now - m.IdleTick >= 3000)
@@ -928,12 +1308,122 @@ namespace InfServer.Script.GameType_Eol
 
         const int HuntRadarRaw = 5000;
 
+        /// <summary>The granted (non-toxic) play area test, set by the gametype; null = anywhere.</summary>
+        public static Func<short, short, bool> PlayArea;
+
+        static bool InArea(short x, short y) { return PlayArea == null || PlayArea(x, y); }
+
+        /// <summary>Engine hook: where a bot that has idled 4 s should go (inside the open sectors). Engineers stay.</summary>
+        static Helpers.ObjectState IdleRoamFor(Bot b)
+        {
+            if (b == null || b is Engineer || b._state == null)
+                return null;
+            Helpers.ObjectState p = PickRoamPoint(b, Get(b), null);
+            return p != null && InArea(p.positionX, p.positionY) ? p : null;
+        }
+
+        static Func<InfantryVehicle, Vector3> IdleRoamSteerFor(Bot b, Helpers.ObjectState d)
+        {
+            return EolHqPatrol.MakeLineClearPendingSeek(b, () => d);
+        }
+
         /// <summary>An open spot 900-2600 px away (around home if given), clear of walls on every side.</summary>
+        // ---- points of interest (local 2026-11-14): bases (HQs + their turrets), flags, crash ships - where real
+        // players go. Refreshed every 5 s, merged onto a 400 px grid so a base counts once.
+        static readonly List<KeyValuePair<short, short>> _poi = new List<KeyValuePair<short, short>>();
+        static int _tickPoi;
+
+        static void RefreshPointsOfInterest(Arena arena, int now)
+        {
+            if (arena == null || (_tickPoi != 0 && now - _tickPoi < 5000))
+                return;
+            _tickPoi = now;
+            _poi.Clear();
+            HashSet<int> cells = new HashSet<int>();
+            Action<short, short> add = (x, y) =>
+            {
+                int cell = (x / 400) * 1000 + (y / 400);
+                if (cells.Add(cell))
+                    _poi.Add(new KeyValuePair<short, short>(x, y));
+            };
+            try
+            {
+                if (arena._flags != null)
+                    foreach (Arena.FlagState f in arena._flags.Values)
+                        if (f != null && f.bActive)
+                            add(f.posX, f.posY);
+                foreach (Vehicle v in arena.Vehicles)
+                {
+                    if (v == null || v.IsDead || v._type == null || v._state == null)
+                        continue;
+                    string n = v._type.Name ?? "";
+                    bool hq = n.IndexOf("HQ", StringComparison.OrdinalIgnoreCase) >= 0 || n.IndexOf("Headquarters", StringComparison.OrdinalIgnoreCase) >= 0;
+                    bool turret = v is Computer && n.IndexOf("Turret", StringComparison.OrdinalIgnoreCase) >= 0;
+                    bool ship = n.IndexOf("Spacecraft", StringComparison.OrdinalIgnoreCase) >= 0;
+                    if (hq || turret || ship)
+                        add(v._state.positionX, v._state.positionY);
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>A point of interest (or the ground between two) this bot hasn't searched lately; null = none.</summary>
+        static Helpers.ObjectState PickPointOfInterest(Bot self, Mind m)
+        {
+            RefreshPointsOfInterest(self._arena, Environment.TickCount);
+            if (_poi.Count == 0)
+                return null;
+            for (int tries = 0; tries < 12; tries++)
+            {
+                KeyValuePair<short, short> a = _poi[m.R.Next(_poi.Count)];
+                int x = a.Key, y = a.Value;
+                if (_poi.Count > 1 && m.R.NextDouble() < 0.35)
+                {   // the in-between places: halfway to another point of interest
+                    KeyValuePair<short, short> b = _poi[m.R.Next(_poi.Count)];
+                    x = (x + b.Key) / 2; y = (y + b.Value) / 2;
+                }
+                // somewhere around it, on open ground (not on the turret / HQ itself)
+                double ang = m.R.NextDouble() * Math.PI * 2;
+                int off = 120 + m.R.Next(260);
+                short sx = (short)Math.Max(64, Math.Min(short.MaxValue - 64, x + Math.Cos(ang) * off));
+                short sy = (short)Math.Max(64, Math.Min(short.MaxValue - 64, y + Math.Sin(ang) * off));
+                if (!EolHqPatrol.IsOpenForBot(self, sx, sy) || !InArea(sx, sy))
+                    continue;
+                if (Helpers.distanceTo(self._state.positionX, self._state.positionY, sx, sy) < 500)
+                    continue;
+                bool recent = false;
+                foreach (long v in m.Searched)
+                    if (Helpers.distanceTo(sx, sy, (short)(v >> 16), (short)(v & 0xFFFF)) < 450) { recent = true; break; }
+                if (recent)
+                    continue;
+                return new Helpers.ObjectState { positionX = sx, positionY = sy };
+            }
+            return null;
+        }
+
         static Helpers.ObjectState PickRoamPoint(Bot self, Mind m, Helpers.ObjectState home)
         {
+            // Half the time head for a point of interest - a base, a flag, a crash ship, or the ground between
+            // two - like a player looking for a fight; otherwise sweep new open ground.
+            if (m.R.NextDouble() < 0.5)
+            {
+                Helpers.ObjectState poi = PickPointOfInterest(self, m);
+                if (poi != null)
+                {
+                    m.Searched.Enqueue(((long)(ushort)poi.positionX << 16) | (ushort)poi.positionY);
+                    while (m.Searched.Count > 8)
+                        m.Searched.Dequeue();
+                    return poi;
+                }
+            }
+            // Logical searching: of a dozen valid spots, go to the one farthest from everywhere this bot searched
+            // recently (and from its squad-mates' current search spots), so it sweeps new ground instead of
+            // circling the same patch.
             short cx = home != null ? home.positionX : self._state.positionX;
             short cy = home != null ? home.positionY : self._state.positionY;
-            for (int i = 0; i < 60; i++)
+            Helpers.ObjectState best = null;
+            double bestScore = -1;
+            for (int i = 0, found = 0; i < 90 && found < 12; i++)
             {
                 double a = m.R.NextDouble() * Math.PI * 2;
                 int rad = 900 + m.R.Next(1700);
@@ -943,11 +1433,29 @@ namespace InfServer.Script.GameType_Eol
                 short sx = (short)x, sy = (short)y;
                 if (!EolHqPatrol.IsOpenForBot(self, sx, sy))
                     continue;
+                if (!InArea(sx, sy))
+                    continue;   // never roam into the toxic zone
                 if (Helpers.distanceTo(self._state.positionX, self._state.positionY, sx, sy) < 600)
                     continue;
-                return new Helpers.ObjectState { positionX = sx, positionY = sy };
+                found++;
+                double novelty = 3000;
+                foreach (long v in m.Searched)
+                {
+                    double d = Helpers.distanceTo(sx, sy, (short)(v >> 16), (short)(v & 0xFFFF));
+                    if (d < novelty) novelty = d;
+                }
+                double score = novelty + m.R.NextDouble() * 300;
+                if (score > bestScore) { bestScore = score; best = new Helpers.ObjectState { positionX = sx, positionY = sy }; }
             }
-            return null;
+            if (best != null)
+            {
+                m.Searched.Enqueue(((long)(ushort)best.positionX << 16) | (ushort)best.positionY);
+                while (m.Searched.Count > 8)
+                    m.Searched.Dequeue();
+            }
+            if (best == null)
+                best = PickPointOfInterest(self, m);   // never left with nowhere to go
+            return best;
         }
 
         /// <summary>
@@ -1042,7 +1550,10 @@ namespace InfServer.Script.GameType_Eol
         {
             // (re)attach the bot-vs-bot hit resolver - replaced, not added, so a script reload can't double it
             BotCombat.BotShotFired = OnBotShotFired;
+            Bot.IdleRoamTarget = IdleRoamFor;          // nobody stands around: idle bots roam to points of interest
+            Bot.IdleRoamSteer = IdleRoamSteerFor;
             InfServer.Game.Modules.BotActions.BotActionHelpers.IgnoreTarget = IsTargetIgnored;
+            Arena.GunfireNoise = OnGunfireNoise;
             if (!_loggedWeapons && arena?._server?._assets != null)
                 LogBotWeapons(arena);
             EolBotPerception.InstallEngineHook();

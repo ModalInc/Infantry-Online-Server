@@ -37,14 +37,16 @@ namespace InfServer.Script.GameType_Eol
 
         public static BotSettings Settings(this Vehicle bot)
         {
-            string description = bot._type.Description;
+            string description = bot?._type?.Description ?? "";
             int cash = 0;
             int experience = 0;
             int points = 0;
             int bounty = 0;
 
             //Read in any sub-settings within the description
-            if (description.Length >= 4 && description.Substring(0, 9).ToLower().Equals("settings="))
+            // (local fix 2026-11-14: was Length >= 4 then Substring(0, 9) - classes with a 4-8 character description
+            // threw on spawn, so those human-class bots never appeared)
+            if (description.Length >= 9 && description.Substring(0, 9).ToLower().Equals("settings="))
             {
                 string[] lootparams;
                 lootparams = Regex.Split(description.Substring(9, description.Length - 9), ",(?=(?:[^\']*\'[^\']*\')*(?![^\']*\'))");

@@ -754,6 +754,7 @@ namespace InfServer.Game
 
                 // Pace bot killfeed every poll (25ms gate inside); death FX is sent immediately on kill.
                 DrainBotDeathNetQueue(now);
+                DrainPendingNamelistLeaves(now);   // bots that died for good leave after their death animation
 
                 bool bMinor = (now - _tickLastMinorPoll) >= 1000;
                 if (bMinor)
@@ -1552,8 +1553,10 @@ namespace InfServer.Game
         /// </summary>
         public static bool IsManagedBotTeamName(string name)
         {
+            // "Bot - ..." (legacy) or "... Bots" (named factions, local 2026-11-14)
             return !string.IsNullOrEmpty(name)
-                && name.StartsWith("Bot", StringComparison.OrdinalIgnoreCase);
+                && (name.StartsWith("Bot", StringComparison.OrdinalIgnoreCase)
+                    || name.EndsWith(" Bots", StringComparison.OrdinalIgnoreCase));
         }
 
         /// <summary>

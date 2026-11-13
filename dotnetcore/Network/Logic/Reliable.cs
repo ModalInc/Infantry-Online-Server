@@ -69,13 +69,14 @@ namespace InfServer.Logic
 		/// </summary>
 		static public void Handle_OutOfSync(OutOfSync pkt, Client client)
 		{
+			// Fill the gap at once: resend every unconfirmed reliable up to the reported one (local fix 2026-11-14).
+			if (client.resendReliableUpTo(pkt.streamID, pkt.rNumber))
+				return;
 			if (client.resendReliable(pkt.streamID, pkt.rNumber))
 				return;
 
-			// Packet already gone (acked, trimmed, or abandoned) — do not kick the player.
-			Log.write(TLog.Warning,
-				"Client {0} reported missing reliable #{1} on stream {2} — packet already dropped; ignoring.",
-				client, pkt.rNumber, pkt.streamID);
+			// Nothing left to resend (already confirmed / gone) - normal, the client catches up by itself.
+			// (Was a warning on every report; it is not an error.)
 		}
 
 		/// <summary>

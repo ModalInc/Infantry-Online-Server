@@ -47,6 +47,9 @@ namespace InfServer.Protocol
 				return;
 			bPoseSnapshot = true;
 			snapHealth = v._state.health;
+			// bot HP is never shown (local 2026-11-14): a living bot reports full health
+			if (v is InfServer.Bots.Bot && v._state.health > 0 && v._type != null && v._type.Hitpoints > 0)
+				snapHealth = (short)Math.Min(short.MaxValue, v._type.Hitpoints);
 			snapVelX = v._state.velocityX;
 			snapVelY = v._state.velocityY;
 			snapVelZ = v._state.velocityZ;

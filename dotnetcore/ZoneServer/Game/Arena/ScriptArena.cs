@@ -3016,8 +3016,10 @@ namespace InfServer.Game
 
             // Drop namelist after script so handlers can still read bot._alias for stats.
             // Dropship-respawn bots keep their name and team-list entry until revived or cancelled.
-            if (dead == null || !dead.bDropshipRespawnPending)
-                RemoveBotFromNamelist(dead);
+            // (local 2026-11-14) delayed until the death animation has played - an instant leave made the
+            // client delete the body, so bots that die for good showed no death at all
+            if (dead != null && !dead.bDropshipRespawnPending)
+                RemoveBotFromNamelistAfterDeath(dead);
 
             if (!scriptHandled)
             {

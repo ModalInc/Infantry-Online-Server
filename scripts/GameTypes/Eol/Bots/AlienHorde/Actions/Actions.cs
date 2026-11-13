@@ -76,6 +76,9 @@ namespace InfServer.Script.GameType_Eol
             // local 2026-11-13: a hostile turret in sight gets attacked instead of patrolling past it
             if (EolBotBrain.TryEngageTurret(this, _baseScript, now))
                 return;
+            // curious (not base guards): go and look where the fighting is
+            if (!EolHqPatrol.IsGuard(this) && EolBotBrain.TryInvestigate(this, _baseScript, now))
+                return;
             // Bloodthirsty bugs (all of them once the ship is gone) hunt for people instead of patrolling.
             if (EolBotBrain.IsHunter(this, vHq != null))
             {

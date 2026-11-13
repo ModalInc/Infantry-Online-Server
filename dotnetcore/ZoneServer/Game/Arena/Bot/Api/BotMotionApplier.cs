@@ -120,10 +120,13 @@ namespace InfServer.Bots
         public static int DefaultFireHeight;
 
         /// <summary>Shots clear a tile when it isn't blocked, or its physics top is below the fire height.</summary>
-        /// <summary>Shots always clear low physics up to this height (green 16 / yellow 32 on Pioneer Station).</summary>
+        /// <summary>Shots clear low physics up to this height (green 16 / yellow 32 on Pioneer Station) - nothing taller.</summary>
         public static int ShotOverPhysicsHeight = 32;
-        /// <summary>Sight is blocked only by physics at least this tall (full walls, 496); everything lower is see-through.</summary>
-        public static int SightBlockPhysicsHeight = 400;
+        /// <summary>
+        /// Sight is blocked by physics at least this tall: orange (64), purple (124) and red (496) are WALLS;
+        /// green / yellow below it are see-through (local 2026-11-14). Maser carriers see through everything.
+        /// </summary>
+        public static int SightBlockPhysicsHeight = 64;
 
         static bool ShotPasses(Arena arena, LvlInfo.Tile t, int fireHeight)
         {
@@ -132,7 +135,8 @@ namespace InfServer.Bots
             short[] high = arena._server._assets.Level.PhysicsHigh;
             if (high == null || t.Physics >= high.Length)
                 return false;
-            return high[t.Physics] <= ShotOverPhysicsHeight || (fireHeight > 0 && high[t.Physics] < fireHeight);
+            // only the low physics; orange / purple / red stop shots like they stop sight
+            return high[t.Physics] <= ShotOverPhysicsHeight;
         }
 
         /// <summary>Can a bot SEE along this line? Only full-height walls block sight (local 2026-11-13).</summary>
@@ -194,15 +198,8 @@ namespace InfServer.Bots
             if (bot == null || targetState == null)
                 return false;
 
-            // Maser carriers shoot through walls - anything within the maser's reach is "in the open" for them.
-            WeaponController maser = BotWeaponUtil.WallPiercingWeapon(bot);
-            if (maser != null)
-            {
-                int mr = maser.ItemID != 0 ? BotWeaponUtil.GetCombatRangeRaw(AssetManager.Manager?.getItemByID(maser.ItemID)) : 0;
-                if (mr > 0 && Helpers.distanceTo(bot._state, targetState) <= Math.Max(mr * 1.5, 320))
-                    return true;
-            }
-
+            // (No wall-seeing for anyone - local 2026-11-14: masers no longer make targets behind walls "engageable";
+            // a maser can still fire through a wall at a target in TryAimAndFire, but targeting needs a clear line.)
             return ShotLineClear(
                     bot._arena,
                     FireHeightOf(bot),
@@ -236,6 +233,30 @@ namespace InfServer.Bots
                 steering.steerDelegate = fallbackSteer;
         }
 
+        /// <summary>
+        /// Farthest a bot fires a weapon from. Guns: 1.5x their reach (min 320 - shots lead / travel). Short-range
+        /// weapons (melee slashes, bites, flamers - reach under 200): only within reach (local fix 2026-11-14: the
+        /// 320 floor let a Deathboard "slash" kill from across the screen).
+        /// </summary>
+        public static double MaxFireDistance(int reach)
+        {
+            return MaxFireDistance(reach, false);
+        }
+
+        /// <param name="melee">True for weapons whose shot doesn't travel (slash, bite: muzzle velocity 0).</param>
+        public static double MaxFireDistance(int reach, bool melee)
+        {
+            if (reach <= 0)
+                return double.MaxValue;
+            return melee ? reach + 16 : Math.Max(reach * 1.5, 320);
+        }
+
+        /// <summary>A weapon whose shot doesn't fly (board slash, alien bite): it only lands within its own radius.</summary>
+        public static bool IsMeleeWeapon(WeaponController w)
+        {
+            return w?.Projectile != null && w.Projectile.muzzleVelocity <= 0;
+        }
+
         public static bool TryAimAndFire(
             Bot bot,
             WeaponController weapon,
@@ -254,6 +275,10 @@ namespace InfServer.Bots
 
             if (!weapon.ableToFire())
                 return false;
+            // One trigger, like a player (local 2026-11-14): after firing one weapon, a different one (grenade,
+            // opener, the other gun) waits that weapon's fireDelayOther - never two weapons at once.
+            if (!bot.CanFireWeaponNow(weapon))
+                return false;
 
             // Splash weapons: never point blank; and nobody fires beyond the gun's reach (safety net for every
             // fire path - bots were trading shots from miles away that could never land).
@@ -262,7 +287,7 @@ namespace InfServer.Bots
             if (minRange > 0 && fireDist < minRange)
                 return false;
             int reach = weapon.ItemID != 0 ? BotWeaponUtil.GetCombatRangeRaw(AssetManager.Manager?.getItemByID(weapon.ItemID)) : 0;
-            if (reach > 0 && fireDist > Math.Max(reach * 1.5, 320))
+            if (reach > 0 && fireDist > MaxFireDistance(reach, IsMeleeWeapon(weapon)))
                 return false;
 
             int aimResult = weapon.getAimAngle(targetState);
@@ -280,6 +305,7 @@ namespace InfServer.Bots
 
             bot._itemUseID = weapon.ItemID;
             weapon.shotFired();
+            bot.NoteWeaponFired(weapon);
             try { BotShotFired?.Invoke(bot, weapon, targetState); }
             catch { /* script hook must never break firing */ }
             return true;

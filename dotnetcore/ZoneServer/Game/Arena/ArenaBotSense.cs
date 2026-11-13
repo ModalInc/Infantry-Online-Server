@@ -32,8 +32,14 @@ namespace InfServer.Game
         /// Record a projectile fired at (x, y) facing yaw so bots on other teams can dodge it.
         /// Called for player, bot and turret fire; no-op when dodging is off or there are no bots.
         /// </summary>
+        /// <summary>Gunfire "noise" for curious bots (team, owner, x, y) - local 2026-11-14; set by the gametype.</summary>
+        public static Action<Team, object, short, short> GunfireNoise;
+
         public void NoteProjectileFired(Team team, object owner, short x, short y, byte yaw, int itemId)
         {
+            try { GunfireNoise?.Invoke(team, owner, x, y); }
+            catch { /* script hook must never break routing */ }
+
             if (!BotFeatures.Dodge || itemId <= 0 || _bots.Count == 0)
                 return;
 

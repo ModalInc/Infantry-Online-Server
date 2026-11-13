@@ -327,7 +327,7 @@ namespace InfServer.Script.GameType_Eol
         static Helpers.ObjectState PickVariedLegDest(Bot bot, Arena arena, Vehicle hq, bool returningHome)
         {
             double roll = PatrolRand.NextDouble();
-            if (returningHome && roll < 0.40)
+            if (returningHome && roll < 0.10)
                 return PickNearOwnTurret(bot, arena, hq);
             if (!returningHome && roll < 0.22)
                 return PickInDisk(bot, arena, hq, OutboundMaxRadiusRaw, OutboundMaxRadiusRaw + 1600, MinOutboundLegRaw, true);
@@ -400,21 +400,29 @@ namespace InfServer.Script.GameType_Eol
             return RoleById.TryGetValue(bot._id, out role) ? role : PatrolRole.Perimeter;
         }
 
+        /// <summary>True for a base's inside-guards (they hold the base rather than wander off to fights).</summary>
+        public static bool IsGuard(Bot bot)
+        {
+            PatrolRole r;
+            return bot != null && RoleById.TryGetValue(bot._id, out r) && r == PatrolRole.Guard;
+        }
+
         static Helpers.ObjectState PickForRole(Bot bot, Arena arena, Vehicle hq, bool returningHome)
         {
             PatrolRole role = RoleOf(bot, arena, hq);
             double roll = PatrolRand.NextDouble();
             switch (role)
             {
-                case PatrolRole.Guard:      // inside the base, checking turrets
-                    if (roll < 0.35) return PickNearOwnTurret(bot, arena, hq);
-                    return PickInDisk(bot, arena, hq, 120, 520, 160, false);
-                case PatrolRole.Perimeter:  // just outside the base, sometimes back in to check turrets
-                    if (returningHome && roll < 0.35) return PickNearOwnTurret(bot, arena, hq);
-                    return PickInDisk(bot, arena, hq, 600, 1400, 350, true);
-                default:                    // roamers: far out; now and then swing home
-                    if (returningHome && roll < 0.30)
-                        return roll < 0.12 ? PickNearOwnTurret(bot, arena, hq) : PickInDisk(bot, arena, hq, 700, 1300, 500, true);
+                // local 2026-11-14: less time at the turrets, more roaming around the base area
+                case PatrolRole.Guard:      // the base and its edge; an occasional turret check
+                    if (roll < 0.12) return PickNearOwnTurret(bot, arena, hq);
+                    return PickInDisk(bot, arena, hq, 250, 900, 250, true);
+                case PatrolRole.Perimeter:  // a wide ring round the base; rarely back to a turret
+                    if (returningHome && roll < 0.08) return PickNearOwnTurret(bot, arena, hq);
+                    return PickInDisk(bot, arena, hq, 800, 2000, 500, true);
+                default:                    // roamers: far out; now and then swing past the base area
+                    if (returningHome && roll < 0.25)
+                        return PickInDisk(bot, arena, hq, 900, 1600, 600, true);
                     return PickInDisk(bot, arena, hq, 1500, 3800, MinOutboundLegRaw, true);
             }
         }
@@ -740,11 +748,13 @@ namespace InfServer.Script.GameType_Eol
 
                 if (!TileLineClear(bot._arena, bx, by, dest.positionX, dest.positionY))
                 {
-                    aim = LastClearAlongRay(bot, bx, by, dest.positionX, dest.positionY);
+                    // Local 2026-11-14: it can SEE the wall - never walk up to it and push. Plan round it with
+                    // memory (EolWallMemory): open ground that gets closer, not where it has just been.
+                    aim = EolWallMemory.NextWaypoint(bot, dest);
                     if (aim == null)
                         aim = PickClearHop(bot, dest);
                     if (aim == null)
-                        return SeekRaw(vehicle, dest.positionX, dest.positionY, 0.85f);
+                        return Vector3.Zero;   // nothing open at all: hold, don't press into the wall
                     scale = 1.05f;
                 }
 
@@ -752,7 +762,7 @@ namespace InfServer.Script.GameType_Eol
                 if (aimDistSq < 28L * 28L)
                 {
                     if (aim != dest)
-                        return SeekRaw(vehicle, dest.positionX, dest.positionY, 0.9f);
+                        return Vector3.Zero;   // at the waypoint: the next tick plans the next leg (never seek into the wall)
                     return SeekRaw(vehicle, dest.positionX, dest.positionY, 0.35f);
                 }
 

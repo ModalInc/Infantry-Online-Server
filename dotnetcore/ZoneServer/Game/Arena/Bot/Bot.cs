@@ -97,6 +97,165 @@ namespace InfServer.Bots
         private int _insidePhysicsTries;
         private int _droppedForDeathTick = int.MinValue;
 
+        // ---- wall sense (local 2026-11-14): never face a wall and stay there
+        private int _wallSenseTick, _wallSampleTick, _wallPressStrikes;
+        private short _wallSampleX, _wallSampleY;
+        private static int _wallSenseLogTick;
+        private int _escapeStreak;
+        private short _escapeX, _escapeY;
+
+        /// <summary>Tick of this bot's last wall / corner escape (0 = never) - scripts drop the goal that walled it in.</summary>
+        public int LastWallEscapeTick { get; private set; }
+
+        /// <summary>How many of 8 directions are blocked within <paramref name="r"/> px (3+ = boxed into a corner).</summary>
+        private int CountBlockedAround(int r)
+        {
+            int n = 0;
+            for (int k = 0; k < 8; k++)
+                if (BotWallAvoidance.ProbeOpen(this, _state.positionX, _state.positionY, k * 30.0, r) < r - 8)
+                    n++;
+            return n;
+        }
+
+        /// <summary>
+        /// Every 0.4 s: a bot that wants to move, has a wall right ahead of where it's going, and has covered
+        /// under 48 px in the last 1.2 s is "pressing a wall". After ~1 s of that it looks round 16 directions for
+        /// the longest clear run (a doorway / open ground), prefers ones not straight back where it came from,
+        /// drives through it for ~1 s, then re-paths from there. Applies to every bot, in or out of combat.
+        /// </summary>
+        private void WallSense(int now)
+        {
+            if (MovementMode != BotMovementMode.Api || _state == null || _movement == null || _arena == null || IsDead)
+                return;
+            if (_movement.IsMovementFrozen || now - _pinUntil < 0)
+                return;
+            if (_wallSenseTick != 0 && now - _wallSenseTick < 400)
+                return;
+            _wallSenseTick = now == 0 ? 1 : now;
+
+            if (_wallSampleTick == 0 || now - _wallSampleTick >= 1200)
+            {
+                _wallSampleTick = now == 0 ? 1 : now;
+                _wallSampleX = _state.positionX;
+                _wallSampleY = _state.positionY;
+            }
+
+            SteeringController steering = _movement as SteeringController;
+            bool wants = steering != null
+                && (Math.Abs(steering.AnalogForward) > 0.25f || Math.Abs(steering.AnalogStrafe) > 0.25f
+                    || steering.FollowPath != null || Navigation.HasPath);
+            double travel = TravelYaw();
+            if (double.IsNaN(travel))
+            {
+                // standing: the direction it is trying to go (body-relative drive), else where it faces
+                if (steering != null && (Math.Abs(steering.AnalogForward) > 0.05f || Math.Abs(steering.AnalogStrafe) > 0.05f))
+                    travel = BotWallAvoidance.WrapYaw(_state.yaw + Math.Atan2(steering.AnalogStrafe, steering.AnalogForward) * 120.0 / Math.PI);
+                else
+                    travel = _state.yaw;
+            }
+            int ahead = BotWallAvoidance.ProbeOpen(this, _state.positionX, _state.positionY, travel, 40);
+            int mdx = _state.positionX - _wallSampleX, mdy = _state.positionY - _wallSampleY;
+            bool slow = mdx * mdx + mdy * mdy < 48 * 48 && now - _wallSampleTick >= 800;
+            // escaped far enough from the last escape spot: the streak is over
+            int edx = _state.positionX - _escapeX, edy = _state.positionY - _escapeY;
+            if (_escapeStreak > 0 && edx * edx + edy * edy > 200 * 200)
+                _escapeStreak = 0;
+            // Pressing a wall, OR wedged in a corner (wants to move, hardly moving - the wall may be off to the
+            // side, not dead ahead): after ~1.2 s, scan for the way out.
+            bool cornered = slow && CountBlockedAround(56) >= 3;
+            if (!(wants && slow && (ahead < 28 || cornered)))
+            {
+                _wallPressStrikes = 0;
+                return;
+            }
+            if (++_wallPressStrikes < 3)
+                return;
+            _wallPressStrikes = 0;
+
+            // Scan all round (24 directions, out to 480 px) for the longest clear run - a doorway or open
+            // ground - preferring roughly the way it wanted to go, never straight back into the same wall.
+            double bestYaw = double.NaN;
+            double bestScore = -1;
+            for (int k = 0; k < 24; k++)
+            {
+                double yaw = BotWallAvoidance.WrapYaw(travel + k * 10.0);
+                int free = BotWallAvoidance.ProbeOpen(this, _state.positionX, _state.positionY, yaw, 480);
+                if (free < 64)
+                    continue;
+                double off = Math.Abs(Helpers.calculateDifferenceInAngles(travel, yaw));   // yaw units, 0..120
+                double score = free * (1.0 - 0.25 * off / 120.0) + (HumanRng.NextDouble() * 24);
+                if (off < 15)
+                    score *= 0.5;   // that's the wall we're pressing
+                if (score > bestScore) { bestScore = score; bestYaw = yaw; }
+            }
+            if (double.IsNaN(bestYaw))
+                return;
+
+            // Each repeat escape near the same spot commits longer, so it really leaves the corner instead of
+            // being steered straight back in; the brain is told to drop that goal (LastWallEscapeTick).
+            if (_escapeStreak == 0)
+            {
+                _escapeX = _state.positionX;
+                _escapeY = _state.positionY;
+            }
+            _escapeStreak++;
+            int hold = _escapeStreak <= 1 ? 900 + HumanRng.Next(400) : _escapeStreak == 2 ? 1700 : 2600;
+            _pinYaw = bestYaw;
+            _pinUntil = now + hold;
+            LastWallEscapeTick = now == 0 ? 1 : now;
+            Navigation.Clear();   // re-path from the new spot once through
+            if (now - _wallSenseLogTick > 5000)
+            {
+                _wallSenseLogTick = now;
+                Log.write(TLog.Normal, "[bot] {0} was pressing a wall - heading for the opening at yaw {1:F0}", _id, bestYaw);
+            }
+        }
+        private int _tickHullRefresh;
+        private readonly HashSet<int> _playersSeenDead = new HashSet<int>();
+
+        /// <summary>
+        /// No invisible bots (local 2026-11-14): a client can drop a bot's body (death graphic, respawn screen)
+        /// while the server still believes it has it - the bot then shoots from nowhere. Every ~6 s re-send the
+        /// hull (SC_Vehicles repair, no Leave/Enter) to players near the bot so it can never stay invisible.
+        /// </summary>
+        private void RefreshHullForNearbyClients(int now)
+        {
+            if (_arena == null || _state == null || IsDead)
+                return;
+            if (_tickHullRefresh == 0)
+            {
+                _tickHullRefresh = now + 3000 + (_id % 3000);   // stagger bots
+                return;
+            }
+            if (now - _tickHullRefresh < 0)
+                return;
+            _tickHullRefresh = now + 500;
+            // ONE re-send per player, at the moment they respawn (dead -> alive): that's when a client may have
+            // dropped bot bodies, and the screen is changing anyway so nothing visibly jumps. No periodic
+            // re-sends at all (those showed as bots "teleporting" - every 6 s, even while you were dead).
+            List<Player> near = _arena.getPlayersAndSpecInRange(_state.positionX, _state.positionY, Arena.GetBotHighRateViewRange());
+            if (near == null)
+                return;
+            bool any = false;
+            foreach (Player p in near)
+            {
+                if (p == null)
+                    continue;
+                if (p.IsDead)
+                {
+                    _playersSeenDead.Add(p._id);
+                    continue;
+                }
+                if (_playersSeenDead.Remove(p._id))
+                {
+                    ClearClientAwareOfBot(p);
+                    any = true;
+                }
+            }
+            if (any)
+                RequestHullReattach(now + 3000);
+        }
+
         /// <summary>Nearest spot (8 px steps out to <paramref name="maxR"/>) this bot can stand on with clear tiles around it.</summary>
         private Helpers.ObjectState? NearestFreeSpot(int maxR)
         {
@@ -153,6 +312,8 @@ namespace InfServer.Bots
                 }
                 _insidePhysicsTries = 0;
                 Navigation.Clear();
+                Log.write(TLog.Normal, "[bot] {0} (veh {1}) was on physics at ({2},{3}) - nudged to ({4},{5})",
+                    _id, _type?.Id, _state.positionX, _state.positionY, free.positionX, free.positionY);
                 _movement.warp(new Helpers.ObjectState { positionX = free.positionX, positionY = free.positionY, positionZ = _state.positionZ, yaw = _state.yaw });
                 return;
             }
@@ -629,8 +790,102 @@ namespace InfServer.Bots
         {
             Loadout.SyncActiveEquipBroadcast();
             BotUtilityEffects.AccumulateUtilityArmor(Loadout.GetActiveUtilities(), out _utilityArmorIgnore, out _utilityArmorPercent);
+            if (ExtraArmorIgnore > 0 || ExtraArmorPercent > 0)
+            {   // every damage channel, no immunity (local 2026-11-14: human-class bots as tough as the pirates)
+                for (int c = 0; c < _utilityArmorIgnore.Length; c++)
+                {
+                    _utilityArmorIgnore[c] += ExtraArmorIgnore;
+                    // channels 4-5 = bypass / energy (the pirates are immune there; human bots get a big cut)
+                    int pct = c >= 4 && ExtraArmorPercentBypassEnergy > 0 ? ExtraArmorPercentBypassEnergy : ExtraArmorPercent;
+                    _utilityArmorPercent[c] = Math.Min(1000, _utilityArmorPercent[c] + pct);
+                }
+            }
             _utilityMovementMods = BotUtilityEffects.ComputeMovementModifiers(Loadout.GetActiveUtilities());
+            if (AgilityBonusPercent > 0 && _type != null && _type.TerrainSpeeds != null && _type.TerrainSpeeds.Length > 0)
+            {
+                SpeedValues t0 = _type.TerrainSpeeds[0];
+                int p = AgilityBonusPercent;
+                _utilityMovementMods.ThrustBonus += t0.RollThrust * p / 100;
+                _utilityMovementMods.StrafeThrustBonus += t0.StrafeThrust * p / 100;
+                _utilityMovementMods.ReverseThrustBonus += t0.BackwardThrust * p / 100;
+                _utilityMovementMods.TopSpeedBonus += t0.RollTopSpeed * p / 100;
+                _utilityMovementMods.RotateBonus += t0.RollRotate * p / 200;
+            }
             _movement.ApplyUtilityMovementModifiers(_utilityMovementMods);
+        }
+
+        int _lastFiredItemId, _tickOtherWeaponReady;
+
+        /// <summary>
+        /// One trigger finger (local 2026-11-14): the same weapon follows its own cooldown; a DIFFERENT weapon has
+        /// to wait the last weapon's fireDelayOther, exactly like a player switching guns.
+        /// </summary>
+        public bool CanFireWeaponNow(WeaponController w)
+        {
+            if (w == null)
+                return false;
+            if (_lastFiredItemId == 0 || w.ItemID == _lastFiredItemId)
+                return true;
+            return Environment.TickCount - _tickOtherWeaponReady >= 0;
+        }
+
+        public void NoteWeaponFired(WeaponController w)
+        {
+            if (w == null)
+                return;
+            _lastFiredItemId = w.ItemID;
+            _tickOtherWeaponReady = Environment.TickCount + Math.Max(0, w.FireDelayOtherMs);
+            LastShotTick = Environment.TickCount == 0 ? 1 : Environment.TickCount;
+            LastFiredWeapon = w;
+        }
+
+        /// <summary>The weapon this bot fired last (keeps using it rather than paying a switch delay).</summary>
+        public WeaponController LastFiredWeapon { get; private set; }
+
+        /// <summary>Tick of this bot's last shot (0 = never) - scripts use it to spot bots doing nothing.</summary>
+        public int LastShotTick { get; private set; }
+
+        /// <summary>Script hook: item id this bot drops on death (0 = the vehicle's own DropItemId).</summary>
+        public static Func<Bot, int> DeathDropResolver;
+
+        int _extraArmorIgnore, _extraArmorPercent;
+        /// <summary>Extra armour on every channel: damage ignored per hit (item damage units, 1000 = 1 HP).</summary>
+        public int ExtraArmorIgnore
+        {
+            get { return _extraArmorIgnore; }
+            set { _extraArmorIgnore = value; if (_movement != null && Loadout != null) RefreshUtilityEffects(); }
+        }
+        /// <summary>Extra armour on every channel: damage reduction in tenths of a percent (100 = 10 %).</summary>
+        public int ExtraArmorPercent
+        {
+            get { return _extraArmorPercent; }
+            set { _extraArmorPercent = value; if (_movement != null && Loadout != null) RefreshUtilityEffects(); }
+        }
+
+        int _extraArmorPercentBE;
+        /// <summary>Damage reduction for bypass + energy damage (tenths of a percent; 0 = use ExtraArmorPercent).</summary>
+        public int ExtraArmorPercentBypassEnergy
+        {
+            get { return _extraArmorPercentBE; }
+            set { _extraArmorPercentBE = value; if (_movement != null && Loadout != null) RefreshUtilityEffects(); }
+        }
+
+        int _agilityBonusPercent;
+        /// <summary>
+        /// Extra agility, like a player's Deftness attribute (local 2026-11-14): percent bonus to thrust, strafe,
+        /// reverse and top speed (half that to turning). Setting it re-applies movement immediately.
+        /// </summary>
+        public int AgilityBonusPercent
+        {
+            get { return _agilityBonusPercent; }
+            set
+            {
+                if (_agilityBonusPercent == value)
+                    return;
+                _agilityBonusPercent = value;
+                if (_movement != null && Loadout != null)
+                    RefreshUtilityEffects();
+            }
         }
 
         protected override void GetUtilityArmorForChannel(int channel, out int ignore, out int percent)
@@ -650,7 +905,71 @@ namespace InfServer.Bots
 
         public void HoldPosition()
         {
+            // Natural idle (local 2026-11-14): a live bot never just stands there turning - it shuffles side to
+            // side like a player waiting. Dead / condemned / frozen bots really stop.
+            if (NaturalIdle && !IsDead && !bCondemned && MovementMode == BotMovementMode.Api
+                && _movement != null && !_movement.IsMovementFrozen)
+            {
+                // Held still for more than 4 s: nobody just waits around - go roam to a point of interest the
+                // script picks (a base, a flag, the ground between them; inside the open sectors). Local 2026-11-14.
+                int now = Environment.TickCount;
+                if (_holdSince == 0 || now - _lastHoldCall > 1500)
+                    _holdSince = now;
+                _lastHoldCall = now;
+                if (IdleRoamTarget != null && now - _holdSince > 4000)
+                {
+                    if (_idleRoamDest == null || now - _idleRoamUntil > 0
+                        || Helpers.distanceTo(_state, _idleRoamDest) < 60)
+                    {
+                        _idleRoamDest = null;
+                        try { _idleRoamDest = IdleRoamTarget(this); } catch { }
+                        _idleRoamUntil = now + 12000;
+                    }
+                    if (_idleRoamDest != null)
+                    {
+                        Helpers.ObjectState d = _idleRoamDest;
+                        ApplyNavigationApproach(d, IdleRoamSteer != null ? IdleRoamSteer(this, d) : null, new BotNavigateOptions
+                        {
+                            RequeueMinMs = 1500,
+                            PathStartIndex = 0,
+                            Priority = PathPriority.Idle,
+                        });
+                        return;
+                    }
+                }
+                SetDrive(0f, 0f, 0f);
+                return;
+            }
             _motionRequest = BotMotionRequest.HoldPosition;
+        }
+
+        int _holdSince, _lastHoldCall, _idleRoamUntil;
+        Helpers.ObjectState? _idleRoamDest;
+
+        /// <summary>Script hook: where an idle bot should roam to (null = keep the idle shuffle).</summary>
+        public static Func<Bot, Helpers.ObjectState?>? IdleRoamTarget;
+        /// <summary>Script hook: wall-aware steer toward a point while the path is pending.</summary>
+        public static Func<Bot, Helpers.ObjectState, Func<InfantryVehicle, Vector3>?>? IdleRoamSteer;
+
+        /// <summary>Live bots strafe instead of standing still (only weapon freezes really stop them).</summary>
+        public static bool NaturalIdle = true;
+        float _idleStrafeSign = 1f;
+        int _idleFlipTick;
+        float _idleForward;
+
+        /// <summary>A small side-to-side shuffle with a hint of forward/back, re-rolled every 0.5-1.4 s.</summary>
+        void ApplyIdleShuffle(ref float forward, ref float strafe)
+        {
+            int now = Environment.TickCount;
+            if (_idleFlipTick == 0 || now - _idleFlipTick >= 0)
+            {
+                _humanRng ??= new Random(unchecked(_id * 31337 + now));
+                _idleStrafeSign = -_idleStrafeSign;
+                _idleForward = (float)(_humanRng.NextDouble() * 0.4 - 0.2);
+                _idleFlipTick = now + 500 + _humanRng.Next(900);
+            }
+            strafe = 0.5f * _idleStrafeSign;
+            forward = _idleForward;
         }
 
         public void SetSteer(Func<InfantryVehicle, Vector3> steer, bool skipBodyRotate = false)
@@ -680,6 +999,10 @@ namespace InfServer.Bots
 
         public void SetDrive(float forward, float strafe, float rotate)
         {
+            // never "stand still and only move the mouse": an idle or aim-only drive becomes a strafe shuffle
+            if (NaturalIdle && !IsDead && !bCondemned && Math.Abs(forward) < 0.08f && Math.Abs(strafe) < 0.08f
+                && _movement != null && !_movement.IsMovementFrozen)
+                ApplyIdleShuffle(ref forward, ref strafe);
             BotWallAvoidance.AdjustDrive(this, ref forward, ref strafe, ref rotate);
             _motionRequest = BotMotionRequest.Drive(forward, strafe, rotate);
         }
@@ -886,19 +1209,34 @@ namespace InfServer.Bots
             {
                 // Drop our items ONCE per death (local fix 2026-11-13: this ran every poll while dead, spamming item
                 // spawns to every client until the corpse was removed - with many kills it flooded and DC'd players).
-                if (!bDropshipRespawnPending && _droppedForDeathTick != _tickDead)
+                // (local 2026-11-14) also for bots that will respawn - every death drops its helmet, like a
+                // player; a script can pick the item (DeathDropResolver: e.g. pirate helmets per class)
+                if (_droppedForDeathTick != _tickDead)
                 {
                     _droppedForDeathTick = _tickDead;
                     VehInfo vehicle = _arena._server._assets.getVehicleByID(_type.Id);
-                    ItemInfo item = vehicle != null ? _arena._server._assets.getItemByID(vehicle.DropItemId) : null;
+                    int dropId = vehicle != null ? vehicle.DropItemId : 0;
+                    int qty = vehicle != null ? vehicle.DropItemQuantity : 0;
+                    if (DeathDropResolver != null)
+                    {
+                        try
+                        {
+                            int over = DeathDropResolver(this);
+                            if (over != 0) { dropId = over; qty = 1; }
+                        }
+                        catch { }
+                    }
+                    ItemInfo item = dropId != 0 ? _arena._server._assets.getItemByID(dropId) : null;
                     if (item != null)
-                        _arena.itemSpawn(item, (ushort)vehicle.DropItemQuantity, _state.positionX, _state.positionY, null);
+                        _arena.itemSpawn(item, (ushort)Math.Max(1, qty), _state.positionX, _state.positionY, null);
                 }
 
                 //Should we remove ourself from the world?
-                if (!bDropshipRespawnPending
-                    && _type.RemoveDeadTimer != 0 && _tickDead != 0 &&
-                    tickCount - _tickDead > (_type.RemoveDeadTimer * 1000))
+                // (local 2026-11-14) at least 4.5 s on the ground so every client plays the death animation;
+                // player classes have no remove timer at all (players respawn) - their bot corpses never went
+                // away, so 6 s for those
+                int corpseMs = _type.RemoveDeadTimer != 0 ? Math.Max(4500, _type.RemoveDeadTimer * 1000) : 6000;
+                if (!bDropshipRespawnPending && _tickDead != 0 && tickCount - _tickDead > corpseMs)
                     destroy(true);
                 else
                 {   //Keep sending 'corpse' updates
@@ -935,6 +1273,8 @@ namespace InfServer.Bots
 
                 TryWallEscapeRecovery(tickCount);
                 StuckWatchdog(tickCount);
+                WallSense(tickCount);
+                RefreshHullForNearbyClients(tickCount);
                 if (MovementMode == BotMovementMode.Api)
                     EvaluatePinned(tickCount);
 

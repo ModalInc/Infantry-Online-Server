@@ -16,7 +16,12 @@ namespace InfServer.Script.GameType_Eol
     /// </summary>
     public partial class Script_Eol
     {
-        public const int BountyHunterCaptainVehId = 142;
+        /// <summary>Cell leader: Black Ops (local 2026-11-14 - assassins wear the dark player skins, was Captain Roamer).</summary>
+        public const int BountyHunterCaptainVehId = 150;
+        /// <summary>Operatives: Black Ops, Infiltrator, BioChem, NeuroTAC, DropTrooper (Black Ops twice = most common).</summary>
+        static readonly int[] AssassinOperativeClasses = { 150, 150, 14, 100, 112, 117 };
+        /// <summary>"Max Deftness": percent bonus to acceleration, strafe and top speed.</summary>
+        public const int AssassinAgilityBonusPercent = 35;
         /// <summary>Live assassins per cell (captain + operatives).</summary>
         public const int BountyHunterSquadSize = 3;
         /// <summary>Operatives per cell - cell size minus the captain.</summary>
@@ -228,6 +233,12 @@ namespace InfServer.Script.GameType_Eol
             }
             if (spawn == null)
                 return false;
+            if (!IsOpenConnectedGround(spawn.positionX, spawn.positionY))
+            {   // sealed building / physics pocket: use a spread-out open spot instead (local 2026-11-14)
+                spawn = PickEliteSpawnPoint();
+                if (spawn == null)
+                    return false;
+            }
             if (_eol != null && _eol.IsInPioneerDropshipSafeZone(spawn.positionX, spawn.positionY))
             {
                 spawn = null;
@@ -353,6 +364,9 @@ namespace InfServer.Script.GameType_Eol
             if (b == null)
                 return;
             b.SkillModeOverride = AssassinSkillMode;
+            if (b._type != null)
+                ApplyHumanLoadout(b, b._type.Id, b._team);   // class weapons, SuperCharger, grenades, opener
+            b.AgilityBonusPercent = AssassinAgilityBonusPercent;
             EnableBotDropshipRespawn(b, 0);
             if (_bots != null && !_bots.Contains(b))
                 _bots.Add(b);
@@ -416,8 +430,7 @@ namespace InfServer.Script.GameType_Eol
                 return;
             }
 
-            int[] ids = { 144, 145, 146, 147, 157 };
-            int id = LimitGrenadiers(team, ids[(_rand ?? new Random()).Next(ids.Length)], ids);
+            int id = AssassinOperativeClasses[(_rand ?? new Random()).Next(AssassinOperativeClasses.Length)];
 
             if (_bots == null)
                 _bots = new List<Bot>();

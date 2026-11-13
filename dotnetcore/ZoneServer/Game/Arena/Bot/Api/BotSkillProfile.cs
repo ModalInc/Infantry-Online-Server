@@ -46,7 +46,9 @@ namespace InfServer.Bots
         /// <summary><paramref name="modeOverride"/> (e.g. "ace") forces this bot's tier regardless of the zone mix.</summary>
         public static BotSkillProfile Roll(string name, int fallbackSeed, string modeOverride)
         {
-            int seed = string.IsNullOrEmpty(name) ? fallbackSeed : NameSeed(name);
+            // name + id: bots are named after their class now ("Infantry 2"), so the name alone would give every
+            // "Infantry" the same skill tier (local 2026-11-14)
+            int seed = string.IsNullOrEmpty(name) ? fallbackSeed : (NameSeed(name) ^ fallbackSeed);
             Random r = new Random(seed);
             double t = r.NextDouble();
             switch (modeOverride ?? BotFeatures.SkillMode)
