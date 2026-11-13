@@ -455,6 +455,12 @@ namespace InfServer.Game
                 if (string.Equals(bot._alias, name, StringComparison.OrdinalIgnoreCase))
                     return true;
             }
+            // never share a name with a human in the arena (bots are named after classes now)
+            foreach (Player p in Players)
+            {
+                if (p != null && string.Equals(p._alias, name, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
             return false;
         }
 
@@ -1040,6 +1046,50 @@ namespace InfServer.Game
         /// Always sends SC_PlayerLeave so player-style motion entities are cleared even when
         /// botnames UI is off.
         /// </summary>
+        /// <summary>
+        /// Local fix 2026-11-14: a bot that dies for good used to "leave" the namelist at the instant of death -
+        /// the client then deletes that player entity and the body vanishes with no death animation. Now the
+        /// leave waits until the death animation has played.
+        /// </summary>
+        public const int BotNamelistLeaveDelayMs = 4000;
+        readonly List<KeyValuePair<Bot, int>> _pendingNamelistLeaves = new List<KeyValuePair<Bot, int>>();
+
+        public void RemoveBotFromNamelistAfterDeath(Bot bot)
+        {
+            if (bot == null)
+                return;
+            _pendingNamelistLeaves.Add(new KeyValuePair<Bot, int>(bot, Environment.TickCount + BotNamelistLeaveDelayMs));
+        }
+
+        /// <summary>Send the delayed namelist leaves that are due (arena poll).</summary>
+        public void DrainPendingNamelistLeaves(int now)
+        {
+            if (_pendingNamelistLeaves.Count == 0)
+                return;
+            for (int i = _pendingNamelistLeaves.Count - 1; i >= 0; i--)
+            {
+                KeyValuePair<Bot, int> kv = _pendingNamelistLeaves[i];
+                if (now - kv.Value < 0)
+                    continue;
+                _pendingNamelistLeaves.RemoveAt(i);
+                Bot b = kv.Key;
+                // revived meanwhile (respawn) - it stays on the list
+                if (b == null || !b.IsDead && !b.bCondemned && _bots.Contains(b))
+                    continue;
+                // its id already belongs to a NEW bot: leaving it would remove that one from clients
+                bool reused = false;
+                foreach (Bot o in _bots)
+                    if (o != null && o != b && o._id == b._id) { reused = true; break; }
+                if (reused)
+                {
+                    if (!string.IsNullOrEmpty(b._alias))
+                        BotNames?.Release(b);
+                    continue;
+                }
+                RemoveBotFromNamelist(b);
+            }
+        }
+
         public void RemoveBotFromNamelist(Bot bot)
         {
             if (bot == null)

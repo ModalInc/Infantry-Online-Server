@@ -144,7 +144,17 @@ namespace InfServer.Script.GameType_Eol
 
             //Check if an HQ was found, if not return to polling
             if (myvHq == null)
+            {   // HQ fell: fight on and roam until killed - never vanish (local 2026-11-14)
+                if (!IsDead)
+                {
+                    int nowNoHq = Environment.TickCount;
+                    if (!fireAtEnemy(nowNoHq)
+                        && !EolBotBrain.TryEngageTurret(this, _baseScript, nowNoHq)
+                        && !EolBotBrain.TryInvestigate(this, _baseScript, nowNoHq))
+                        EolBotBrain.Hunt(this, _baseScript, nowNoHq, null);
+                }
                 return base.poll();
+            }
 
             //Dead? Do nothing
             if (IsDead)

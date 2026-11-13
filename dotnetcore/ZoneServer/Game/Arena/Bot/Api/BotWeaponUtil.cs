@@ -42,9 +42,11 @@ namespace InfServer.Bots
             bool includeFarSlot = true)
         {
             ResolveWeaponItems(type, out ItemInfo itemClose, out ItemInfo itemFar, includeFarSlot);
-            if (itemClose != null && weaponClose != null)
+            // Only real guns: player-class inventories hold summons / repair kits / utilities in these slots, and
+            // equipping those spammed "invalid equip item" warnings for every spawn (local fix 2026-11-14).
+            if (itemClose != null && weaponClose != null && ResolveProjectile(itemClose) != null)
                 weaponClose.equip(itemClose);
-            if (includeFarSlot && itemFar != null && weaponFar != null)
+            if (includeFarSlot && itemFar != null && weaponFar != null && ResolveProjectile(itemFar) != null)
                 weaponFar.equip(itemFar);
         }
 

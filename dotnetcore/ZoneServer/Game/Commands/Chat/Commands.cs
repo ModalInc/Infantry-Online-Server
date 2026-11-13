@@ -1568,7 +1568,7 @@ namespace InfServer.Game.Commands.Chat
                         {
                             string temp = teamname.ToLower();
                             if (temp.Equals("spec") || temp.Equals("spectator")
-                                || temp.StartsWith("bot"))
+                                || temp.StartsWith("bot") || temp.Contains("bots"))
                             {
                                 player.sendMessage(-1, "You can't use this team name.");
                                 return;

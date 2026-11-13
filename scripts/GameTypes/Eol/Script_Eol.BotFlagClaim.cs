@@ -152,9 +152,12 @@ namespace InfServer.Script.GameType_Eol
         const short BotTauntProjAlienB = 1263;
 
         /// <summary>GG/EZ-style taunt at the victim's death position when a bot gets a kill (player or bot).</summary>
+        /// <summary>Local 2026-11-14: off - real players don't drop GG/EZ grenades on you; bots shouldn't either.</summary>
+        public const bool BotKillTauntsEnabled = false;
+
         void QueueBotKillTauntExplosion(Bot killerBot, short posX, short posY)
         {
-            if (_arena == null || killerBot == null)
+            if (!BotKillTauntsEnabled || _arena == null || killerBot == null)
                 return;
 
             short projId;

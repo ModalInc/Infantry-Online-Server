@@ -273,6 +273,7 @@ namespace InfServer.Bots
             // tile, so bots ended up on green/yellow physics and got snapped back - the visible "jumping".)
             if (NeverTouchPhysics)
             {
+                CollectNearbySolids();
                 bool insideNow = BlockedForMe(_position.x, _position.y);
                 double nx = newPosition.x, ny = newPosition.y;
                 double mx = nx - _position.x, my = ny - _position.y;
@@ -735,14 +736,66 @@ namespace InfServer.Bots
         public static bool NeverTouchPhysics = true;
         public const double ClearanceRaw = 10;
 
-        /// <summary>True when this vehicle can't occupy the point (blocked tile it can't roll over, or off-map).</summary>
+        /// <summary>
+        /// True when this vehicle can't occupy the point: ANY physics tile, off-map, or inside a built object.
+        /// Local fix 2026-11-14: bots never cross physics of any colour, whatever they ride - hover boards and
+        /// packs sit above the ground, and the old "Z above the tile's low physics = passable" rule let them
+        /// glide straight through red walls. Built walls (Tier 1-5, bot base walls), turrets and the HQ are
+        /// computer vehicles, not tiles, so they are checked separately - bots can't smash or slip through them.
+        /// </summary>
         bool BlockedForMe(double x, double y)
         {
             int tx = (int)Math.Floor(x / 16), ty = (int)Math.Floor(y / 16);
             if (tx < 0 || ty < 0 || tx >= _arena._levelWidth || ty >= _arena._server._assets.Level.Height)
                 return true;
             LvlInfo.Tile t = _arena._tiles[ty * _arena._levelWidth + tx];
-            return t.Blocked && canRollOver((int)x, (int)y, _type);
+            if (t.Blocked)
+                return true;
+            return IsSolidObjectAt(x, y);
+        }
+
+        /// <summary>Inside a built object (wall / turret / HQ) near this bot? Uses the cached nearby list.</summary>
+        public bool IsSolidObjectAt(double x, double y)
+        {
+            for (int i = 0; i < _solidCount; i++)
+            {
+                Vehicle v = _solids[i];
+                if (v == null || v.IsDead || v._state == null || v._type == null)
+                    continue;
+                int r = v._type.PhysicalRadius;
+                if (Math.Abs(x - v._state.positionX) <= r && Math.Abs(y - v._state.positionY) <= r)
+                    return true;
+            }
+            return false;
+        }
+
+        readonly Vehicle[] _solids = new Vehicle[24];
+        int _solidCount;
+        int _tickSolidsScan;
+
+        /// <summary>Built objects (computer vehicles with a body) near the bot - refreshed every 250 ms.</summary>
+        void CollectNearbySolids()
+        {
+            int now = Environment.TickCount;
+            if (_tickSolidsScan != 0 && now - _tickSolidsScan < 250)
+                return;
+            _tickSolidsScan = now;
+            _solidCount = 0;
+            if (_arena == null)
+                return;
+            List<Vehicle> near;
+            try { near = _arena.getVehiclesInRange((int)_position.x, (int)_position.y, 160); }
+            catch { return; }
+            if (near == null)
+                return;
+            foreach (Vehicle v in near)
+            {
+                if (_solidCount >= _solids.Length)
+                    break;
+                if (!(v is Computer) || v.IsDead || v._type == null || v._type.PhysicalRadius < 4)
+                    continue;
+                _solids[_solidCount++] = v;
+            }
         }
 
         public bool canRollOver(int x, int y, VehInfo type)

@@ -1509,7 +1509,7 @@ namespace InfServer.Script.GameType_Eol
                 return false;
 
             ItemInfo.Projectile proj = weapon.Projectile;
-            if (proj == null || !weapon.ableToFire())
+            if (proj == null || !weapon.ableToFire() || !shooter.CanFireWeaponNow(weapon))
                 return false;
             if (!lineClearVerified
                 && !EolBotTargetUtil.TileLineClearForWeaponFire(
@@ -1535,6 +1535,7 @@ namespace InfServer.Script.GameType_Eol
 
             target.applyExplosionDamage(true, null, target._state.positionX, target._state.positionY, proj);
             weapon.shotFired();
+            shooter.NoteWeaponFired(weapon);
             OnCombatShotFired(shooter, weapon);
             return true;
         }

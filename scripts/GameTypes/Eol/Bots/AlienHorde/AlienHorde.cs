@@ -271,22 +271,25 @@ namespace InfServer.Script.GameType_Eol
             if (_tickLastVhqLookup == 0 || now - _tickLastVhqLookup >= AlienVhqRescanMs)
             {
                 _tickLastVhqLookup = now;
-                _cachedCrashShip = _baseScript != null ? _baseScript._pollCacheAlienCrashVehicle : null;
-                if (_cachedCrashShip != null && (_cachedCrashShip.IsDead || _cachedCrashShip._team != _baseScript.botTeam7))
-                    _cachedCrashShip = null;
-                if (_cachedCrashShip == null && _arena != null)
+                // own pack's ship first (elite packs land their own - local 2026-11-14), then the main one
+                _cachedCrashShip = null;
+                if (_arena != null && _baseScript != null)
                 {
                     List<Vehicle> ships = _arena.getVehiclesInRange(_state.positionX, _state.positionY, 16000,
                         delegate (Vehicle v)
                         {
                             return v != null && v._type != null
                                 && v._type.Id == Script_Eol.AlienCrashVehicleId
-                                && _baseScript != null
-                                && v._team == _baseScript.botTeam7
+                                && (v._team == _team || v._team == _baseScript.botTeam7)
                                 && !v.IsDead;
                         });
-                    if (ships != null && ships.Count > 0)
-                        _cachedCrashShip = ships[0];
+                    if (ships != null)
+                    {
+                        foreach (Vehicle s in ships)
+                            if (s._team == _team) { _cachedCrashShip = s; break; }
+                        if (_cachedCrashShip == null && ships.Count > 0)
+                            _cachedCrashShip = ships[0];
+                    }
                 }
             }
             vHq = _cachedCrashShip;

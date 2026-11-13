@@ -526,6 +526,36 @@ namespace InfServer.Protocol
         /// <summary>
         /// Resends a reliable packet the client reported missing via OutOfSync.
         /// </summary>
+        /// <summary>
+        /// Client reported it received #rNumber out of order, i.e. something BEFORE it is missing: resend every
+        /// still-unconfirmed reliable up to and including rNumber right now (local fix 2026-11-14). Previously only
+        /// #rNumber itself was looked up - usually already gone - so the real gap waited for the 1 s resend timer
+        /// (a visible hitch) and a warning was logged every time.
+        /// </summary>
+        public bool resendReliableUpTo(int streamID, ushort rNumber)
+        {
+            using (DdMonitor.Lock(_sync))
+            {
+                StreamState stream = _streams[streamID];
+                bool any = false;
+                ushort current = stream.S2C_ReliableConfirmed;
+                ushort end = (ushort)(rNumber + 1);
+                int guard = 0;
+                while (SequenceNumberLessThan(current, end) && guard++ < 1024)
+                {
+                    ReliableInfo ri;
+                    if (stream.reliablePackets.TryGetValue(current, out ri) && ri.packet != null)
+                    {
+                        ri.timeSent = Environment.TickCount64;
+                        _packetQueue.Enqueue(ri.packet);
+                        any = true;
+                    }
+                    current = (ushort)(current + 1);
+                }
+                return any;
+            }
+        }
+
         public bool resendReliable(int streamID, ushort rNumber)
         {
             using (DdMonitor.Lock(_sync))
@@ -709,7 +739,7 @@ namespace InfServer.Protocol
 
                 // Bound waiting reliables so lag cannot grow an unbounded resend storm (chat/notifs).
                 // Never drop DataStream entries — that leaves clients mid-reassembly and can throw.
-                const int maxReliableQueue = 96;
+                const int maxReliableQueue = 384;   // local 2026-11-14: was 96 - big fights dropped reliables (desync)
                 trimReliableQueue(stream, maxReliableQueue);
                 if (stream.reliableQueue.Count >= maxReliableQueue)
                 {

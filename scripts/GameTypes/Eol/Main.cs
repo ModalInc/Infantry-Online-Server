@@ -363,6 +363,7 @@ namespace InfServer.Script.GameType_Eol
         /// </summary>
         void DestroyAllTrackedScriptBots()
         {
+            AllowLiveBotDespawnNow();   // full teardown: live bots may go
             if (_bots == null)
                 _bots = new List<Bots.Bot>();
             if (_condemnedBots == null)
@@ -435,15 +436,15 @@ namespace InfServer.Script.GameType_Eol
         public const short EolBorderWallYawVerticalLeft = 0;
         public const short EolBorderWallYawVerticalRight = 0;
 
-        public string botTeamName1 = "Bot - Base";
-        public string botTeamName2 = "Bot - Base 2";
-        public string botTeamName3 = "Bot - Base 3";
-        public string botTeamName4 = "Bot - Raiders";
-        public string botTeamName5 = "Bot - Assassins";   // local 2026-11-13 (was BHB)
-        public string botTeamName6 = "Bot - Elite Alpha"; // local 2026-11-13: elite roaming squad
-        public string botTeamName7 = "Bot - Aliens";
-        public string botTeamName8 = "Bot - Elite Bravo"; // local 2026-11-13: elite roaming squad
-        public string botTeamName9 = "Bot - Assassins 2"; // local 2026-11-13: second assassin cell
+        public string botTeamName1 = "Iron Legion Bots";
+        public string botTeamName2 = "Crimson Vanguard Bots";
+        public string botTeamName3 = "Steel Wardens Bots";
+        public string botTeamName4 = "Pirate Raiders Bots";
+        public string botTeamName5 = "Phantom Assassins Bots";   // local 2026-11-13 (was BHB)
+        public string botTeamName6 = "Black Talon Pirates Bots"; // local 2026-11-14: pirate roamers (5-8)
+        public string botTeamName7 = "Skrall Swarm Bots";
+        public string botTeamName8 = "Ghost Reapers Bots"; // local 2026-11-14: elite vehicle squad (boards + Drop Pack)
+        public string botTeamName9 = "Viper Assassins Bots"; // local 2026-11-13: second assassin cell
 
         /// <summary>
         /// Creates a public bot faction, assigns a unique frequency id, and registers it
@@ -776,8 +777,8 @@ namespace InfServer.Script.GameType_Eol
             botTeam7 = CreateAndRegisterBotTeam(botTeamName7);
             botTeam8 = CreateAndRegisterBotTeam(botTeamName8);
             botTeam9 = CreateAndRegisterBotTeam(botTeamName9);
-            botTeamAlienElite1 = CreateAndRegisterBotTeam("Bot - Alien Elite");
-            botTeamAlienElite2 = CreateAndRegisterBotTeam("Bot - Alien Elite 2");
+            botTeamAlienElite1 = CreateAndRegisterBotTeam("Skrall Ravagers Bots");
+            botTeamAlienElite2 = CreateAndRegisterBotTeam("Skrall Brood Bots");
             CreateStrikeTeams();   // local 2026-11-14: three human-class strike teams
 
             _eolBorderWallTeam = new Team(_arena, _arena._server);
@@ -1055,7 +1056,7 @@ namespace InfServer.Script.GameType_Eol
             if (_sectorChangeCountdownActive)
                 return;
 
-            if (playing < 5)
+            if (playing < (KothBotsParticipate ? KothMinPlayersWithBots : 5))   // bots fill the field (local 2026-11-14)
             {
                 // Never touch (1, CtfNextGameTickerIdx) here — that row is the main match countdown (same as MOBA).
                 ClearKothLobbyTickerIfSet();
@@ -1289,7 +1290,7 @@ namespace InfServer.Script.GameType_Eol
         {
             if (team == null)
                 return false;
-            return team._name != null && team._name.StartsWith("Bot", StringComparison.OrdinalIgnoreCase);
+            return team._name != null && Arena.IsManagedBotTeamName(team._name);
         }
 
         void ResetFlagRewardCycleNotices()
@@ -1433,8 +1434,9 @@ namespace InfServer.Script.GameType_Eol
             if (_playerCrownStatus == null)
                 return false;
 
-            // No opposing teams left — cancel without awarding a winner.
-            if (_arena.ActiveTeams.Count() <= 1)
+            // No opposing teams left — cancel without awarding a winner. (Bot teams holding crowns count as
+            // opponents - local 2026-11-14, bots play KOTH too.)
+            if (_arena.ActiveTeams.Count() <= 1 && _botCrownExpire.Count == 0)
             {
                 _arena.sendArenaMessage("KOTH cancelled — only one team remains. No winner.");
                 endKOTH();
@@ -1465,6 +1467,7 @@ namespace InfServer.Script.GameType_Eol
                 if (!_crownTeams.Contains(p._team))
                     _crownTeams.Add(p._team);
             }
+            int botCrowns = KothBotsPoll(now, _crownTeams);   // crowned bot teams are in the running too
 
             // One team still holding crown(s) among multiple active teams — award and end via kothVictory.
             if (_crownTeams.Count == 1)
@@ -1480,7 +1483,7 @@ namespace InfServer.Script.GameType_Eol
             }
 
             // No crowns left and nobody won — draw / wipe.
-            if (_activeCrowns.Count == 0)
+            if (_activeCrowns.Count == 0 && botCrowns == 0)
             {
                 QueueKothArenaMessage("There was no winner");
                 endKOTH();
@@ -1863,6 +1866,8 @@ namespace InfServer.Script.GameType_Eol
         }
 
         int _tickBotBrainPoll;
+        readonly Dictionary<uint, int> _recentAlienGore = new Dictionary<uint, int>();
+        Func<short, short, bool> _playAreaFn;
 
         /// <summary>Allows the script to maintain itself.</summary>
         public bool poll()
@@ -1873,6 +1878,10 @@ namespace InfServer.Script.GameType_Eol
 
             PruneExpiredCombatCalls(now);
             if (now - _tickBotBrainPoll >= 250) { _tickBotBrainPoll = now; EolBotBrain.PollAll(now, _arena); }  // local: retreat/heal
+            if (_playAreaFn == null)
+                _playAreaFn = (px, py) => InPlayArea(px, py, 150);
+            EolBotBrain.PlayArea = _playAreaFn;   // bots stay out of the toxic zones (re-set: survives script reloads)
+            Bots.Bot.DeathDropResolver = _helmetDropFn;   // pirate / class helmets on death
             PollEliteSquads(now);   // local: two elite roaming squads
             PollStrikeTeams(now);   // local: three human-class strike teams
             PollBotDropshipRespawns(now);
@@ -2372,6 +2381,9 @@ namespace InfServer.Script.GameType_Eol
         /// </summary>
         static int DesiredBotHqCountForPlayers(int playing)
         {
+            // local 2026-11-14 roster: always the two pirate bases of 10, whatever the population
+            if (RosterBaseTeams > 0)
+                return RosterBaseTeams;
             if (playing < 30)
                 return 1;
             if (playing < 46)
@@ -3808,6 +3820,7 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>Force-clear pirate raid state, grunts/captain on <see cref="botTeam4"/>, legacy PDB/468 on <see cref="botTeam3"/>.</summary>
         void ModAbortPirateRaidWave(int now, bool sendFinishedLine, bool armCooldownForNextRaid)
         {
+            AllowLiveBotDespawnNow();
             if (_arena == null)
                 return;
             if (_rand == null)
@@ -3972,6 +3985,7 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>Kills defense <see cref="Captain"/>, <see cref="BasicDefense"/>, and <see cref="Engineer"/> bots on <see cref="IsDefenseBotTeam"/> teams; clears spawn tracking so a new captain can deploy when re-enabled.</summary>
         void ModClearBaseDefenseBots()
         {
+            AllowLiveBotDespawnNow();   // full teardown: live bots may go
             if (_bots != null)
             {
                 foreach (Bots.Bot b in _bots.ToList())
@@ -4317,6 +4331,7 @@ namespace InfServer.Script.GameType_Eol
         public void endKOTH()
         {
             QueueKothArenaMessage("KOTH has ended");
+            KothBotsEnd();
 
             List<InfServer.Game.Player> hadCrownSnapshot = _activeCrowns;
             QueueKothRoundEndClientUpdates(hadCrownSnapshot);
@@ -4347,6 +4362,7 @@ namespace InfServer.Script.GameType_Eol
             Log.write(TLog.Normal, "[Eol] KOTH state reset.");
 
             _victoryKothTeam = null;
+            KothBotsEnd();
 
             List<InfServer.Game.Player> hadCrownSnapshot = _activeCrowns;
             QueueKothRoundEndClientUpdates(hadCrownSnapshot);
@@ -4387,6 +4403,7 @@ namespace InfServer.Script.GameType_Eol
             }
             // One paced arena-wide crown packet — giveCrown used to broadcast per player (N² reliable).
             QueueKothCrownBroadcast(true, crownPlayers);
+            KothBotsStart();   // bots wear crowns too (local 2026-11-14)
             Log.write(TLog.Normal, "[Eol] KOTH started ({0} players with crowns).", crownPlayers.Count);
         }
 
@@ -4401,8 +4418,8 @@ namespace InfServer.Script.GameType_Eol
                 return "KOTH is already running.";
             if (_sectorChangeCountdownActive)
                 return "Sector change in progress — try again shortly.";
-            if (_arena.PlayerCount < 5)
-                return "Need at least 5 players in the arena for KOTH.";
+            if (_arena.PlayerCount < (KothBotsParticipate ? KothMinPlayersWithBots : 5))
+                return "Need more players in the arena for KOTH.";
             startKOTH(modForced: true);
             return null;
         }
@@ -4952,7 +4969,7 @@ namespace InfServer.Script.GameType_Eol
             Helpers.ObjectState warpPoint = null;
             List<Arena.FlagState> sortedFlags = new List<Arena.FlagState>();
 
-            if (!team._name.StartsWith("Bot", StringComparison.OrdinalIgnoreCase))
+            if (!Arena.IsManagedBotTeamName(team._name))
                 sortedFlags = _arena._flags.Values.ToList();
 
             int count = sortedFlags.Count;
@@ -6156,6 +6173,8 @@ namespace InfServer.Script.GameType_Eol
                     TryUpdateBotStatsByRegistryName(key, 0, 1);
             }
 
+            KothOnBotDeath(dead, killer, killerBot);   // crowns (bots play KOTH too)
+
             if (killerBot != null)
             {
                 EolBotFieldAccess.IncrementKills(killerBot);
@@ -6176,18 +6195,26 @@ namespace InfServer.Script.GameType_Eol
                     _rand = new Random(Environment.TickCount);
                 bool alien = dead is AlienHorde || IsAlienBotTeam(dead._team);
                 short baseId = alien ? (short)1351 : (short)1167;   // Alien Blood Splat 1-6 / Blood Splat 1-6
-                // sent at once with the death (no queue = no delay), only to players near enough to see it
-                List<InfServer.Game.Player> gorePeople = _arena.GetBotLifecycleAudience(dead._state.positionX, dead._state.positionY);
+                // sent at once with the death (no queue = no delay), one splat, only to players near enough to
+                // see it, and NOT as a reliable packet - it's cosmetic, and reliable gore in big fights overflowed
+                // clients' reliable streams ("missing reliable ... already dropped" = desync / jumpy bots)
+                List<InfServer.Game.Player> gorePeople = _arena.getPlayersAndSpecInRange(dead._state.positionX, dead._state.positionY, 1400);
                 if (gorePeople != null && gorePeople.Count > 0)
                 {
-                    for (int g = 0; g < 2; g++)
+                    SC_Projectile gore = new SC_Projectile
                     {
-                        short id = (short)(baseId + _rand.Next(6));
-                        short gx = (short)(dead._state.positionX + _rand.Next(-10, 11));
-                        short gy = (short)(dead._state.positionY + _rand.Next(-10, 11));
-                        Helpers.Player_RouteExplosion(gorePeople, id, gx, gy, 0, (byte)_rand.Next(240), dead._id);
-                    }
+                        projectileID = (short)(baseId + _rand.Next(6)),
+                        playerID = (ushort)dead._id,
+                        posX = dead._state.positionX,
+                        posY = dead._state.positionY,
+                        posZ = 0,
+                        yaw = (byte)_rand.Next(240),
+                    };
+                    foreach (InfServer.Game.Player gp in gorePeople)
+                        gp?._client?.send(gore);
                 }
+                if (alien)
+                    _recentAlienGore[(uint)dead._id] = Environment.TickCount;   // its acid can still kill someone
             }
 
             OnAlienHordeBotDeath(dead, killer);
@@ -6214,8 +6241,8 @@ namespace InfServer.Script.GameType_Eol
                 {
                     dead.bRespawn = false;
                     dead.bDropshipRespawnPending = false;
-                    // Drop the team-list name immediately — do not wait for corpse RemoveDeadTimer.
-                    _arena?.RemoveBotFromNamelist(dead);
+                    // Drop the team-list name once the death animation has played (an instant leave deleted the body).
+                    _arena?.RemoveBotFromNamelistAfterDeath(dead);
                     if (dead is RoamingCaptain && !IsBountyHunterBotTeam(dead._team))
                         SyncRaiderCaptainCountFromOccupying();
                 }
@@ -6235,7 +6262,7 @@ namespace InfServer.Script.GameType_Eol
                     ForgetScriptBotBookkeeping(dead);
                     // Non-revive deaths (incl. MaxDeaths) — ensure leave even if handleBotDeath races.
                     if (!dead.bDropshipRespawnPending)
-                        _arena?.RemoveBotFromNamelist(dead);
+                        _arena?.RemoveBotFromNamelistAfterDeath(dead);   // after the death animation (local 2026-11-14)
                     if (dead is RoamingCaptain && !IsBountyHunterBotTeam(dead._team))
                         SyncRaiderCaptainCountFromOccupying();
                 }
@@ -6515,6 +6542,8 @@ namespace InfServer.Script.GameType_Eol
         [Scripts.Event("Player.EnterArena")]
         public void playerEnter(InfServer.Game.Player player)
         {
+            if (_kothGameRunning)
+                KothBotsSyncTo(player);   // the bots' crowns too
             //Send them the crowns if KOTH is enabled
             if (_minPlayers > 0)
                 if (_playerCrownStatus == null)
@@ -6890,6 +6919,19 @@ namespace InfServer.Script.GameType_Eol
         [Scripts.Event("Player.Death")]
         public bool playerDeath(InfServer.Game.Player victim, InfServer.Game.Player killer, Helpers.KillType killType, CS_VehicleDeath update)
         {
+            // Killed by a dead alien's acid blood: the client can only say "explosion" (the alien is gone), so
+            // say what really happened (local 2026-11-14)
+            int goreTick;
+            if (victim != null && killer == null && update != null
+                && _recentAlienGore.TryGetValue(update.killerPlayerID, out goreTick) && Environment.TickCount - goreTick < 8000)
+                _arena.sendArenaMessage(victim._alias + " was dissolved by alien blood");
+            if (_recentAlienGore.Count > 64)
+            {
+                int cutoff = Environment.TickCount - 8000;
+                foreach (uint k in new List<uint>(_recentAlienGore.Keys))
+                    if (_recentAlienGore[k] - cutoff < 0) _recentAlienGore.Remove(k);
+            }
+
             if (victim != null && victim.ZoneStat7 != 0)
                 victim.ZoneStat7 = 0;
             // Death resets the live bounty too (local fix 2026-11-14: only the saved copy was cleared, so after
@@ -7221,7 +7263,7 @@ namespace InfServer.Script.GameType_Eol
                 return true;
 
             // Players must not join managed bot frequencies (Base / Raiders / Aliens / BHB).
-            if (team._name.StartsWith("Bot", StringComparison.OrdinalIgnoreCase))
+            if (Arena.IsManagedBotTeamName(team._name))
             {
                 if (player != null)
                     player.sendMessage(-1, "You cannot join bot teams.");
@@ -7460,6 +7502,7 @@ namespace InfServer.Script.GameType_Eol
             // Local fix 2026-11-14: no class switching while riding a vehicle (jetpack, board, ...) - it let you
             // change class and then use that class's weapons from the vehicle.
             if (player != null && skill != null && skill.DefaultVehicleId > 0
+                && !player.IsSpectator && !player.IsDead   // spec / dead: switch freely, no message
                 && player._occupiedVehicle != null && player._occupiedVehicle != player._baseVehicle)
             {
                 player.sendMessage(0, "You can't change class while in a vehicle - get out first.");
@@ -7500,6 +7543,7 @@ namespace InfServer.Script.GameType_Eol
             CS_VehicleDeath u = _pendingBotDeathUpdate;
             if (bot != null && victim != null && victim._team != bot._team)
                 QueueBotKillTauntExplosion(bot, victim, u);
+            KothOnPlayerKilledByBot(victim, bot);   // a bot's kill counts in KOTH like a player's
 
             _pendingBotDeathUpdate = null;
 

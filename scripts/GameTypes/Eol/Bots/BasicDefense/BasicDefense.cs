@@ -132,10 +132,22 @@ namespace InfServer.Script.GameType_Eol
             if (vHq == null)
                 vHq = _baseScript.FindHqVehicleForTeam(_team);
 
-            // No live HQ → idle; Main.PruneOrphanedDefenseBaseBots / HQ wipe tears the squad down.
-            // Captain death alone must NOT kill us while the HQ is still up.
+            // No live HQ (it fell): the base bots don't vanish (local 2026-11-14 - bots never spec out, they have
+            // to die) - they fight on and roam like any roamer until they're killed.
             if (vHq == null)
+            {
+                if (IsDead)
+                    return base.poll();
+                int nowNoHq = Environment.TickCount;
+                InLiveCombat = false;
+                if (!fireAtEnemy(nowNoHq))
+                {
+                    if (!EolBotBrain.TryEngageTurret(this, _baseScript, nowNoHq)
+                        && !EolBotBrain.TryInvestigate(this, _baseScript, nowNoHq))
+                        EolBotBrain.Hunt(this, _baseScript, nowNoHq, null);
+                }
                 return base.poll();
+            }
 
             //double distance = Math.Pow((Math.Pow(_state.positionX - vHq._state.positionX, 2) + Math.Pow(_state.positionY - vHq._state.positionY, 2)) / 2, 0.5);
             double distance = (_state.position() - vHq._state.position()).Length;

@@ -30,7 +30,9 @@ namespace InfServer.Bots
 
             try
             {
-                return level.isTileBlocked(rawX, rawY, bot._type);
+                // any physics is a wall for a bot, whatever it rides (local 2026-11-14 - boards glided through red);
+                // built walls / turrets near the bot count too, so the escape scan sees them
+                return level.isTileBlocked(rawX, rawY) || (bot._movement != null && bot._movement.IsSolidObjectAt(rawX, rawY));
             }
             catch (ArgumentOutOfRangeException)
             {
@@ -85,7 +87,7 @@ namespace InfServer.Bots
             for (int s = TileSizeRaw; s <= dist; s += TileSizeRaw)
             {
                 bool blocked;
-                try { blocked = level.isTileBlocked((short)(x + (int)Math.Round(ux * s)), (short)(y + (int)Math.Round(uy * s)), type); }
+                try { blocked = level.isTileBlocked((short)(x + (int)Math.Round(ux * s)), (short)(y + (int)Math.Round(uy * s))); }
                 catch (ArgumentOutOfRangeException) { blocked = true; }
                 if (blocked)
                     return s - TileSizeRaw;
@@ -286,7 +288,7 @@ namespace InfServer.Bots
                     bool blocked;
                     try
                     {
-                        blocked = level.isTileBlocked(sampleX, sampleY, type);
+                        blocked = level.isTileBlocked(sampleX, sampleY);
                     }
                     catch (ArgumentOutOfRangeException)
                     {
@@ -332,7 +334,7 @@ namespace InfServer.Bots
 
                 try
                 {
-                    if (level.isTileBlocked(px, py, type))
+                    if (level.isTileBlocked(px, py))
                         blockedAhead++;
                 }
                 catch (ArgumentOutOfRangeException)

@@ -543,17 +543,17 @@ namespace InfServer.Game
         {
             if (wep == null || IsDead || _type == null)
                 return;
+            // Real bullet damage (local fix 2026-11-14 - bots were one-shotting each other): a direct-fire round
+            // (damage radius 0) does its listed damage; a splash round lands somewhere in its blast, not always
+            // dead centre, so it does inner..outer by where it burst (the old code gave the full centre damage of
+            // EVERY channel at once).
+            double f = 0.35 + _botHitRng.NextDouble() * 0.65;   // 1 = dead centre
             double net = 0;
-            if (wep.kineticDamageRadius > 0 || wep.kineticDamageInner > 0)
-                net += ApplyArmorChannel(Math.Max(wep.kineticDamageInner, wep.kineticDamageOuter), _type.Armors[0], 0);
-            if (wep.explosiveDamageRadius > 0 || wep.explosiveDamageInner > 0)
-                net += ApplyArmorChannel(Math.Max(wep.explosiveDamageInner, wep.explosiveDamageOuter), _type.Armors[1], 1);
-            if (wep.electronicDamageRadius > 0 || wep.electronicDamageInner > 0)
-                net += ApplyArmorChannel(Math.Max(wep.electronicDamageInner, wep.electronicDamageOuter), _type.Armors[2], 2);
-            if (wep.psionicDamageRadius > 0 || wep.psionicDamageInner > 0)
-                net += ApplyArmorChannel(Math.Max(wep.psionicDamageInner, wep.psionicDamageOuter), _type.Armors[3], 3);
-            if (wep.bypassDamageRadius > 0 || wep.bypassDamageInner > 0)
-                net += ApplyArmorChannel(Math.Max(wep.bypassDamageInner, wep.bypassDamageOuter), _type.Armors[4], 4);
+            net += BotHitChannel(wep.kineticDamageInner, wep.kineticDamageOuter, wep.kineticDamageRadius, f, 0);
+            net += BotHitChannel(wep.explosiveDamageInner, wep.explosiveDamageOuter, wep.explosiveDamageRadius, f, 1);
+            net += BotHitChannel(wep.electronicDamageInner, wep.electronicDamageOuter, wep.electronicDamageRadius, f, 2);
+            net += BotHitChannel(wep.psionicDamageInner, wep.psionicDamageOuter, wep.psionicDamageRadius, f, 3);
+            net += BotHitChannel(wep.bypassDamageInner, wep.bypassDamageOuter, wep.bypassDamageRadius, f, 4);
 
             if (net > 0)
                 _state.health -= (short)Math.Max(1, Math.Round(net / 1000));
@@ -562,6 +562,16 @@ namespace InfServer.Game
                 kill(null, wep.id);
                 _state.health = 0;
             }
+        }
+
+        static readonly Random _botHitRng = new Random();
+
+        double BotHitChannel(int inner, int outer, int radius, double f, int channel)
+        {
+            if (inner <= 0 && outer <= 0)
+                return 0;
+            double gross = radius > 0 ? outer + (inner - outer) * f : Math.Max(inner, outer);
+            return ApplyArmorChannel(gross, _type.Armors[channel], channel);
         }
 
         /// <summary>
@@ -630,8 +640,17 @@ namespace InfServer.Game
             percent = 0;
         }
 
+        /// <summary>
+        /// Armour table to use instead of this vehicle's own (null = own). Local 2026-11-14: bots riding a personal
+        /// vehicle (Deathboard / Shimmerboard / Drop Pack) - those pass all damage to the rider (100 % reduction),
+        /// and a bot IS the vehicle, so it was invincible; it uses its rider class's armour instead.
+        /// </summary>
+        public VehInfo ArmorSource;
+
         protected double ApplyArmorChannel(double grossDamage, ArmorValues vehicleArmor, int channel)
         {
+            if (ArmorSource != null && ArmorSource.Armors != null && channel >= 0 && channel < ArmorSource.Armors.Length)
+                vehicleArmor = ArmorSource.Armors[channel];
             GetUtilityArmorForChannel(channel, out int utilIgnore, out int utilPercent);
             return BotUtilityEffects.ApplyArmorChannel(grossDamage, vehicleArmor, utilIgnore, utilPercent);
         }
