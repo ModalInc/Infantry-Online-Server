@@ -77,12 +77,17 @@ namespace InfServer.Script.GameType_Eol
             // Soft keep: module blanked the lock but script still had a live hostile.
             if (playerTarget == null && prior != null && !prior.IsDead && !prior.IsSpectator
                 && prior._team != bot._team
-                && Helpers.isInRange(Script_Eol.EolBotCombatSeekRangeRaw, bot._state, prior._state))
+                && Helpers.isInRange(Script_Eol.EolBotCombatSeekRangeRaw, bot._state, prior._state)
+                && EolBotSenseUtil.BotCanSeePlayer(bot._state, prior))
             {
                 playerTarget = prior;
                 if (bot.Actions != null)
                     bot.Actions.SuggestPlayerTarget(prior);
             }
+
+            // A player the bot can no longer see or remember is dropped (no aiming at walls).
+            if (playerTarget != null && bot._state != null && !EolBotSenseUtil.BotCanSeePlayer(bot._state, playerTarget))
+                playerTarget = null;
 
             FilterDistantBotPatrolInterrupt(bot, ref botTarget);
 

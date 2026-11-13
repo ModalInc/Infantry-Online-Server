@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -244,6 +244,9 @@ namespace InfServer.Bots
 			return bEquipped;
 		}
 
+		/// <summary>False = weapon switches add no fireDelayOther pause (bots keep firing through swaps).</summary>
+		public static bool ApplySwitchDelay = false;
+
 		/// <summary>
 		/// Determines whether the bot is currently able to fire it's weapon
 		/// </summary>
@@ -266,6 +269,10 @@ namespace InfServer.Bots
 		/// </summary>
 		public void NotifyWeaponSwitched()
 		{
+			// Local 2026-11-13: bots switch guns with no extra delay - only each gun's own fire cooldown applies,
+			// so swapping weapons never interrupts their fire.
+			if (!ApplySwitchDelay)
+				return;
 			int now = Environment.TickCount;
 			int delay = _fireDelayOther > 0 ? _fireDelayOther : _fireDelay;
 			int next = now + delay;
@@ -332,7 +339,9 @@ namespace InfServer.Bots
 			else
 				angleDiff = angleDiffLo;
 
-			return (Math.Abs(angleDiff) <= (_settings.aimFuzziness / 2));
+			// At least ±3 (local fix 2026-11-13): steering stops turning inside ±2, so the old ±1 (fuzziness 2)
+			// could leave a bot sitting just off its aim forever, never firing.
+			return (Math.Abs(angleDiff) <= Math.Max(5, _settings.aimFuzziness / 2));
 		}
 
 		/// <summary>
@@ -361,7 +370,7 @@ namespace InfServer.Bots
 			else
 				angleDiff = angleDiffLo;
 
-			bAimed = (Math.Abs(angleDiff) <= (_settings.aimFuzziness / 2))
+			bAimed = (Math.Abs(angleDiff) <= Math.Max(5, _settings.aimFuzziness / 2))
 				&& (Owner == null || Owner.HumanReadyToFire());
 
 			if (angleDiff > 0)

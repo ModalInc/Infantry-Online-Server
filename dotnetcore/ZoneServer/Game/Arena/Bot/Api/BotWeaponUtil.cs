@@ -118,6 +118,10 @@ namespace InfServer.Bots
             long travel = 0;
             if (proj.muzzleVelocity > 0 && proj.aliveTime > 0)
                 travel = ((long)proj.muzzleVelocity * (long)proj.aliveTime) / 10000L;
+            else if (proj.aliveTime < 0)
+                // Negative alive time = distance-limited shot (grenades, flamers, spit): it flies |aliveTime| px.
+                // (local fix 2026-11-13 - it used to count as ~48 px, so these weapons were never fired)
+                travel = -proj.aliveTime;
 
             int range = travel < MeleeCombatRangeRaw
                 ? (blast > 0 ? Math.Max(blast, 48) : 72)
@@ -126,6 +130,51 @@ namespace InfServer.Bots
             if (range < 32) range = 32;
             if (range > 3200) range = 3200;
             return range;
+        }
+
+        /// <summary>
+        /// Minimum sensible fire distance (local change 2026-11-13): splash weapons (grenade launchers, rockets,
+        /// mortars) are useless - or suicidal - point blank, so they only fire from about twice their blast radius
+        /// out (120-320 px). Direct-fire guns: 0.
+        /// </summary>
+        public static int GetMinFireRangeRaw(ItemInfo item)
+        {
+            ItemInfo.Projectile proj = ResolveProjectile(item);
+            if (proj == null)
+                return 0;
+            int blast = Math.Max(proj.explosiveDamageRadius, Math.Max(proj.kineticDamageRadius, proj.proximityRadius));
+            if (blast < 30)
+                return 0;
+            return Math.Max(120, Math.Min(320, blast * 2));
+        }
+
+        public static int GetMinFireRangeRaw(WeaponController weapon)
+        {
+            if (weapon == null || weapon.ItemID == 0)
+                return 0;
+            return GetMinFireRangeRaw(AssetManager.Manager?.getItemByID(weapon.ItemID));
+        }
+
+        /// <summary>Masers go through walls (local 2026-11-13): a bot carrying one sees and shoots through walls.</summary>
+        public static bool IsWallPiercing(ItemInfo item)
+        {
+            return item?.name != null && item.name.IndexOf("maser", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        public static bool IsWallPiercing(WeaponController weapon)
+        {
+            return weapon != null && weapon.ItemID != 0 && IsWallPiercing(AssetManager.Manager?.getItemByID(weapon.ItemID));
+        }
+
+        /// <summary>This bot's wall-piercing gun (maser), or null.</summary>
+        public static WeaponController WallPiercingWeapon(Bot bot)
+        {
+            if (bot == null)
+                return null;
+            if (IsWallPiercing(bot._weaponFar)) return bot._weaponFar;
+            if (IsWallPiercing(bot._weaponClose)) return bot._weaponClose;
+            if (IsWallPiercing(bot._weapon)) return bot._weapon;
+            return null;
         }
 
         public static int MaxWeaponRangeRaw(ItemInfo primary, ItemInfo secondary)
@@ -203,6 +252,11 @@ namespace InfServer.Bots
                 return close;
             if (farInRange && !closeInRange)
                 return far;
+
+            // Both reach (local fix 2026-11-13): stay on the gun in hand. Swapping to "whichever is ready" put the
+            // switch delay on the other gun every time, so two-gun bots could ping-pong forever and never fire.
+            if (locked == close || locked == far)
+                return locked;
 
             bool closeReady = close.ableToFire();
             bool farReady = far.ableToFire();

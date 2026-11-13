@@ -267,6 +267,53 @@ namespace InfServer.Bots
             int newTileX = (int)Math.Floor(newPosition.x / 16);
             int newTileY = (int)Math.Floor(newPosition.y / 16);
 
+            // Never touch physics (local rework 2026-11-13): move each axis separately and stop that axis
+            // ClearanceRaw short of any tile this vehicle can't cross, so the bot slides along walls with a gap
+            // instead of entering them. (The old code slowed down on contact but still moved INTO the blocked
+            // tile, so bots ended up on green/yellow physics and got snapped back - the visible "jumping".)
+            if (NeverTouchPhysics)
+            {
+                bool insideNow = BlockedForMe(_position.x, _position.y);
+                double nx = newPosition.x, ny = newPosition.y;
+                double mx = nx - _position.x, my = ny - _position.y;
+                bool hitX = false, hitY = false;
+                if (!insideNow)
+                {
+                    if (mx != 0 && (BlockedForMe(nx + Math.Sign(mx) * ClearanceRaw, _position.y)
+                                    || BlockedForMe(nx + Math.Sign(mx) * ClearanceRaw, _position.y - ClearanceRaw * 0.6)
+                                    || BlockedForMe(nx + Math.Sign(mx) * ClearanceRaw, _position.y + ClearanceRaw * 0.6)))
+                    {
+                        hitX = true;
+                        nx = _position.x;
+                        _velocity.x = 0;
+                    }
+                    if (my != 0 && (BlockedForMe(nx, ny + Math.Sign(my) * ClearanceRaw)
+                                    || BlockedForMe(nx - ClearanceRaw * 0.6, ny + Math.Sign(my) * ClearanceRaw)
+                                    || BlockedForMe(nx + ClearanceRaw * 0.6, ny + Math.Sign(my) * ClearanceRaw)))
+                    {
+                        hitY = true;
+                        ny = _position.y;
+                        _velocity.y = 0;
+                    }
+                }
+                // (already inside physics: move freely so it can walk straight back out)
+
+                bCollision = hitX || hitY;
+                _wallContactAxisX = hitX ? Math.Sign(mx) : 0;
+                _wallContactAxisY = hitY ? Math.Sign(my) : 0;
+                if (bCollision)
+                {
+                    _lastCollision = new Vector3(((float)_position.x) / 100.0, ((float)_position.y) / 100.0, 0);
+                    _stuckCollisionCount++;
+                }
+                updateStuckDetection(delta, bCollision);
+
+                _position.x = nx;
+                _position.y = ny;
+                writeStateFromPhysics();
+                return !bCollision;
+            }
+
             LvlInfo.Tile tile = _arena._tiles[(newTileY * _arena._levelWidth) + newTileX];
             LvlInfo level = _arena._server._assets.Level;
             //Collision detection. Will expand on this later
@@ -683,6 +730,20 @@ namespace InfServer.Bots
 
         #region Utility functions
 
+
+        /// <summary>Bots keep this gap (raw px) from any physics they can't cross, and never enter it.</summary>
+        public static bool NeverTouchPhysics = true;
+        public const double ClearanceRaw = 10;
+
+        /// <summary>True when this vehicle can't occupy the point (blocked tile it can't roll over, or off-map).</summary>
+        bool BlockedForMe(double x, double y)
+        {
+            int tx = (int)Math.Floor(x / 16), ty = (int)Math.Floor(y / 16);
+            if (tx < 0 || ty < 0 || tx >= _arena._levelWidth || ty >= _arena._server._assets.Level.Height)
+                return true;
+            LvlInfo.Tile t = _arena._tiles[ty * _arena._levelWidth + tx];
+            return t.Blocked && canRollOver((int)x, (int)y, _type);
+        }
 
         public bool canRollOver(int x, int y, VehInfo type)
         {

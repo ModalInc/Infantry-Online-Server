@@ -16,6 +16,8 @@ namespace InfServer.Bots
         private const int RepulsionRadiusTiles = 3;
         private const float RepulsionWeight = 0.85f;
         private const float CollisionRepulsionWeight = 1.35f;
+        private const float RepulsionScale = 0.01f;
+        private const float MaxRepulsion = 0.7f;
 
         public static bool IsImpassable(Bot bot, short rawX, short rawY)
         {
@@ -66,6 +68,31 @@ namespace InfServer.Bots
             return yaw < 0 ? yaw + 240.0 : yaw;
         }
 
+        /// <summary>
+        /// <see cref="ProbeOpen"/> without a Bot (for the movement controller): free run in raw px along a yaw.
+        /// </summary>
+        public static int ProbeOpenRaw(Arena arena, VehInfo.Car type, int x, int y, double yaw, int dist)
+        {
+            LvlInfo level = arena?._server?._assets?.Level;
+            if (level == null || type == null)
+                return 0;
+            double r = yaw * 1.5 * Math.PI / 180.0;
+            double ux = Math.Sin(r), uy = -0.7 * Math.Cos(r);
+            double n = Math.Sqrt(ux * ux + uy * uy);
+            if (n < 1e-6)
+                return dist;
+            ux /= n; uy /= n;
+            for (int s = TileSizeRaw; s <= dist; s += TileSizeRaw)
+            {
+                bool blocked;
+                try { blocked = level.isTileBlocked((short)(x + (int)Math.Round(ux * s)), (short)(y + (int)Math.Round(uy * s)), type); }
+                catch (ArgumentOutOfRangeException) { blocked = true; }
+                if (blocked)
+                    return s - TileSizeRaw;
+            }
+            return dist;
+        }
+
         public static bool ProbeAheadClear(Bot bot, int lookAheadTiles = DefaultLookAheadTiles)
         {
             if (bot == null)
@@ -74,9 +101,10 @@ namespace InfServer.Bots
             if (bot._movement.bCollision)
                 return false;
 
+            // Screen coords: yaw 0 = north = -y (local fix 2026-11-13; was +y, which probed BEHIND for north/south).
             float yawRad = bot._state.yaw * (float)(Math.PI / 120.0);
             float forwardX = (float)Math.Sin(yawRad);
-            float forwardY = (float)Math.Cos(yawRad);
+            float forwardY = -(float)Math.Cos(yawRad);
 
             for (int step = 1; step <= lookAheadTiles; step++)
             {
@@ -116,11 +144,13 @@ namespace InfServer.Bots
             float weight = bot._movement.bCollision ? CollisionRepulsionWeight : RepulsionWeight;
             if (Math.Abs(repulseX) > 0.001f || Math.Abs(repulseY) > 0.001f)
             {
+                // Screen coords (y down): forward = (sin, -cos), right = (cos, sin). The old +cos forward
+                // mirrored north/south, so repulsion from a north or south wall drove the bot INTO it.
                 float yawRad = bot._state.yaw * (float)(Math.PI / 120.0);
                 float bodyForwardX = (float)Math.Sin(yawRad);
-                float bodyForwardY = (float)Math.Cos(yawRad);
-                float bodyRightX = bodyForwardY;
-                float bodyRightY = -bodyForwardX;
+                float bodyForwardY = -(float)Math.Cos(yawRad);
+                float bodyRightX = -bodyForwardY;
+                float bodyRightY = bodyForwardX;
 
                 float avoidForward = repulseX * bodyForwardX + repulseY * bodyForwardY;
                 float avoidStrafe = repulseX * bodyRightX + repulseY * bodyRightY;
@@ -153,8 +183,11 @@ namespace InfServer.Bots
             if (Math.Abs(repulseX) < 0.001f && Math.Abs(repulseY) < 0.001f)
                 return steer;
 
+            // Repulsion is already a bounded nudge (see SampleRepulsionAt); scale it to the steer so it
+            // bends the route away from walls without overpowering it (it used to be ~10x the steer).
             float w = movement.bCollision ? CollisionRepulsionWeight : RepulsionWeight;
-            return steer + new Vector3(repulseX * w, repulseY * w, 0);
+            float steerLen = Math.Max(0.5f, steer.Length);
+            return steer + new Vector3(repulseX * w * steerLen, repulseY * w * steerLen, 0);
         }
 
         public static Helpers.ObjectState? FindEscapeWaypoint(Bot bot, int minRadiusRaw = 96, int maxRadiusRaw = 320)
@@ -165,11 +198,21 @@ namespace InfServer.Bots
             short originX = bot._state.positionX;
             short originY = bot._state.positionY;
 
+            // Try directions AWAY from the nearby walls first (it used to always try east first), with a
+            // little per-attempt variety so stuck bots don't all leave the same way.
+            float rx = 0f, ry = 0f;
+            SampleRepulsionAt(bot._arena, bot._state, bot._type, ref rx, ref ry, out _);
+            double away = (Math.Abs(rx) + Math.Abs(ry)) > 0.001f
+                ? Math.Atan2(ry, rx)
+                : ((Environment.TickCount / 97 + bot._id * 37) % 12) * (Math.PI * 2.0 / 12.0);
+            double[] order = { 0, 0.52, -0.52, 1.05, -1.05, 1.57, -1.57, 2.09, -2.09, 2.62, -2.62, Math.PI };
+            bool flip = ((Environment.TickCount >> 9) & 1) == 0;
+
             for (int radius = maxRadiusRaw; radius >= minRadiusRaw; radius -= 32)
             {
                 for (int i = 0; i < 12; i++)
                 {
-                    double angle = i * (Math.PI * 2.0 / 12.0);
+                    double angle = away + (flip ? -order[i] : order[i]);
                     short x = (short)(originX + Math.Cos(angle) * radius);
                     short y = (short)(originY + Math.Sin(angle) * radius);
 
@@ -261,15 +304,25 @@ namespace InfServer.Bots
                     if (distSq < 0.01f)
                         distSq = 0.01f;
 
-                    float strength = 1.0f / distSq;
+                    // 1/d^2 falloff (was 1/d): walls right beside the bot matter, walls 3 tiles off barely do.
+                    float strength = 1.0f / (distSq * (float)Math.Sqrt(distSq));
                     repulseX += offX * strength;
                     repulseY += offY * strength;
                 }
             }
 
+            // Bound the total push: ~0.7 when touching a wall, ~0.1 three tiles away (was unbounded, ~10+).
+            float mag = (float)Math.Sqrt(repulseX * repulseX + repulseY * repulseY);
+            if (mag > 0.0001f)
+            {
+                float scaled = Math.Min(MaxRepulsion, mag * RepulsionScale);
+                repulseX = repulseX / mag * scaled;
+                repulseY = repulseY / mag * scaled;
+            }
+
             float yawRad = state.yaw * (float)(Math.PI / 120.0);
             float fwdX = (float)Math.Sin(yawRad);
-            float fwdY = (float)Math.Cos(yawRad);
+            float fwdY = -(float)Math.Cos(yawRad);
 
             for (int step = 1; step <= DefaultLookAheadTiles; step++)
             {

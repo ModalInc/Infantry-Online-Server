@@ -291,8 +291,16 @@ namespace InfServer.Script.GameType_Eol
             }
             vHq = _cachedCrashShip;
 
+            // No crash ship (destroyed / none): these bugs have no base - fight what they see, otherwise hunt.
             if (vHq == null)
+            {
+                if (!IsDead && !bCondemned && _baseScript != null && EolBotBrain.Enabled)
+                {
+                    if (!fireAtEnemy(now))
+                        EolBotBrain.Hunt(this, _baseScript, now, null);
+                }
                 return base.poll();
+            }
 
             if (IsDead)
             {

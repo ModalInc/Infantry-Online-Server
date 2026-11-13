@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 using InfServer.Bots;
@@ -26,8 +26,8 @@ namespace InfServer.Game
         int _botDeathsSinceLastRateLog;
         int _tickLastBotDeathQueueSpikeLog;
 
-        const int BotDeathKillfeedMinIntervalMs = 25;
-        const int BotDeathKillfeedOpsPerDrain = 3;
+        const int BotDeathKillfeedMinIntervalMs = 120;   // local 2026-11-13: max ~16 kill lines/s to each client (was ~120/s)
+        const int BotDeathKillfeedOpsPerDrain = 2;
         const int BotDeathRateLogIntervalMs = 1000;
         const int BotDeathQueueSpikeLogMinIntervalMs = 1500;
 
@@ -37,6 +37,7 @@ namespace InfServer.Game
             if (victim == null || shooter == null || victim == shooter)
                 return;
             _lastBotDamagerByVictim[victim] = shooter;
+            victim.NoteHurtBy(shooter);
         }
 
         /// <summary>Peek at the last bot damager without consuming the entry.</summary>
@@ -98,7 +99,18 @@ namespace InfServer.Game
             if (killer == null)
                 TryPeekLastBotDamager(dead, out killerBot);
 
-            uint killerId = killer == null ? 0u : (uint)killer._id;
+            // Server-side kills (turrets, bot-vs-bot) have no player killer. killerID 0 made the client drop the
+            // body with no death animation (local fix 2026-11-13) - credit the killing bot / turret instead, or
+            // the dead bot itself, so the client always plays the death.
+            uint killerId;
+            if (killer != null)
+                killerId = (uint)killer._id;
+            else if (killerBot != null)
+                killerId = (uint)killerBot._id;
+            else if (dead.LastHurtBy is Vehicle hurter && hurter != dead)
+                killerId = (uint)hurter._id;
+            else
+                killerId = (uint)dead._id;
             SendBotDeathGraphicImmediate(
                 dead._id,
                 killerId,
@@ -110,7 +122,7 @@ namespace InfServer.Game
             {
                 deadTeam = dead._team,
                 botName = BotNameModule.GetKillfeedName(dead),
-                killerName = BotNameModule.GetKillerName(killer, killerBot),
+                killerName = KillerNameFor(dead, killer, killerBot),
             });
 
             int now = Environment.TickCount;
@@ -133,6 +145,22 @@ namespace InfServer.Game
                 _tickLastBotDeathQueueSpikeLog = now;
                 // Log.write(TLog.Normal, "[Arena] botDeathKillfeedQueue SPIKE: count={0}", _botDeathKillfeedQueue.Count);
             }
+        }
+
+        /// <summary>
+        /// Killfeed name for a bot death (local 2026-11-13): the player / bot as before, otherwise the vehicle that
+        /// last hurt it - e.g. a turret's name ("Auto MG") instead of "Unknown".
+        /// </summary>
+        static string KillerNameFor(Bot dead, Player killer, Bot killerBot)
+        {
+            if (killer != null || killerBot != null)
+                return BotNameModule.GetKillerName(killer, killerBot);
+            if (dead?.LastHurtBy is Bot hb)
+                return BotNameModule.GetKillfeedName(hb);
+            if (dead?.LastHurtBy is Vehicle hv && hv._type != null && !string.IsNullOrEmpty(hv._type.Name)
+                && Environment.TickCount - dead.LastHurtTick < 10000)
+                return hv._type.Name;
+            return BotNameModule.GetKillerName(killer, killerBot);
         }
 
         /// <summary>Ranged reliable death graphic — not arena-wide.</summary>
@@ -190,6 +218,10 @@ namespace InfServer.Game
 
             _tickLastBotDeathKillfeedDrain = now;
             int budget = BotDeathKillfeedOpsPerDrain;
+
+            // Mass kills: never let the killfeed back up into a flood - keep only the latest few lines.
+            while (_botDeathKillfeedQueue.Count > 12)
+                _botDeathKillfeedQueue.Dequeue();
 
             while (budget-- > 0 && _botDeathKillfeedQueue.Count > 0)
             {

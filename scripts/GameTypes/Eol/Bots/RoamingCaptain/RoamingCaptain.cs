@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -151,8 +151,23 @@ namespace InfServer.Script.GameType_Eol
                 bCondemned = true; //Make sure the bot gets removed in polling
                 _baseScript.roamingCaptianBots.Remove(_team);
                 _baseScript.capRoamBots.Remove(_team);
-                if (!_baseScript.IsBountyHunterBotTeam(_team))
+                if (!_baseScript.IsAssassinTeam(_team))
                     _baseScript._currentRoamCaptains--;
+                return base.poll();
+            }
+
+            // Rogue assassin (contract over): fight anyone it meets, hunt when idle, until it dies.
+            if (_baseScript.IsReleasedAssassinTeam(_team))
+            {
+                int nowR = Environment.TickCount;
+                InLiveCombat = false;
+                if (BotShouldEngageInsteadOfIdle(nowR) || (_target != null && !_target.IsDead))
+                {
+                    seekAndDestroy(nowR);
+                    InLiveCombat = _target != null;
+                }
+                if (!InLiveCombat)
+                    EolBotBrain.Hunt(this, _baseScript, nowR, null);
                 return base.poll();
             }
 
@@ -166,7 +181,7 @@ namespace InfServer.Script.GameType_Eol
                 bCondemned = true;
                 _baseScript.roamingCaptianBots.Remove(_team);
                 _baseScript.capRoamBots.Remove(_team);
-                if (!_baseScript.IsBountyHunterBotTeam(_team))
+                if (!_baseScript.IsAssassinTeam(_team))
                     _baseScript._currentRoamCaptains--;
                 return false;
             }

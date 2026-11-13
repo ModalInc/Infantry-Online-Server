@@ -12,7 +12,7 @@ namespace InfServer.Bots
     public static class BotDrive
     {
         private const double SteerAngleScale = 40.0;
-        private const double AimAngleScale = 35.0;
+        private const double AimAngleScale = 14.0;   // local 2026-11-13: snap onto target faster (was 35)
         private const float MinSteerStrength = 0.06f;
 
         public static float ClampAxis(float value) => Math.Clamp(value, -1f, 1f);

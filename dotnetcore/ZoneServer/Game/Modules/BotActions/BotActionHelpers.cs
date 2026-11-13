@@ -27,7 +27,176 @@ namespace InfServer.Game.Modules.BotActions
         /// <summary>Enemy bots beyond this raw range never steal a player lock.</summary>
         public const int HostileBotClosePreferRaw = 3200;
 
+        /// <summary>
+        /// Optional "can this bot know about this player?" gate (local change 2026-11-13). The gametype sets it
+        /// so bots need real sight (or memory of a sighting) instead of locking players through walls.
+        /// </summary>
+        public static Func<Bots.Bot, Player, bool> PlayerPerception;
+
+        /// <summary>
+        /// Optional "this bot gave up on that target for now" gate (bot, target, distance) - local 2026-11-13, so a
+        /// bot that dropped an unreachable target doesn't lock straight back onto it.
+        /// </summary>
+        public static Func<Bots.Bot, object, double, bool> IgnoreTarget;
+
+        /// <summary>Use the war-style picker below instead of "players always first" (local change 2026-11-13).</summary>
+        public static bool WarTargeting = true;
+
         public static bool RefreshHostileTarget(BotActionContext ctx, int range = -1)
+        {
+            if (WarTargeting)
+                return RefreshHostileTargetWar(ctx, range);
+            return RefreshHostileTargetLegacy(ctx, range);
+        }
+
+        /// <summary>
+        /// Pick a target like a soldier in a big fight, not "every bot drops everything for the human":
+        ///  - keep fighting your current enemy (strong stickiness) - finish your own fight
+        ///  - whoever is shooting YOU right now jumps to the top
+        ///  - a human only takes over when they come close (or hit you); far-off humans don't pull the whole map
+        ///  - prefer near and weakened enemies (finish them), and spread out over targets teammates already have
+        /// </summary>
+        static bool RefreshHostileTargetWar(BotActionContext ctx, int range)
+        {
+            if (ctx?.Bot == null || ctx.Arena == null)
+                return false;
+            Bot self = ctx.Bot;
+            BotThrottleConfig thr = Throttle(ctx);
+            int seek = range > 0 ? range : (ctx.SeekRange > 0 ? ctx.SeekRange : thr.DefaultSeekRange);
+            Func<Bots.Bot, Player, bool> perceive = PlayerPerception;
+            Func<Bots.Bot, Bots.Bot, bool> botFilter = ctx.Arena.BotVsBotHostilityFilter;
+            int now = Environment.TickCount;
+            bool hurtRecently = self.LastHurtBy != null && now - self.LastHurtTick >= 0 && now - self.LastHurtTick < 3000;
+
+            object current = (object)ctx.CurrentPlayerTarget ?? ctx.CurrentBotTarget;
+
+            // Re-pick at most every 300 ms (keeps the server light with many bots) unless the target died /
+            // vanished or someone new just shot us.
+            if (current != null && now - ctx.WarRefreshTick >= 0 && now - ctx.WarRefreshTick < 300)
+            {
+                bool valid = current is Player cp
+                    ? !cp.IsDead && !cp.IsSpectator && cp._arena == ctx.Arena && (perceive == null || perceive(self, cp))
+                    : current is Bots.Bot cb && !cb.IsDead && !cb.bCondemned;
+                bool newAttacker = hurtRecently && !ReferenceEquals(self.LastHurtBy, current) && now - self.LastHurtTick < 300;
+                if (valid && !newAttacker)
+                    return true;
+            }
+            ctx.WarRefreshTick = now;
+
+            Dictionary<object, int> taken = CountTeammateTargetsAll(ctx);
+            object best = null;
+            double bestScore = double.MaxValue;
+            double currentScore = double.MaxValue;
+
+            double Score(object who, Helpers.ObjectState st, bool isPlayer, double hpFrac)
+            {
+                double d = Helpers.distanceTo(self._state, st);
+                double s = d;
+                if (isPlayer)
+                    s *= d < 500 ? 0.8 : 1.35;                       // humans matter when they're close
+                if (hurtRecently && ReferenceEquals(self.LastHurtBy, who))
+                    s *= 0.35;                                         // shooting me: deal with it
+                if (ReferenceEquals(who, current))
+                    s *= 0.55;                                         // finish my own fight
+                s *= 0.7 + 0.3 * Math.Max(0, Math.Min(1, hpFrac));    // finish weak ones
+                if (taken != null && taken.TryGetValue(who, out int mates) && mates > 1)
+                    s *= 1.0 + 0.3 * (mates - 1);                      // spread fire
+                return s;
+            }
+
+            List<Player> near = ctx.Arena.getPlayersInRange(self._state.positionX, self._state.positionY, seek);
+            if (near != null)
+            {
+                foreach (Player p in near)
+                {
+                    if (p == null || p.IsDead || p.IsSpectator || p._state == null)
+                        continue;
+                    if (self._team != null && p._team == self._team)
+                        continue;
+                    if (perceive != null && !perceive(self, p))
+                        continue;
+                    if (IgnoreTarget != null && IgnoreTarget(self, p, Helpers.distanceTo(self._state, p._state)))
+                        continue;
+                    double s = Score(p, p._state, true, 1.0);
+                    if (ReferenceEquals(p, current)) currentScore = s;
+                    if (s < bestScore) { bestScore = s; best = p; }
+                }
+            }
+
+            // Enemy bots: score cheaply first, then line-of-sight only the best few (LOS is the expensive part).
+            List<KeyValuePair<double, Bots.Bot>> cands = null;
+            long maxD2 = (long)HostileBotClosePreferRaw * HostileBotClosePreferRaw;
+            foreach (Bots.Bot other in ctx.Arena.ActiveBots)
+            {
+                if (other == null || other == self || other.IsDead || other.bCondemned || other._state == null)
+                    continue;
+                if (self._team != null && other._team == self._team)
+                    continue;
+                long ddx = other._state.positionX - self._state.positionX, ddy = other._state.positionY - self._state.positionY;
+                if (ddx * ddx + ddy * ddy > maxD2)
+                    continue;
+                if (botFilter != null && !botFilter(self, other))
+                    continue;
+                if (IgnoreTarget != null && IgnoreTarget(self, other, Math.Sqrt(ddx * ddx + ddy * ddy)))
+                    continue;
+                int maxHp = other._type != null && other._type.Hitpoints > 0 ? other._type.Hitpoints : 1;
+                double s = Score(other, other._state, false, (double)other._state.health / maxHp);
+                if (s >= bestScore)
+                    continue;      // can't beat the best player candidate anyway
+                (cands ??= new List<KeyValuePair<double, Bots.Bot>>()).Add(new KeyValuePair<double, Bots.Bot>(s, other));
+            }
+            if (cands != null)
+            {
+                cands.Sort((a, c) => a.Key.CompareTo(c.Key));
+                for (int i = 0, checkedLos = 0; i < cands.Count && checkedLos < 4; i++)
+                {
+                    checkedLos++;
+                    if (!BotCombat.CanDirectEngage(self, cands[i].Value._state))
+                        continue;
+                    if (cands[i].Key < bestScore) { bestScore = cands[i].Key; best = cands[i].Value; }
+                    break;
+                }
+            }
+
+            if (best == null)
+            {
+                ctx.CurrentPlayerTarget = null;
+                ctx.CurrentBotTarget = null;
+                return false;
+            }
+            if (best is Player bp)
+            {
+                ctx.CurrentPlayerTarget = bp;
+                ctx.CurrentBotTarget = null;
+            }
+            else
+            {
+                ctx.CurrentBotTarget = (Bots.Bot)best;
+                ctx.CurrentPlayerTarget = null;
+            }
+            return true;
+        }
+
+        /// <summary>How many teammates currently have each player / bot as their target.</summary>
+        static Dictionary<object, int> CountTeammateTargetsAll(BotActionContext ctx)
+        {
+            Dictionary<object, int> taken = null;
+            foreach (Bots.Bot other in ctx.Arena.ActiveBots)
+            {
+                if (other == null || other == ctx.Bot || other.IsDead || other._team != ctx.Bot._team)
+                    continue;
+                BotActionContext oc = other.Actions?.Context;
+                object t = (object)oc?.CurrentPlayerTarget ?? oc?.CurrentBotTarget;
+                if (t == null)
+                    continue;
+                taken ??= new Dictionary<object, int>();
+                taken.TryGetValue(t, out int n);
+                taken[t] = n + 1;
+            }
+            return taken;
+        }
+
+        static bool RefreshHostileTargetLegacy(BotActionContext ctx, int range = -1)
         {
             if (ctx?.Bot == null || ctx.Arena == null)
                 return false;
@@ -35,13 +204,15 @@ namespace InfServer.Game.Modules.BotActions
             BotThrottleConfig thr = Throttle(ctx);
             int seek = range > 0 ? range : (ctx.SeekRange > 0 ? ctx.SeekRange : thr.DefaultSeekRange);
             double stickySeek = seek * 1.5;
+            Func<Bots.Bot, Player, bool> perceive = PlayerPerception;
 
             // Sticky player — keep through brief LOS loss / cover; never yield to a distant bot.
             if (ctx.CurrentPlayerTarget != null
                 && !ctx.CurrentPlayerTarget.IsDead
                 && !ctx.CurrentPlayerTarget.IsSpectator
                 && ctx.CurrentPlayerTarget._arena == ctx.Arena
-                && (ctx.Bot._team == null || ctx.CurrentPlayerTarget._team != ctx.Bot._team))
+                && (ctx.Bot._team == null || ctx.CurrentPlayerTarget._team != ctx.Bot._team)
+                && (perceive == null || perceive(ctx.Bot, ctx.CurrentPlayerTarget)))
             {
                 double stickyDist = Helpers.distanceTo(ctx.Bot._state, ctx.CurrentPlayerTarget._state);
                 if (stickyDist <= stickySeek)
@@ -65,6 +236,8 @@ namespace InfServer.Game.Modules.BotActions
                     if (p == null || p.IsDead || p.IsSpectator)
                         continue;
                     if (ctx.Bot._team != null && p._team == ctx.Bot._team)
+                        continue;
+                    if (perceive != null && !perceive(ctx.Bot, p))
                         continue;
                     double score = Helpers.distanceTo(ctx.Bot._state, p._state);
                     if (taken != null && taken.TryGetValue(p, out int mates) && mates > 1)
@@ -272,7 +445,11 @@ namespace InfServer.Game.Modules.BotActions
             if (gun != null)
                 bot._weapon = gun;
 
-            bool holdForShot = gun != null && gun.RequiresStationaryFire && gun.ableToFire() && InEngageFireBurst(ctx, thr, now);
+            // Plant for a charge-up shot only when the target is actually in the gun's reach (local fix 2026-11-13:
+            // bots stood still aiming at targets far out of range, never firing).
+            int gunReach = gun != null && gun.ItemID != 0 ? BotWeaponUtil.GetCombatRangeRaw(AssetManager.Manager?.getItemByID(gun.ItemID)) : 0;
+            bool inReach = gunReach <= 0 || dist <= Math.Max(gunReach * 1.5, 320);
+            bool holdForShot = gun != null && inReach && gun.RequiresStationaryFire && gun.ableToFire() && InEngageFireBurst(ctx, thr, now);
             if (holdForShot)
             {
                 int aimYaw = Helpers.computeLeadFireAngle(bot._state, target, 10);
@@ -504,6 +681,33 @@ namespace InfServer.Game.Modules.BotActions
             return ResolveEngageWeapon(bot, target, hasLos, distanceRaw, minRaw, maxRaw);
         }
 
+        /// <summary>Flak and other anti-vehicle guns (by name).</summary>
+        public static bool IsAntiVehicleWeapon(ItemInfo item)
+        {
+            return item?.name != null && item.name.IndexOf("flak", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>
+        /// True when the target is a soldier on foot: a player not driving a vehicle, or a (trooper) bot.
+        /// Turrets / other vehicles are not.
+        /// </summary>
+        public static bool IsOnFootTarget(Bot bot, Helpers.ObjectState target)
+        {
+            if (bot?._arena == null || target == null)
+                return true;
+            foreach (Player p in bot._arena.Players)
+            {
+                if (p != null && ReferenceEquals(p._state, target))
+                    return p._occupiedVehicle == null || p._occupiedVehicle == p._baseVehicle;
+            }
+            foreach (Bots.Bot b in bot._arena.ActiveBots)
+            {
+                if (b != null && ReferenceEquals(b._state, target))
+                    return true;
+            }
+            return false;   // turret / vehicle
+        }
+
         public static WeaponController ResolveEngageWeapon(
             Bot bot, Helpers.ObjectState target, bool hasLos, double distanceRaw,
             int minRaw, int maxRaw)
@@ -511,20 +715,48 @@ namespace InfServer.Game.Modules.BotActions
             if (bot == null)
                 return null;
 
-            if (bot.CombatWeaponSelector != null)
-            {
-                WeaponController custom = bot.CombatWeaponSelector(bot, target, hasLos);
-                if (custom != null)
-                    return BotWeaponUtil.CommitEngageWeapon(bot, custom);
-            }
-
             WeaponController close = bot._weaponClose ?? bot._weapon;
             WeaponController far = bot._weaponFar;
             // Engage may assign the active gun onto _weapon — never treat far as close.
             if (close != null && far != null && ReferenceEquals(close, far))
                 close = bot._weaponClose;
+
+            // Anti-vehicle guns (flak) only against vehicles / turrets - a target on foot gets the rifle
+            // (local 2026-11-13: commanders were flakking infantry).
+            if (IsOnFootTarget(bot, target))
+            {
+                if (IsAntiVehicleWeapon(bot._weaponFarItem) && close != null && !IsAntiVehicleWeapon(bot._weaponCloseItem))
+                    return BotWeaponUtil.CommitEngageWeapon(bot, close);
+                if (IsAntiVehicleWeapon(bot._weaponCloseItem) && far != null && !IsAntiVehicleWeapon(bot._weaponFarItem))
+                    return BotWeaponUtil.CommitEngageWeapon(bot, far);
+            }
+
+            // Splash guns (grenade launchers etc.) never fire point blank - use the other gun, or hold fire.
+            bool closeTooNear = close != null && distanceRaw < BotWeaponUtil.GetMinFireRangeRaw(close);
+            bool farTooNear = far != null && distanceRaw < BotWeaponUtil.GetMinFireRangeRaw(far);
+
+            if (bot.CombatWeaponSelector != null)
+            {
+                WeaponController custom = bot.CombatWeaponSelector(bot, target, hasLos);
+                if (custom != null && distanceRaw < BotWeaponUtil.GetMinFireRangeRaw(custom))
+                {
+                    WeaponController other = ReferenceEquals(custom, far) ? (closeTooNear ? null : close) : (farTooNear ? null : far);
+                    custom = other;
+                    if (custom == null)
+                        return null;
+                }
+                if (custom != null)
+                    return BotWeaponUtil.CommitEngageWeapon(bot, custom);
+            }
+
+            if (closeTooNear && (far == null || farTooNear || bot._weaponFarItem == null))
+                return null;
+            if (closeTooNear)
+                return BotWeaponUtil.CommitEngageWeapon(bot, far);
             if (far == null || bot._weaponFarItem == null)
                 return BotWeaponUtil.CommitEngageWeapon(bot, close ?? far);
+            if (farTooNear)
+                return BotWeaponUtil.CommitEngageWeapon(bot, close);
 
             ItemInfo itemClose = bot._weaponCloseItem;
             ItemInfo itemFar = bot._weaponFarItem;

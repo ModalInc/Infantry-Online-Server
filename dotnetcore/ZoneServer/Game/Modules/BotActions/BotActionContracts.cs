@@ -50,6 +50,8 @@ namespace InfServer.Game.Modules.BotActions
         public int EngageModeTick { get; set; }
         /// <summary>Tick when LOS for orbit last failed (sticky exit).</summary>
         public int EngageLosLostTick { get; set; }
+        /// <summary>Last full war-targeting re-pick (local 2026-11-13; throttles the scan).</summary>
+        public int WarRefreshTick { get; set; }
         /// <summary>Strafe / circle direction (±1), flipped on dance phase change.</summary>
         public float EngageStrafeSign { get; set; } = 1f;
         /// <summary>Tick when current fire burst ends (then suppress pause).</summary>

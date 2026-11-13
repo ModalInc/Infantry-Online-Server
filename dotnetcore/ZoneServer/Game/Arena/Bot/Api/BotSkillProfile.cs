@@ -41,17 +41,21 @@ namespace InfServer.Bots
             return (int)(h & 0x7FFFFFFFu);
         }
 
-        public static BotSkillProfile Roll(string name, int fallbackSeed)
+        public static BotSkillProfile Roll(string name, int fallbackSeed) => Roll(name, fallbackSeed, null);
+
+        /// <summary><paramref name="modeOverride"/> (e.g. "ace") forces this bot's tier regardless of the zone mix.</summary>
+        public static BotSkillProfile Roll(string name, int fallbackSeed, string modeOverride)
         {
             int seed = string.IsNullOrEmpty(name) ? fallbackSeed : NameSeed(name);
             Random r = new Random(seed);
             double t = r.NextDouble();
-            switch (BotFeatures.SkillMode)
+            switch (modeOverride ?? BotFeatures.SkillMode)
             {
                 case "rookie": t = 0.10; break;
                 case "regular": t = 0.50; break;
                 case "veteran": t = 0.80; break;
                 case "ace": t = 0.97; break;
+                case "ultra": t = 0.995; break;   // assassins: beyond ace (tightened below)
                 case "elite": t = 0.78 + t * 0.22; break;
                 case "weak": t = t * 0.62; break;
             }
@@ -72,6 +76,16 @@ namespace InfServer.Bots
             p.SettleLo = (int)(p.SettleLo * k);
             p.SettleHi = (int)(p.SettleHi * k);
             p.AimSd *= 0.85 + r.NextDouble() * 0.3;
+            if ((modeOverride ?? BotFeatures.SkillMode) == "ultra")
+            {   // ultra elite: half the aim error, faster reactions, near-perfect lead
+                p.Tier = "ultra";
+                p.AimSd *= 0.5;
+                p.ShotSd *= 0.5;
+                p.LeadSd *= 0.4;
+                p.ReactMean = (int)(p.ReactMean * 0.7);
+                p.SettleLo = (int)(p.SettleLo * 0.6);
+                p.SettleHi = (int)(p.SettleHi * 0.6);
+            }
             return p;
         }
 

@@ -138,6 +138,18 @@ namespace InfServer.Game.Modules.BotActions
             _ctx.CurrentBotTarget = null;
         }
 
+        /// <summary>Seed the lock on an enemy BOT (local change 2026-11-13) - e.g. a teammate's attacker to protect them.</summary>
+        public void SuggestBotTarget(Bots.Bot target)
+        {
+            RebuildContext();
+            if (_ctx == null)
+                return;
+            if (target == null || target.IsDead || target.bCondemned)
+                return;
+            _ctx.CurrentBotTarget = target;
+            _ctx.CurrentPlayerTarget = null;
+        }
+
         public void Clear()
         {
             ClearCurrentBehavior();

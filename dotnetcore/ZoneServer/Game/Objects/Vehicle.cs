@@ -535,8 +535,38 @@ namespace InfServer.Game
         }
 
         /// <summary>
+        /// A projectile from a bot that hit this vehicle dead-on (local change 2026-11-13; bot-vs-bot shots are not
+        /// hit-tested by any client). Full inner damage on every channel the weapon has, through this vehicle's armour -
+        /// including direct-fire guns whose damage radius is 0, which <see cref="applyExplosionDamage"/> would ignore.
+        /// </summary>
+        public void applyBotHit(ItemInfo.Projectile wep)
+        {
+            if (wep == null || IsDead || _type == null)
+                return;
+            double net = 0;
+            if (wep.kineticDamageRadius > 0 || wep.kineticDamageInner > 0)
+                net += ApplyArmorChannel(Math.Max(wep.kineticDamageInner, wep.kineticDamageOuter), _type.Armors[0], 0);
+            if (wep.explosiveDamageRadius > 0 || wep.explosiveDamageInner > 0)
+                net += ApplyArmorChannel(Math.Max(wep.explosiveDamageInner, wep.explosiveDamageOuter), _type.Armors[1], 1);
+            if (wep.electronicDamageRadius > 0 || wep.electronicDamageInner > 0)
+                net += ApplyArmorChannel(Math.Max(wep.electronicDamageInner, wep.electronicDamageOuter), _type.Armors[2], 2);
+            if (wep.psionicDamageRadius > 0 || wep.psionicDamageInner > 0)
+                net += ApplyArmorChannel(Math.Max(wep.psionicDamageInner, wep.psionicDamageOuter), _type.Armors[3], 3);
+            if (wep.bypassDamageRadius > 0 || wep.bypassDamageInner > 0)
+                net += ApplyArmorChannel(Math.Max(wep.bypassDamageInner, wep.bypassDamageOuter), _type.Armors[4], 4);
+
+            if (net > 0)
+                _state.health -= (short)Math.Max(1, Math.Round(net / 1000));
+            if (_state.health <= 0)
+            {
+                kill(null, wep.id);
+                _state.health = 0;
+            }
+        }
+
+        /// <summary>
         /// Determines how close the vehicle may have passed near the explosion in recent history
-        /// </summary>	
+        /// </summary>
         private float getImpliedRadius(int posX, int posY, int radiusLimit)
         {	//Are we still?
             if (_state.velocityX == 0 && _state.velocityY == 0 && _state.velocityZ == 0)

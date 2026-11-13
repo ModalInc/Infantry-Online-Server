@@ -42,6 +42,21 @@ namespace InfServer.Bots
         public ItemInfo _weaponCloseItem;
         /// <summary>Item meta for <see cref="_weaponFar"/>.</summary>
         public ItemInfo _weaponFarItem;
+
+        /// <summary>
+        /// Who last hurt this bot (a Player, a Bot or a turret Computer) and when (local change 2026-11-13) - lets
+        /// scripts react like players: retaliate, or protect a teammate who is taking damage.
+        /// </summary>
+        public object LastHurtBy;
+        public int LastHurtTick;
+        public void NoteHurtBy(object who)
+        {
+            if (who == null || who == this)
+                return;
+            LastHurtBy = who;
+            LastHurtTick = Environment.TickCount;
+            if (LastHurtTick == 0) LastHurtTick = 1;
+        }
         /// <summary>Sticky combat gun (reload / fire-delay aware).</summary>
         public WeaponController _combatWeaponLocked;
         /// <summary>
@@ -76,6 +91,108 @@ namespace InfServer.Bots
 
         private BotMotionRequest _motionRequest;
         private int _tickWallEscapeUntil;
+        private int _stuckWatchTick;
+        private short _stuckWatchX, _stuckWatchY;
+        private int _stuckStrikes;
+        private int _insidePhysicsTries;
+        private int _droppedForDeathTick = int.MinValue;
+
+        /// <summary>Nearest spot (8 px steps out to <paramref name="maxR"/>) this bot can stand on with clear tiles around it.</summary>
+        private Helpers.ObjectState? NearestFreeSpot(int maxR)
+        {
+            for (int r = 8; r <= maxR; r += 8)
+            {
+                for (int i = 0; i < 16; i++)
+                {
+                    double a = i * Math.PI / 8;
+                    short x = (short)(_state.positionX + Math.Cos(a) * r);
+                    short y = (short)(_state.positionY + Math.Sin(a) * r);
+                    if (BotWallAvoidance.IsImpassable(this, x, y))
+                        continue;
+                    bool clear = true;
+                    for (int k = 0; k < 8 && clear; k++)
+                    {
+                        double b = k * Math.PI / 4;
+                        if (BotWallAvoidance.IsImpassable(this, (short)(x + Math.Cos(b) * 12), (short)(y + Math.Sin(b) * 12)))
+                            clear = false;
+                    }
+                    if (clear)
+                        return new Helpers.ObjectState { positionX = x, positionY = y };
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Last-resort stuck watchdog (local change 2026-11-13): a bot that wants to move but hasn't gone 20 px in
+        /// ~2.4 s gets out - wedged inside / against physics it is nudged to the nearest open spot; otherwise it
+        /// takes a fresh escape route. No bot stays stuck on a wall.
+        /// </summary>
+        private void StuckWatchdog(int now)
+        {
+            if (MovementMode != BotMovementMode.Api || _state == null || _movement == null || _arena == null)
+                return;
+            if (_stuckWatchTick != 0 && now - _stuckWatchTick < 600)
+                return;
+
+            // Standing ON physics it can't occupy (landed / knocked onto a green or yellow patch): walk off it
+            // toward the nearest clear spot first; only if that fails twice, a tiny nudge (no visible "respawn").
+            if (BotWallAvoidance.IsImpassable(this, _state.positionX, _state.positionY))
+            {
+                _stuckWatchTick = now == 0 ? 1 : now;
+                Helpers.ObjectState free = NearestFreeSpot(96);
+                if (free == null)
+                    return;
+                if (_insidePhysicsTries < 2)
+                {
+                    _insidePhysicsTries++;
+                    double ddx = free.positionX - _state.positionX, ddy = free.positionY - _state.positionY;
+                    _pinYaw = BotWallAvoidance.WrapYaw(Math.Atan2(ddx, -ddy) * 180.0 / Math.PI / 1.5);
+                    _pinUntil = now + 500;
+                    return;
+                }
+                _insidePhysicsTries = 0;
+                Navigation.Clear();
+                _movement.warp(new Helpers.ObjectState { positionX = free.positionX, positionY = free.positionY, positionZ = _state.positionZ, yaw = _state.yaw });
+                return;
+            }
+            _insidePhysicsTries = 0;
+            if (_stuckWatchTick != 0 && now - _stuckWatchTick < 1200)
+                return;
+
+            SteeringController steering = _movement as SteeringController;
+            bool wants = steering != null && !_movement.IsMovementFrozen
+                && (Math.Abs(steering.AnalogForward) > 0.25f || Math.Abs(steering.AnalogStrafe) > 0.25f
+                    || steering.FollowPath != null || Navigation.HasPath);
+            int dx = _state.positionX - _stuckWatchX, dy = _state.positionY - _stuckWatchY;
+            bool moved = _stuckWatchTick == 0 || dx * dx + dy * dy >= 20 * 20;
+            _stuckWatchTick = now == 0 ? 1 : now;
+            _stuckWatchX = _state.positionX;
+            _stuckWatchY = _state.positionY;
+            if (!wants || moved)
+            {
+                _stuckStrikes = 0;
+                return;
+            }
+            if (++_stuckStrikes < 2)
+                return;
+            _stuckStrikes = 0;
+
+            // Boxed in but not on physics: take a fresh route out (never teleport for this).
+            Helpers.ObjectState? escape = BotWallAvoidance.FindEscapeWaypoint(this);
+            if (escape == null)
+                return;
+            Navigation.Clear();
+            Navigation.NavigateTo(escape, new BotNavigateOptions
+            {
+                ForceRequeue = true,
+                PathStartIndex = 0,
+                RequeueMinMs = 400,
+                Priority = PathPriority.Combat,
+            });
+            FollowNavigationPath();
+            _tickWallEscapeUntil = now + 900;
+        }
         /// <summary>
         /// When true, death uses scripted revive at the spawn anchor (same identity/name) instead of permanent removal.
         /// Set at spawn by the game script; default false = die and leave arena lists.
@@ -168,9 +285,9 @@ namespace InfServer.Bots
         }
 
         /// <summary>~60 Hz while moving under observation (player-like density without flood).</summary>
-        private const int MovingUpdateIntervalMs = 16;
+        private const int MovingUpdateIntervalMs = 33;   // local 2026-11-13: 30 Hz (was 16 = 60 Hz) - smooth with client extrapolation, half the traffic
         /// <summary>~50 Hz while paused under observation (aim / fire stalls).</summary>
-        private const int ObservedIdleUpdateIntervalMs = 20;
+        private const int ObservedIdleUpdateIntervalMs = 50;   // local 2026-11-13 (was 20)
         /// <summary>No observer in weapon/view probe — radar-only pose.</summary>
         private const int RadarOnlyUpdateIntervalMs = 1500;
         /// <summary>Warps / teleports only; normal motion relies on <see cref="MovingUpdateIntervalMs"/>.</summary>
@@ -767,11 +884,13 @@ namespace InfServer.Bots
             //Are we dead?
             if (IsDead)
             {
-                if (!bDropshipRespawnPending)
+                // Drop our items ONCE per death (local fix 2026-11-13: this ran every poll while dead, spamming item
+                // spawns to every client until the corpse was removed - with many kills it flooded and DC'd players).
+                if (!bDropshipRespawnPending && _droppedForDeathTick != _tickDead)
                 {
-                    //Drop our items
+                    _droppedForDeathTick = _tickDead;
                     VehInfo vehicle = _arena._server._assets.getVehicleByID(_type.Id);
-                    ItemInfo item = _arena._server._assets.getItemByID(vehicle.DropItemId);
+                    ItemInfo item = vehicle != null ? _arena._server._assets.getItemByID(vehicle.DropItemId) : null;
                     if (item != null)
                         _arena.itemSpawn(item, (ushort)vehicle.DropItemQuantity, _state.positionX, _state.positionY, null);
                 }
@@ -815,6 +934,7 @@ namespace InfServer.Bots
                 }
 
                 TryWallEscapeRecovery(tickCount);
+                StuckWatchdog(tickCount);
                 if (MovementMode == BotMovementMode.Api)
                     EvaluatePinned(tickCount);
 
@@ -898,9 +1018,9 @@ namespace InfServer.Bots
                 for (int i = 0; i < candidates.Count; i++)
                 {
                     Player p = candidates[i];
-                    if (p == null || p.IsDead)
-                        continue;
-                    if (p._state == null)
+                    // Dead players still watch the screen (local fix 2026-11-13): skipping them dropped every
+                    // bot to the 1.5 s radar rate while you were dead - everything jumped around.
+                    if (p == null || p._state == null)
                         continue;
 
                     double dist = Helpers.distanceTo(_state, p._state);
@@ -978,6 +1098,8 @@ namespace InfServer.Bots
         /// </summary>		
         public override void applyExplosion(Player attacker, int dmgX, int dmgY, ItemInfo.Projectile wep)
         {
+            if (attacker != null)
+                NoteHurtBy(attacker);
             applyExplosionDamage(true, attacker, dmgX, dmgY, wep);
 
             if (IsDead || _movement == null || wep == null)

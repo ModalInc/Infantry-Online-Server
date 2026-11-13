@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Axiom.Math;
 using Assets;
@@ -73,7 +73,16 @@ namespace InfServer.Bots
 		{
 			if (TryConsumeStuck())
 			{
-				SetAnalogDrive(0.85f, ((_state.positionX & 8) == 0) ? -0.55f : 0.55f, 0f);
+				// Stuck on geometry: back off and side-step toward the more open side (local fix 2026-11-13;
+				// it used to push 0.85 FORWARD - i.e. straight on into the wall it was stuck on).
+				int left = BotWallAvoidance.ProbeOpenRaw(MovementArena, MovementCarType, _state.positionX, _state.positionY,
+					BotWallAvoidance.WrapYaw(_state.yaw - 60), 96);
+				int right = BotWallAvoidance.ProbeOpenRaw(MovementArena, MovementCarType, _state.positionX, _state.positionY,
+					BotWallAvoidance.WrapYaw(_state.yaw + 60), 96);
+				int ahead = BotWallAvoidance.ProbeOpenRaw(MovementArena, MovementCarType, _state.positionX, _state.positionY,
+					_state.yaw, 48);
+				float side = right > left ? 0.75f : (left > right ? -0.75f : (((_state.positionX & 8) == 0) ? -0.75f : 0.75f));
+				SetAnalogDrive(ahead >= 48 ? 0.3f : -0.6f, side, 0f);
 				return base.updateState(delta);
 			}
 
@@ -83,9 +92,9 @@ namespace InfServer.Bots
 
 			if (_useAnalogDrive)
 			{
-				if (bSkipAim && Math.Abs(aimDifference) > 2)
+				if (bSkipAim && Math.Abs(aimDifference) > 1)
 				{
-					float aimRotate = BotDrive.ClampAxis((float)(aimDifference / 35.0));
+					float aimRotate = BotDrive.ClampAxis((float)(aimDifference / 14.0));
 					SetAnalogDrive(_analogForward, _analogStrafe, aimRotate);
 				}
 
@@ -99,8 +108,8 @@ namespace InfServer.Bots
 
 			if (steerDelegate == null && FollowPath == null)
 			{
-				if (bSkipAim && Math.Abs(aimDifference) > 2)
-					SetAnalogDrive(0f, 0f, BotDrive.ClampAxis((float)(aimDifference / 35.0)));
+				if (bSkipAim && Math.Abs(aimDifference) > 1)
+					SetAnalogDrive(0f, 0f, BotDrive.ClampAxis((float)(aimDifference / 14.0)));
 				else
 					ClearAnalogDrive();
 
