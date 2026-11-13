@@ -400,6 +400,13 @@ namespace InfServer.Script.GameType_Eol
             return RoleById.TryGetValue(bot._id, out role) ? role : PatrolRole.Perimeter;
         }
 
+        /// <summary>True for a base's inside-guards (they hold the base rather than wander off to fights).</summary>
+        public static bool IsGuard(Bot bot)
+        {
+            PatrolRole r;
+            return bot != null && RoleById.TryGetValue(bot._id, out r) && r == PatrolRole.Guard;
+        }
+
         static Helpers.ObjectState PickForRole(Bot bot, Arena arena, Vehicle hq, bool returningHome)
         {
             PatrolRole role = RoleOf(bot, arena, hq);

@@ -6169,6 +6169,7 @@ namespace InfServer.Script.GameType_Eol
             // local 2026-11-13: gore on every bot death - red blood for humans, green guts for aliens (paced queue)
             if (dead != null && dead._state != null)
             {
+                EolBotBrain.NoteNoise(dead._team, dead._state.positionX, dead._state.positionY);   // curious bots come to look
                 if (_rand == null)
                     _rand = new Random(Environment.TickCount);
                 bool alien = dead is AlienHorde || IsAlienBotTeam(dead._team);
