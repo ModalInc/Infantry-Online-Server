@@ -15,10 +15,8 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>True if every tile along the segment is open (no <see cref="LvlInfo.Tile.Blocked"/>). Used before <c>shotFired</c> so bots do not shoot through walls.</summary>
         public static bool TileLineClearForWeaponFire(Arena arena, short fromX, short fromY, short toX, short toY)
         {
-            if (arena == null)
-                return false;
-            return Helpers.calcBresenhemsPredicate(arena, fromX, fromY, toX, toY,
-                delegate (LvlInfo.Tile t) { return !t.Blocked; });
+            // Shots fly over low physics (green/yellow); only walls taller than the fire height are cover.
+            return InfServer.Bots.BotCombat.TileLineClearForWeaponFire(arena, fromX, fromY, toX, toY);
         }
 
         const int HostileBotScanRange = Script_Eol.EolBotCombatSeekRangeRaw;
@@ -33,7 +31,9 @@ namespace InfServer.Script.GameType_Eol
             if (!script.ShouldEolBotTeamsFight(self._team, v._team))
                 return false;
 
-            if (self is AlienHorde && script.AlienWaveActive)
+            // (local change 2026-11-13: aliens fight any hostile bot they can see within aggro range, anywhere - the old rule
+            //  only let them engage bots near their crash site while a wave was active)
+            if (self is AlienHorde && script.AlienWaveActive && !Script_Eol.EolBotFreeForAll)
             {
                 if (!Helpers.isInRange(Script_Eol.EolBotSelfAggroRange, self._state, v._state))
                 {

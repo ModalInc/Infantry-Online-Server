@@ -113,13 +113,64 @@ namespace InfServer.Bots
     /// </summary>
     public static class BotCombat
     {
+        /// <summary>
+        /// Fire height used when the shooter isn't known (local change 2026-11-13): learnt from the bots that
+        /// shoot, so low physics (green/yellow) that shots fly over doesn't count as cover.
+        /// </summary>
+        public static int DefaultFireHeight;
+
+        /// <summary>Shots clear a tile when it isn't blocked, or its physics top is below the fire height.</summary>
+        /// <summary>Shots always clear low physics up to this height (green 16 / yellow 32 on Pioneer Station).</summary>
+        public static int ShotOverPhysicsHeight = 32;
+        /// <summary>Sight is blocked only by physics at least this tall (full walls, 496); everything lower is see-through.</summary>
+        public static int SightBlockPhysicsHeight = 400;
+
+        static bool ShotPasses(Arena arena, LvlInfo.Tile t, int fireHeight)
+        {
+            if (!t.Blocked)
+                return true;
+            short[] high = arena._server._assets.Level.PhysicsHigh;
+            if (high == null || t.Physics >= high.Length)
+                return false;
+            return high[t.Physics] <= ShotOverPhysicsHeight || (fireHeight > 0 && high[t.Physics] < fireHeight);
+        }
+
+        /// <summary>Can a bot SEE along this line? Only full-height walls block sight (local 2026-11-13).</summary>
+        public static bool SightLineClear(Arena arena, short fromX, short fromY, short toX, short toY)
+        {
+            if (arena == null)
+                return false;
+            short[] high = arena._server._assets.Level.PhysicsHigh;
+            return Helpers.calcBresenhemsPredicate(arena, fromX, fromY, toX, toY,
+                delegate (LvlInfo.Tile t)
+                {
+                    if (!t.Blocked)
+                        return true;
+                    return high != null && t.Physics < high.Length && high[t.Physics] < SightBlockPhysicsHeight;
+                });
+        }
+
         public static bool TileLineClearForWeaponFire(Arena arena, short fromX, short fromY, short toX, short toY)
+        {
+            return ShotLineClear(arena, DefaultFireHeight, fromX, fromY, toX, toY);
+        }
+
+        /// <summary>Tile LOS for a projectile fired at <paramref name="fireHeight"/> (low walls don't block it).</summary>
+        public static bool ShotLineClear(Arena arena, int fireHeight, short fromX, short fromY, short toX, short toY)
         {
             if (arena == null)
                 return false;
 
             return Helpers.calcBresenhemsPredicate(arena, fromX, fromY, toX, toY,
-                delegate (LvlInfo.Tile t) { return !t.Blocked; });
+                delegate (LvlInfo.Tile t) { return ShotPasses(arena, t, fireHeight); });
+        }
+
+        static int FireHeightOf(Bot bot)
+        {
+            int fh = bot?._type != null ? bot._type.FireHeight : 0;
+            if (fh > 0 && fh > DefaultFireHeight)
+                DefaultFireHeight = fh;
+            return fh > 0 ? fh : DefaultFireHeight;
         }
 
         public static void SetAim(SteeringController steering, float angle, bool enabled = true)
@@ -143,8 +194,18 @@ namespace InfServer.Bots
             if (bot == null || targetState == null)
                 return false;
 
-            return TileLineClearForWeaponFire(
+            // Maser carriers shoot through walls - anything within the maser's reach is "in the open" for them.
+            WeaponController maser = BotWeaponUtil.WallPiercingWeapon(bot);
+            if (maser != null)
+            {
+                int mr = maser.ItemID != 0 ? BotWeaponUtil.GetCombatRangeRaw(AssetManager.Manager?.getItemByID(maser.ItemID)) : 0;
+                if (mr > 0 && Helpers.distanceTo(bot._state, targetState) <= Math.Max(mr * 1.5, 320))
+                    return true;
+            }
+
+            return ShotLineClear(
                     bot._arena,
+                    FireHeightOf(bot),
                     bot._state.positionX,
                     bot._state.positionY,
                     targetState.positionX,
@@ -185,13 +246,23 @@ namespace InfServer.Bots
             if (bot == null || weapon == null || targetState == null || bot._movement is not SteeringController steering)
                 return false;
 
-            if (requireLineOfSight &&
-                !TileLineClearForWeaponFire(bot._arena, bot._state.positionX, bot._state.positionY, targetState.positionX, targetState.positionY))
+            if (requireLineOfSight && !BotWeaponUtil.IsWallPiercing(weapon)
+                && !ShotLineClear(bot._arena, FireHeightOf(bot), bot._state.positionX, bot._state.positionY, targetState.positionX, targetState.positionY))
             {
                 return false;
             }
 
             if (!weapon.ableToFire())
+                return false;
+
+            // Splash weapons: never point blank; and nobody fires beyond the gun's reach (safety net for every
+            // fire path - bots were trading shots from miles away that could never land).
+            double fireDist = Helpers.distanceTo(bot._state, targetState);
+            int minRange = BotWeaponUtil.GetMinFireRangeRaw(weapon);
+            if (minRange > 0 && fireDist < minRange)
+                return false;
+            int reach = weapon.ItemID != 0 ? BotWeaponUtil.GetCombatRangeRaw(AssetManager.Manager?.getItemByID(weapon.ItemID)) : 0;
+            if (reach > 0 && fireDist > Math.Max(reach * 1.5, 320))
                 return false;
 
             int aimResult = weapon.getAimAngle(targetState);
@@ -209,8 +280,16 @@ namespace InfServer.Bots
 
             bot._itemUseID = weapon.ItemID;
             weapon.shotFired();
+            try { BotShotFired?.Invoke(bot, weapon, targetState); }
+            catch { /* script hook must never break firing */ }
             return true;
         }
+
+        /// <summary>
+        /// Raised after every bot shot (local change 2026-11-13). Bot projectiles are only hit-tested by player
+        /// clients, so a shot at another BOT never lands on its own - the gametype resolves those hits here.
+        /// </summary>
+        public static Action<Bot, WeaponController, Helpers.ObjectState> BotShotFired;
 
         public static void ApplyBackpedalSteer(
             Bot bot,

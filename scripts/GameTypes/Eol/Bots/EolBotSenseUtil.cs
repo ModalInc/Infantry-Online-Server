@@ -124,9 +124,10 @@ namespace InfServer.Script.GameType_Eol
         {
             if (from == null || p == null)
                 return false;
-            if (!PlayerHasActiveCloak(p))
-                return true;
-            return Helpers.isInRange(CloakRevealRaw, from, p._state);
+            if (PlayerHasActiveCloak(p) && !Helpers.isInRange(CloakRevealRaw, from, p._state))
+                return false;
+            // Local change 2026-11-13: real sight / memory instead of seeing through walls.
+            return EolBotPerception.Knows(from, p);
         }
 
         /// <summary>True when a live hostile player is close enough that patrol/raid-march must stop.</summary>

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Collections.Generic;
 using System.IO;
@@ -153,6 +153,10 @@ namespace InfServer.Script.GameType_Eol
                 bCondemned = true; //Make sure the bot gets removed in polling
                 return base.poll();
             }
+
+            // Elite roaming squads run their own squad logic (no raid / bounty campaign ties).
+            if (_baseScript != null && (_baseScript.IsEliteSquadTeam(_team) || _baseScript.IsReleasedAssassinTeam(_team)))
+                return EliteSquadPoll();
 
             Vehicle capV = _baseScript._pollCacheRoamCaptainVehicle;
             if (capV != null && capV._team == _team && !capV.IsDead)

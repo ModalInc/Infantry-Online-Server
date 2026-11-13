@@ -67,7 +67,7 @@ namespace InfServer.Script.GameType_Eol
                         this, InfServer.Game.Modules.BotActions.BotActionId.SeekEnemy,
                         ref _target, out ignoreBot, now);
                     _target = mark;
-                    EolBotCombatUtil.ChaseTargetWithoutLos(this, now, mark._state, steerForPersuePlayer);
+                    EolBotBrain.CombatMove(this, _baseScript, now, mark, mark._state, steerForPersuePlayer);
                     InLiveCombat = true;
                     _baseScript.PublishCombatCall(_team, this, mark, null, now);
                     return;
@@ -87,13 +87,14 @@ namespace InfServer.Script.GameType_Eol
                 }
             }
 
+            EolBotBrain.BeforeCombat(this, _baseScript, ref _target, now);
             Bot botTarget;
             EolBotActionBridge.RunCombatKeepSticky(
                 this, InfServer.Game.Modules.BotActions.BotActionId.SeekEnemy,
                 ref _target, out botTarget, now);
             if (_target != null && !_target.IsDead)
             {
-                EolBotCombatUtil.ChaseTargetWithoutLos(this, now, _target._state, steerForPersuePlayer);
+                EolBotBrain.CombatMove(this, _baseScript, now, _target, _target._state, steerForPersuePlayer);
                 InLiveCombat = true;
                 if (_baseScript != null)
                     _baseScript.PublishCombatCall(_team, this, _target, null, now);
@@ -101,7 +102,7 @@ namespace InfServer.Script.GameType_Eol
             }
             if (botTarget != null)
             {
-                EolBotCombatUtil.ChaseTargetWithoutLos(this, now, botTarget._state, steerForPersuePlayer);
+                EolBotBrain.CombatMove(this, _baseScript, now, botTarget, botTarget._state, steerForPersuePlayer);
                 InLiveCombat = true;
                 if (_baseScript != null)
                     _baseScript.PublishCombatCall(_team, this, null, botTarget, now);

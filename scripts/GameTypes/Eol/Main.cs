@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Collections.Generic;
 using System.Reflection;
@@ -32,7 +32,7 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>When false, alien waves and *startaliens are off; use *enablealiens to turn back on.</summary>
         public static bool EolAlienWavesEnabled = true;
         /// <summary>When false, pirate raid auto-arm and *startraiders are off; use *enableraiders to turn back on.</summary>
-        public static bool EolPirateRaidsEnabled = true;
+        public static bool EolPirateRaidsEnabled = false;   // local 2026-11-13: off - the roaming force is the 2 elite squads of 5 (mods: *enableraiders)
         /// <summary>When false, defense captains and BasicDefense grunts are not spawned; use *enablebasebots to turn back on.</summary>
         public static bool EolBaseBotsEnabled = true;
         /// <summary>When false, automatic bot HQ anchor placement (from sector templates) is skipped; use *enablebasesetup to turn back on.</summary>
@@ -42,7 +42,7 @@ namespace InfServer.Script.GameType_Eol
         {
             EolKothSystemEnabled = true;
             EolAlienWavesEnabled = true;
-            EolPirateRaidsEnabled = true;
+            EolPirateRaidsEnabled = false;
             EolBaseBotsEnabled = true;
             EolBaseSetupEnabled = true;
         }
@@ -413,6 +413,9 @@ namespace InfServer.Script.GameType_Eol
         public Team botTeam7;
         public Team botTeam8;
         public Team botTeam9;
+        /// <summary>Elite alien packs of 5 (local 2026-11-13) - allied with Bot - Aliens.</summary>
+        public Team botTeamAlienElite1;
+        public Team botTeamAlienElite2;
         /// <summary>Owns static radiation-border wall vehicles (not a player faction).</summary>
         Team _eolBorderWallTeam;
         List<Vehicle> _eolBorderWallVehicles;
@@ -436,11 +439,11 @@ namespace InfServer.Script.GameType_Eol
         public string botTeamName2 = "Bot - Base 2";
         public string botTeamName3 = "Bot - Base 3";
         public string botTeamName4 = "Bot - Raiders";
-        public string botTeamName5 = "Bot - BHB";
-        public string botTeamName6 = null; // unused — reserved
+        public string botTeamName5 = "Bot - Assassins";   // local 2026-11-13 (was BHB)
+        public string botTeamName6 = "Bot - Elite Alpha"; // local 2026-11-13: elite roaming squad
         public string botTeamName7 = "Bot - Aliens";
-        public string botTeamName8 = null; // unused — reserved
-        public string botTeamName9 = null; // unused — reserved
+        public string botTeamName8 = "Bot - Elite Bravo"; // local 2026-11-13: elite roaming squad
+        public string botTeamName9 = "Bot - Assassins 2"; // local 2026-11-13: second assassin cell
 
         /// <summary>
         /// Creates a public bot faction, assigns a unique frequency id, and registers it
@@ -582,7 +585,7 @@ namespace InfServer.Script.GameType_Eol
         public const int PirateRaidMaxConcurrentAlive = 20;
 
         /// <summary>Max concurrent defense combat bots per team (Captain + Engineer + BasicDefense).</summary>
-        public const int EolMaxConcurrentBaseDefenseBots = 20;
+        public const int EolMaxConcurrentBaseDefenseBots = 10;   // local 2026-11-13: 10 per base (was 20)
         /// <summary>Three reinforcement waves of up to <see cref="PirateRaidMaxConcurrentAlive"/> concurrent (same cadence idea as alien wave).</summary>
         public const int PirateRaidSpawnBatchCount = 3;
         /// <summary>After all <see cref="PirateRaidTotalSpawns"/> grunts have been spawned and eliminated, raid cleanup runs.</summary>
@@ -769,10 +772,12 @@ namespace InfServer.Script.GameType_Eol
             botTeam3 = CreateAndRegisterBotTeam(botTeamName3);
             botTeam4 = CreateAndRegisterBotTeam(botTeamName4);
             botTeam5 = CreateAndRegisterBotTeam(botTeamName5);
-            botTeam6 = null;
+            botTeam6 = CreateAndRegisterBotTeam(botTeamName6);
             botTeam7 = CreateAndRegisterBotTeam(botTeamName7);
-            botTeam8 = null;
-            botTeam9 = null;
+            botTeam8 = CreateAndRegisterBotTeam(botTeamName8);
+            botTeam9 = CreateAndRegisterBotTeam(botTeamName9);
+            botTeamAlienElite1 = CreateAndRegisterBotTeam("Bot - Alien Elite");
+            botTeamAlienElite2 = CreateAndRegisterBotTeam("Bot - Alien Elite 2");
 
             _eolBorderWallTeam = new Team(_arena, _arena._server);
             _eolBorderWallTeam._name = "Eol Radiation Border";
@@ -1856,6 +1861,8 @@ namespace InfServer.Script.GameType_Eol
                 _tickLastCaptain = now;
         }
 
+        int _tickBotBrainPoll;
+
         /// <summary>Allows the script to maintain itself.</summary>
         public bool poll()
         {	//Should we check game state yet?
@@ -1864,6 +1871,8 @@ namespace InfServer.Script.GameType_Eol
             int botPop = EolBotPopulationForCaps(playing);
 
             PruneExpiredCombatCalls(now);
+            if (now - _tickBotBrainPoll >= 250) { _tickBotBrainPoll = now; EolBotBrain.PollAll(now, _arena); }  // local: retreat/heal
+            PollEliteSquads(now);   // local: two elite roaming squads
             PollBotDropshipRespawns(now);
             SyncIngameBountyStats();
             PollBountyHunt(now);
@@ -4053,6 +4062,43 @@ namespace InfServer.Script.GameType_Eol
             return null;
         }
 
+        /// <summary>Max bots per team whose main gun is a splash weapon (grenade launcher etc.) - local 2026-11-13.</summary>
+        public const int MaxGrenadiersPerTeam = 2;
+
+        /// <summary>True when this vehicle's main gun (slot 0) is a splash weapon.</summary>
+        bool IsGrenadierVehicle(int vehId)
+        {
+            VehInfo.Car car = _arena?._server?._assets?.getVehicleByID(vehId) as VehInfo.Car;
+            if (car?.InventoryItems == null || car.InventoryItems.Length == 0 || car.InventoryItems[0] == 0)
+                return false;
+            return BotWeaponUtil.GetMinFireRangeRaw(_arena._server._assets.getItemByID(car.InventoryItems[0])) > 0;
+        }
+
+        /// <summary>
+        /// Keep grenadiers rare: if <paramref name="id"/> is one and the team already has the max alive, swap it
+        /// for one of the other (direct-fire) candidates.
+        /// </summary>
+        int LimitGrenadiers(Team team, int id, int[] candidates)
+        {
+            try
+            {
+                if (team == null || !IsGrenadierVehicle(id))
+                    return id;
+                int alive = 0;
+                foreach (Bots.Bot b in _arena.ActiveBots)
+                    if (b != null && !b.IsDead && b._team == team && b._type != null && IsGrenadierVehicle(b._type.Id))
+                        alive++;
+                if (alive < MaxGrenadiersPerTeam)
+                    return id;
+                List<int> others = new List<int>();
+                foreach (int c in candidates)
+                    if (!IsGrenadierVehicle(c))
+                        others.Add(c);
+                return others.Count > 0 ? others[new Random().Next(others.Count)] : id;
+            }
+            catch { return id; }
+        }
+
         public void addBot(InfServer.Game.Player owner, Helpers.ObjectState state, Team team)
         {
             if (_bots == null)
@@ -4084,6 +4130,7 @@ namespace InfServer.Script.GameType_Eol
                     id = 158;
                     break;
             }
+            id = LimitGrenadiers(team, id, new[] { 140, 141, 143, 156 });
             if (owner == null)
             {//This is a bot team
              //Spawn a random bot in their faction
@@ -4144,6 +4191,7 @@ namespace InfServer.Script.GameType_Eol
                     break;
 
             }
+            id = LimitGrenadiers(team, id, new[] { 144, 145, 146, 147, 157 });
             if (owner == null)
             {
                 RoamingAttacker dBot = _arena.newBot(typeof(RoamingAttacker), (ushort)id, team, null, openPoint, this, null) as RoamingAttacker;
@@ -6116,6 +6164,27 @@ namespace InfServer.Script.GameType_Eol
                 // Bot-on-bot kill taunt at the victim's death site (not on the killer's own death).
                 if (dead != null && dead._team != killerBot._team && dead._state != null)
                     QueueBotKillTauntExplosion(killerBot, dead._state.positionX, dead._state.positionY);
+            }
+
+            // local 2026-11-13: gore on every bot death - red blood for humans, green guts for aliens (paced queue)
+            if (dead != null && dead._state != null)
+            {
+                if (_rand == null)
+                    _rand = new Random(Environment.TickCount);
+                bool alien = dead is AlienHorde || IsAlienBotTeam(dead._team);
+                short baseId = alien ? (short)1351 : (short)1167;   // Alien Blood Splat 1-6 / Blood Splat 1-6
+                // sent at once with the death (no queue = no delay), only to players near enough to see it
+                List<InfServer.Game.Player> gorePeople = _arena.GetBotLifecycleAudience(dead._state.positionX, dead._state.positionY);
+                if (gorePeople != null && gorePeople.Count > 0)
+                {
+                    for (int g = 0; g < 2; g++)
+                    {
+                        short id = (short)(baseId + _rand.Next(6));
+                        short gx = (short)(dead._state.positionX + _rand.Next(-10, 11));
+                        short gy = (short)(dead._state.positionY + _rand.Next(-10, 11));
+                        Helpers.Player_RouteExplosion(gorePeople, id, gx, gy, 0, (byte)_rand.Next(240), dead._id);
+                    }
+                }
             }
 
             OnAlienHordeBotDeath(dead, killer);

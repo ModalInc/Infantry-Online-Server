@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -23,9 +23,9 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>Hostiles within this range of the alien bot always count as threats (chasing away from the wreck still keeps aggro).</summary>
         public const int AlienSelfAggroRange = EolBotSelfAggroRange;
         /// <summary>Total AlienHorde spawns queued for one invasion wave (three batches of <see cref="AlienWaveMaxConcurrentAlive"/>).</summary>
-        public const int AlienWaveTotalSpawns = 60;
+        public const int AlienWaveTotalSpawns = 60;   // 3 batches of 20
         /// <summary>Never more than this many AlienHorde bots alive at once during a wave.</summary>
-        public const int AlienWaveMaxConcurrentAlive = 20;
+        public const int AlienWaveMaxConcurrentAlive = 20;   // local 2026-11-13: Bot - Aliens 10 + two elite packs of 5
         /// <summary>Number of spawn waves (each up to <see cref="AlienWaveMaxConcurrentAlive"/> concurrent; total <see cref="AlienWaveTotalSpawns"/>).</summary>
         public const int AlienWaveSpawnBatchCount = 3;
         /// <summary>Delay between each <see cref="AlienHorde"/> spawn during a wave — random 12–22 seconds (inclusive).</summary>
@@ -69,9 +69,25 @@ namespace InfServer.Script.GameType_Eol
             return _alienWaveActive;
         }
 
+        /// <summary>Elite aliens kept alive in a wave (the rest are the normal mixed packs).</summary>
+        public const int AlienElitePackSize = 5;
+        /// <summary>Max aliens on the main "Bot - Aliens" team.</summary>
+        public const int AlienMainPackSize = 10;
+
+        int CountLiveAliensOn(Team team)
+        {
+            if (team == null || _arena == null)
+                return int.MaxValue;
+            int n = 0;
+            foreach (Bots.Bot b in _arena.ActiveBots)
+                if (b is AlienHorde && b._team == team && (!b.IsDead || b.bDropshipRespawnPending))
+                    n++;
+            return n;
+        }
+
         public bool IsAlienBotTeam(Team t)
         {
-            return t != null && t == botTeam7;
+            return t != null && (t == botTeam7 || t == botTeamAlienElite1 || t == botTeamAlienElite2);
         }
 
         public bool IsRoamBotTeam(Team t)
@@ -88,16 +104,34 @@ namespace InfServer.Script.GameType_Eol
 
         bool IsManagedEolBotFactionTeam(Team t)
         {
-            return IsDefenseBotTeam(t) || IsRoamBotTeam(t) || IsAlienBotTeam(t) || IsBountyHunterBotTeam(t);
+            return IsDefenseBotTeam(t) || IsRoamBotTeam(t) || IsAlienBotTeam(t) || IsAssassinTeam(t) || IsEliteSquadTeam(t);
         }
 
-        /// <summary>Whether two script bot teams should damage each other (not same faction).</summary>
+        /// <summary>The two always-on elite roaming squads (local 2026-11-13).</summary>
+        public bool IsEliteSquadTeam(Team t)
+        {
+            return t != null && (t == botTeam6 || t == botTeam8);
+        }
+
+        /// <summary>
+        /// Free-for-all between bot teams (local change 2026-11-13): every script bot team fights every OTHER team it sees -
+        /// rival defense bases (teams 1-3) included. Only bots on the same team are allies. Set false for the original
+        /// faction rules (defense teams 1-3 allied, roam/alien/bounty each one faction).
+        /// </summary>
+        public const bool EolBotFreeForAll = true;
+
+        /// <summary>Whether two script bot teams should damage each other.</summary>
         public bool ShouldEolBotTeamsFight(Team self, Team other)
         {
             if (self == null || other == null || self == other)
                 return false;
             if (!IsManagedEolBotFactionTeam(self) || !IsManagedEolBotFactionTeam(other))
                 return false;
+            // The three alien packs (main + 2 elite) are one swarm - never fight each other.
+            if (IsAlienBotTeam(self) && IsAlienBotTeam(other))
+                return false;
+            if (EolBotFreeForAll)
+                return true;
             if (IsAlienBotTeam(self) && IsAlienBotTeam(other))
                 return false;
             if (IsRoamBotTeam(self) && IsRoamBotTeam(other))
@@ -158,7 +192,7 @@ namespace InfServer.Script.GameType_Eol
                 {
                     if (b == null || !(b is AlienHorde))
                         continue;
-                    if (b._team != botTeam7)
+                    if (!IsAlienBotTeam(b._team))
                         continue;
                     EnqueueVehicleDespawn(b);
                 }
@@ -331,14 +365,28 @@ namespace InfServer.Script.GameType_Eol
             if (_bots == null)
                 _bots = new List<Bots.Bot>();
 
-            AlienHorde bot = _arena.newBot(typeof(AlienHorde), vid, botTeam7, null, openPoint, this, null) as AlienHorde;
+            // local 2026-11-13: two ELITE packs of 5 (ace, hunters, fight to the death) fill first, then the
+            // main "Bot - Aliens" pack of up to 10 (mixed types). All three are allied.
+            Team alienTeam = botTeam7;
+            bool elitePack = false;
+            if (CountLiveAliensOn(botTeamAlienElite1) < AlienElitePackSize && botTeamAlienElite1 != null) { alienTeam = botTeamAlienElite1; elitePack = true; }
+            else if (CountLiveAliensOn(botTeamAlienElite2) < AlienElitePackSize && botTeamAlienElite2 != null) { alienTeam = botTeamAlienElite2; elitePack = true; }
+            else if (CountLiveAliensOn(botTeam7) >= AlienMainPackSize)
+            {
+                _alienSpawnQueue.Insert(0, vid);   // every pack full - try again later
+                return;
+            }
+
+            AlienHorde bot = _arena.newBot(typeof(AlienHorde), vid, alienTeam, null, openPoint, this, null) as AlienHorde;
             if (bot != null)
             {
+                if (elitePack)
+                    bot.SkillModeOverride = "ace";
                 EnableBotDropshipRespawn(bot, BotMaxDeathsAlien);
-                if (botCount.ContainsKey(botTeam7))
-                    botCount[botTeam7]++;
+                if (botCount.ContainsKey(alienTeam))
+                    botCount[alienTeam]++;
                 else
-                    botCount.Add(botTeam7, 0);
+                    botCount.Add(alienTeam, 0);
                 _bots.Add(bot);
                 _aliensAliveThisWave++;
                 _aliensSuccessfulSpawnForHud++;
@@ -508,8 +556,9 @@ namespace InfServer.Script.GameType_Eol
 
             // Visible death FX — alien chassis often vanish too quickly without a corpse timer.
             // Do not fire GG/EZ taunt projectiles here — those are kill-only (see QueueBotKillTauntExplosion).
-            if (_arena != null)
-                Helpers.Vehicle_RouteDeath(_arena.Players, killer, dead, null);
+            // (local fix 2026-11-13) No second death packet here: the engine already sent the proper bot death
+            // (animation + sound) in handleBotDeath. This extra one had playerID 0 = "vehicle-only kill", which
+            // made the client drop the body silently - aliens killed by turrets / bots had no death sound.
 
             if (!_alienWaveActive)
                 return;

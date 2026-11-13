@@ -24,6 +24,10 @@ namespace InfServer.Bots
         /// </summary>
         public bool UseSharedSkillLayer { get; set; } = true;
 
+        /// <summary>Force this bot's skill tier ("ace", "veteran", …) regardless of the zone mix (local 2026-11-13).</summary>
+        public string SkillModeOverride { get; set; }
+        string _skillOverrideUsed;
+
         /// <summary>This bot's combat traits; null when <c>arena/bots/skill</c> is <c>off</c> or the bot opted out.</summary>
         public BotSkillProfile Skill
         {
@@ -32,11 +36,13 @@ namespace InfServer.Bots
                 if (!BotFeatures.SkillEnabled || !UseSharedSkillLayer)
                     return null;
                 // Re-roll if the alias or zone mode changed (alias is assigned after construction).
-                if (_skill == null || _skillMode != BotFeatures.SkillMode || !string.Equals(_skillAlias, _alias, StringComparison.Ordinal))
+                if (_skill == null || _skillMode != BotFeatures.SkillMode || !string.Equals(_skillAlias, _alias, StringComparison.Ordinal)
+                    || !string.Equals(_skillOverrideUsed, SkillModeOverride, StringComparison.Ordinal))
                 {
                     _skillMode = BotFeatures.SkillMode;
                     _skillAlias = _alias;
-                    _skill = BotSkillProfile.Roll(_alias, _id * 7919 + 17);
+                    _skillOverrideUsed = SkillModeOverride;
+                    _skill = BotSkillProfile.Roll(_alias, _id * 7919 + 17, SkillModeOverride);
                 }
                 return _skill;
             }

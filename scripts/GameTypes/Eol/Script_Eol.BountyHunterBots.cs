@@ -8,54 +8,107 @@ using InfServer.Protocol;
 namespace InfServer.Script.GameType_Eol
 {
     /// <summary>
-    /// Bounty Hunting Bots (BHB) on <see cref="botTeam5"/>.
-    /// While a 30k hunt is active, keep a 20-bot squad (1 captain + 19 grunts) alive
-    /// and hunting the marked player (infinite respawns while the hunt lasts).
-    /// When the mark switches, retarget the new hunted player; tear down only when the hunt ends.
+    /// The ASSASSINS (was "Bounty Hunting Bots", local rework 2026-11-13): while a 30k hunt is active, two
+    /// 3-man assassin cells ("Bot - Assassins" on <see cref="botTeam5"/> and "Bot - Assassins 2" on
+    /// <see cref="botTeam9"/>) - 1 captain + 2 operatives each, ultra-elite aim - hunt the marked player
+    /// (infinite respawns while the hunt lasts). They only engage the mark and the mark's team, and shrug off
+    /// hits from anyone else. When the mark switches they retarget; they withdraw when the hunt ends.
     /// </summary>
     public partial class Script_Eol
     {
         public const int BountyHunterCaptainVehId = 142;
-        /// <summary>Total live BHB on <see cref="botTeam5"/> (captain + grunts).</summary>
-        public const int BountyHunterSquadSize = 20;
-        /// <summary>Concurrent grunt cap — squad size minus the captain.</summary>
+        /// <summary>Live assassins per cell (captain + operatives).</summary>
+        public const int BountyHunterSquadSize = 3;
+        /// <summary>Operatives per cell - cell size minus the captain.</summary>
         public const int BountyHunterMaxConcurrentGrunts = BountyHunterSquadSize - 1;
-        /// <summary>Spawn this many grunts immediately when a hunt arms (fill to cap).</summary>
         public const int BountyHunterOpeningBatch = BountyHunterMaxConcurrentGrunts;
-        public const int BountyHunterGruntSpawnIntervalMs = 900;
-        public const int BountyHunterCaptainRespawnMs = 4000;
+        public const int BountyHunterGruntSpawnIntervalMs = 4000;
+        public const int BountyHunterCaptainRespawnMs = 6000;
+        /// <summary>Skill tier for assassins (beyond ace - see BotSkillProfile "ultra").</summary>
+        public const string AssassinSkillMode = "ultra";
         /// <summary>Directional shield projectile — fired when non–bounty-team hits are rejected.</summary>
         public const int BountyHunterForceFieldItemId = 3164;
         /// <summary>Min ms between shield FX per bot (avoids reliable spam on multi-pellet weapons).</summary>
         public const int BountyHunterForceFieldCooldownMs = 180;
 
         bool _bountyHunterWaveActive;
-        int _tickNextBountyHunterGruntSpawn;
-        int _tickNextBountyHunterCaptainSpawn;
+        readonly Dictionary<Team, int> _tickNextBountyHunterGruntSpawn = new Dictionary<Team, int>();
+        readonly Dictionary<Team, int> _tickNextBountyHunterCaptainSpawn = new Dictionary<Team, int>();
         short _bountyHunterLastKnownX;
         short _bountyHunterLastKnownY;
         bool _bountyHunterHasLastKnown;
         int _bountyHunterMarkPlayerId;
         readonly Dictionary<int, int> _bountyHunterForceFieldNextTick = new Dictionary<int, int>();
 
+        /// <summary>Both assassin cells.</summary>
+        IEnumerable<Team> AssassinTeams()
+        {
+            if (botTeam5 != null) yield return botTeam5;
+            if (botTeam9 != null) yield return botTeam9;
+        }
+
         public bool BountyHunterSquadOperational
         {
             get { return _bountyHunterWaveActive && IsBountyHuntActive; }
         }
 
+        /// <summary>True while assassins are on a contract (hunting the mark, shielded from others).</summary>
         public bool IsBountyHunterBotTeam(Team t)
         {
-            return t != null && t == botTeam5;
+            return !_assassinsReleased && IsAssassinTeam(t);
+        }
+
+        /// <summary>Either assassin cell's team, contract or not.</summary>
+        public bool IsAssassinTeam(Team t)
+        {
+            return t != null && (t == botTeam5 || t == botTeam9);
+        }
+
+        /// <summary>
+        /// Contract over (the 30ker died / hunt ended): surviving assassins go rogue - no shield, fight anyone they
+        /// meet until they die - and nobody respawns until the next 30k hunt.
+        /// </summary>
+        bool _assassinsReleased;
+        public bool IsReleasedAssassinTeam(Team t)
+        {
+            return _assassinsReleased && IsAssassinTeam(t);
+        }
+
+        void ReleaseAssassins(bool announce)
+        {
+            int alive = 0;
+            if (_arena != null)
+            {
+                foreach (Vehicle v in _arena.Vehicles)
+                {
+                    if (v is Bot b && !b.IsDead && IsAssassinTeam(b._team))
+                    {
+                        b.bRespawn = false;           // no revive after this
+                        alive++;
+                    }
+                }
+            }
+            _assassinsReleased = true;
+            _bountyHunterWaveActive = false;
+            _bountyHunterHasLastKnown = false;
+            _bountyHunterMarkPlayerId = 0;
+            _bountyHunterForceFieldNextTick.Clear();
+            _tickNextBountyHunterGruntSpawn.Clear();
+            _tickNextBountyHunterCaptainSpawn.Clear();
+            if (announce && _arena != null && alive > 0)
+                _arena.sendArenaMessage(string.Format("&Assassins: contract over — {0} survivor{1} gone rogue.", alive, alive == 1 ? "" : "s"), 1);
+            InvalidateEolHudTickerCache();
+            Log.write(TLog.Normal, "[Eol] Assassins released ({0} alive, no respawns until the next hunt).", alive);
         }
 
         public int GetBountyHunterAliveCount()
         {
-            if (_arena == null || botTeam5 == null)
+            if (_arena == null)
                 return 0;
             int n = 0;
             foreach (Vehicle v in _arena.Vehicles)
             {
-                if (v == null || v.IsDead || v._team != botTeam5)
+                if (v == null || v.IsDead || !IsBountyHunterBotTeam(v._team))
                     continue;
                 if (v is RoamingCaptain || v is RoamingAttacker)
                     n++;
@@ -63,20 +116,20 @@ namespace InfServer.Script.GameType_Eol
             return n;
         }
 
-        int CountLiveBountyHunterGrunts()
+        int CountLiveBountyHunterGrunts(Team team)
         {
-            if (_arena == null || botTeam5 == null)
+            if (_arena == null || team == null)
                 return 0;
             int n = 0;
             foreach (Vehicle v in _arena.Vehicles)
             {
-                if (v is RoamingAttacker && !v.IsDead && v._team == botTeam5)
+                if (v is RoamingAttacker && !v.IsDead && v._team == team)
                     n++;
             }
             return n;
         }
 
-        /// <summary>Mark, or anyone on the mark's team — BHB may engage these only.</summary>
+        /// <summary>Mark, or anyone on the mark's team — assassins may engage these only.</summary>
         public bool IsBountyHunterEngageTarget(InfServer.Game.Player p)
         {
             InfServer.Game.Player mark = _bountyHuntMarked;
@@ -97,7 +150,6 @@ namespace InfServer.Script.GameType_Eol
                 return false;
             if (attacker == null)
                 return false;
-            // Bounty mark + their teammates still deal damage.
             if (IsBountyHunterEngageTarget(attacker))
                 return false;
 
@@ -131,7 +183,6 @@ namespace InfServer.Script.GameType_Eol
 
             if (attacker != null && attacker._state != null)
             {
-                // Face the incoming shot so the directional shield rejects toward the attacker.
                 int dx = attacker._state.positionX - x;
                 int dy = attacker._state.positionY - y;
                 if (dx != 0 || dy != 0)
@@ -157,7 +208,6 @@ namespace InfServer.Script.GameType_Eol
         {
             if (mark == null || mark.IsDead || mark.IsSpectator)
                 return;
-            // Dropship coords must not become the chase pin or a spawn anchor.
             if (IsBountyHuntInDropship(mark))
                 return;
             _bountyHunterLastKnownX = mark._state.positionX;
@@ -207,18 +257,18 @@ namespace InfServer.Script.GameType_Eol
             if (IsBountyHunterMarkInField())
                 NoteBountyHunterMarkSighting(mark);
 
-            if (sameTarget && FindLiveBountyHunterCaptain() != null)
+            if (sameTarget)
                 return;
 
             if (_bountyHunterWaveActive)
             {
-                // New mark — keep squad, announce retarget, refresh last-known.
                 int bong = _config != null ? _config.flag.victoryWarningBong : 28;
                 string retarget = IsBountyHunterMarkInField()
-                    ? "now hunting " + mark._alias
-                    : "holding for " + mark._alias + " to leave the dropship";
-                _arena.sendArenaMessage("&BHB: Retargeting — " + retarget + ".", bong);
-                EnsureBountyHunterCaptain(now);
+                    ? "new contract on " + mark._alias
+                    : "waiting for " + mark._alias + " to leave the dropship";
+                _arena.sendArenaMessage("&Assassins: " + retarget + ".", bong);
+                foreach (Team t in AssassinTeams())
+                    EnsureBountyHunterCaptain(now, t);
                 return;
             }
 
@@ -228,7 +278,8 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>Called when the hunt ends with no next mark (or match clear).</summary>
         public void OnBountyHunterHuntEnded(int now, bool announce)
         {
-            TeardownBountyHunterSquad(now, announce);
+            // survivors fight on until they die; no respawns until the next 30ker
+            ReleaseAssassins(announce);
         }
 
         void ArmBountyHunterWave(InfServer.Game.Player mark, int now)
@@ -237,114 +288,121 @@ namespace InfServer.Script.GameType_Eol
                 return;
             if (botTeam5 == null)
             {
-                Log.write(TLog.Error, "[Eol] BHB: botTeam5 is null — cannot deploy hunters.");
+                Log.write(TLog.Error, "[Eol] Assassins: botTeam5 is null — cannot deploy.");
                 return;
             }
             if (_rand == null)
                 _rand = new Random(Environment.TickCount);
 
-            // Always an open sector. Never the dropship, even if the mark is still there.
-            Helpers.ObjectState spawn;
-            if (!TryFindBountyHunterSectorSpawn(out spawn) || spawn == null)
-            {
-                Log.write(TLog.Warning, "[Eol] BHB: no open-sector spawn for hunt on {0}.", mark._alias);
-                return;
-            }
+            // a new contract: any rogue survivors rejoin as assassins (shielded again, respawning)
+            _assassinsReleased = false;
+            foreach (Vehicle v in _arena.Vehicles)
+                if (v is Bot rb && !rb.IsDead && IsAssassinTeam(rb._team))
+                    rb.bRespawn = true;
 
             if (IsBountyHunterMarkInField())
                 NoteBountyHunterMarkSighting(mark);
             _bountyHunterWaveActive = true;
             _bountyHunterMarkPlayerId = mark._id;
-            _tickNextBountyHunterGruntSpawn = now;
-            _tickNextBountyHunterCaptainSpawn = now;
 
             if (_bots == null)
                 _bots = new List<Bot>();
 
-            if (!roamingCaptianBots.Contains(botTeam5))
-                roamingCaptianBots.Add(botTeam5);
-            if (!capRoamBots.ContainsKey(botTeam5))
-                capRoamBots.Add(botTeam5, 0);
-            if (!roamBots.ContainsKey(botTeam5))
-                roamBots.Add(botTeam5, 0);
-            else
-                roamBots[botTeam5] = 0;
-
-            RoamingCaptain captain = SpawnBountyHunterCaptainAt(spawn, now);
-            int bong = _config != null ? _config.flag.victoryWarningBong : 28;
-            string wait = IsBountyHunterMarkInField()
-                ? "hunting " + mark._alias
-                : "waiting for " + mark._alias + " to leave the dropship";
-            _arena.sendArenaMessage(string.Format(
-                "&BHB: Bounty Hunting Bots deployed ({0} on {1}) — {2}.",
-                BountyHunterSquadSize,
-                botTeam5._name ?? "Bot - BHB",
-                wait), bong);
-
-            // Fill the squad immediately (captain + opening grunts → 20).
-            int open = BountyHunterOpeningBatch;
-            for (int i = 0; i < open; i++)
+            int deployed = 0;
+            foreach (Team team in AssassinTeams())
             {
-                if (CountLiveBountyHunterGrunts() >= BountyHunterMaxConcurrentGrunts)
-                    break;
-                TrySpawnOneBountyHunterGrunt(now, captain);
+                // each cell inserts at its own open-sector spot (never the dropship)
+                Helpers.ObjectState spawn;
+                if (!TryFindBountyHunterSectorSpawn(out spawn) || spawn == null)
+                {
+                    Log.write(TLog.Warning, "[Eol] Assassins: no open-sector spawn for {0} on {1}.", team._name, mark._alias);
+                    continue;
+                }
+                if (!roamingCaptianBots.Contains(team))
+                    roamingCaptianBots.Add(team);
+                if (!capRoamBots.ContainsKey(team))
+                    capRoamBots.Add(team, 0);
+                roamBots[team] = 0;
+                _tickNextBountyHunterGruntSpawn[team] = now;
+                _tickNextBountyHunterCaptainSpawn[team] = now;
+
+                RoamingCaptain captain = SpawnBountyHunterCaptainAt(spawn, now, team);
+                for (int i = 0; i < BountyHunterOpeningBatch; i++)
+                {
+                    if (CountLiveBountyHunterGrunts(team) >= BountyHunterMaxConcurrentGrunts)
+                        break;
+                    TrySpawnOneBountyHunterGrunt(now, captain, team, ignoreInterval: true);
+                }
+                deployed++;
             }
 
-            Log.write(TLog.Normal, "[Eol] BHB wave armed for {0} (alive={1}/{2}).",
-                mark._alias, GetBountyHunterAliveCount(), BountyHunterSquadSize);
+            int bong = _config != null ? _config.flag.victoryWarningBong : 28;
+            string wait = IsBountyHunterMarkInField()
+                ? "the contract is on " + mark._alias
+                : "waiting for " + mark._alias + " to leave the dropship";
+            _arena.sendArenaMessage(string.Format(
+                "&Assassins deployed: {0} cells of {1} — {2}.", deployed, BountyHunterSquadSize, wait), bong);
+
+            Log.write(TLog.Normal, "[Eol] Assassins armed for {0} (alive={1}).", mark._alias, GetBountyHunterAliveCount());
             InvalidateEolHudTickerCache();
         }
 
-        RoamingCaptain SpawnBountyHunterCaptainAt(Helpers.ObjectState spawn, int now)
+        /// <summary>Ultra-elite: beyond-ace aim and the brain's assassin persona.</summary>
+        void MakeAssassin(Bot b)
         {
-            if (spawn == null || botTeam5 == null || _arena == null)
+            if (b == null)
+                return;
+            b.SkillModeOverride = AssassinSkillMode;
+            EnableBotDropshipRespawn(b, 0);
+            if (_bots != null && !_bots.Contains(b))
+                _bots.Add(b);
+        }
+
+        RoamingCaptain SpawnBountyHunterCaptainAt(Helpers.ObjectState spawn, int now, Team team)
+        {
+            if (spawn == null || team == null || _arena == null)
                 return null;
 
             RoamingCaptain captain = _arena.newBot(
-                typeof(RoamingCaptain), (ushort)BountyHunterCaptainVehId, botTeam5, null, spawn, this) as RoamingCaptain;
+                typeof(RoamingCaptain), (ushort)BountyHunterCaptainVehId, team, null, spawn, this) as RoamingCaptain;
             if (captain == null)
                 return null;
 
-            EnableBotDropshipRespawn(captain, 0);
-            if (_bots != null && !_bots.Contains(captain))
-                _bots.Add(captain);
-            _tickNextBountyHunterCaptainSpawn = now + BountyHunterCaptainRespawnMs;
+            MakeAssassin(captain);
+            _tickNextBountyHunterCaptainSpawn[team] = now + BountyHunterCaptainRespawnMs;
             return captain;
         }
 
-        void EnsureBountyHunterCaptain(int now)
+        void EnsureBountyHunterCaptain(int now, Team team)
         {
-            if (!_bountyHunterWaveActive || !IsBountyHuntActive)
+            if (!_bountyHunterWaveActive || !IsBountyHuntActive || team == null)
                 return;
-            if (FindLiveBountyHunterCaptain() != null)
+            if (FindLiveBountyHunterCaptain(team) != null)
                 return;
-            if (_tickNextBountyHunterCaptainSpawn != 0 && now < _tickNextBountyHunterCaptainSpawn)
+            int due;
+            if (_tickNextBountyHunterCaptainSpawn.TryGetValue(team, out due) && due != 0 && now < due)
                 return;
 
-            InfServer.Game.Player mark = _bountyHuntMarked;
             Helpers.ObjectState spawn;
             if (!TryFindBountyHunterSectorSpawn(out spawn) || spawn == null)
                 return;
-
-            RoamingCaptain cap = SpawnBountyHunterCaptainAt(spawn, now);
-            if (cap != null && mark != null)
-            {
-                _arena.sendArenaMessage(string.Format(
-                    "&BHB: Replacement captain hunting {0}.", mark._alias), 1);
-            }
+            SpawnBountyHunterCaptainAt(spawn, now, team);
         }
 
-        void TrySpawnOneBountyHunterGrunt(int now, RoamingCaptain nearCaptain)
+        void TrySpawnOneBountyHunterGrunt(int now, RoamingCaptain nearCaptain, Team team, bool ignoreInterval = false)
         {
-            if (!_bountyHunterWaveActive || botTeam5 == null || _arena == null)
+            if (!_bountyHunterWaveActive || team == null || _arena == null)
                 return;
-            if (CountLiveBountyHunterGrunts() >= BountyHunterMaxConcurrentGrunts)
+            if (CountLiveBountyHunterGrunts(team) >= BountyHunterMaxConcurrentGrunts)
+                return;
+            int due;
+            if (!ignoreInterval && _tickNextBountyHunterGruntSpawn.TryGetValue(team, out due) && now < due)
                 return;
 
             Helpers.ObjectState openPoint = null;
             RoamingCaptain liveCap = nearCaptain != null && !nearCaptain.IsDead
                 ? nearCaptain
-                : FindLiveBountyHunterCaptain();
+                : FindLiveBountyHunterCaptain(team);
             if (liveCap != null && !liveCap.IsDead
                 && (_eol == null || !_eol.IsInPioneerDropshipSafeZone(liveCap._state.positionX, liveCap._state.positionY)))
             {
@@ -354,48 +412,51 @@ namespace InfServer.Script.GameType_Eol
                 TryFindBountyHunterSectorSpawn(out openPoint);
             if (openPoint == null)
             {
-                _tickNextBountyHunterGruntSpawn = now + 900;
+                _tickNextBountyHunterGruntSpawn[team] = now + 900;
                 return;
             }
 
-            int id = 144;
-            switch ((_rand ?? new Random()).Next(1, 6))
-            {
-                case 1: id = 144; break;
-                case 2: id = 145; break;
-                case 3: id = 146; break;
-                case 4: id = 147; break;
-                case 5: id = 157; break;
-            }
+            int[] ids = { 144, 145, 146, 147, 157 };
+            int id = LimitGrenadiers(team, ids[(_rand ?? new Random()).Next(ids.Length)], ids);
 
             if (_bots == null)
                 _bots = new List<Bot>();
 
             RoamingAttacker grunt = _arena.newBot(
-                typeof(RoamingAttacker), (ushort)id, botTeam5, null, openPoint, this, null) as RoamingAttacker;
+                typeof(RoamingAttacker), (ushort)id, team, null, openPoint, this, null) as RoamingAttacker;
             if (grunt == null)
             {
-                _tickNextBountyHunterGruntSpawn = now + 900;
+                _tickNextBountyHunterGruntSpawn[team] = now + 900;
                 return;
             }
 
-            EnableBotDropshipRespawn(grunt, 0);
-            if (!roamBots.ContainsKey(botTeam5))
-                roamBots.Add(botTeam5, 0);
-            roamBots[botTeam5] = CountLiveBountyHunterGrunts();
-            if (!_bots.Contains(grunt))
-                _bots.Add(grunt);
-            _tickNextBountyHunterGruntSpawn = now + BountyHunterGruntSpawnIntervalMs;
+            MakeAssassin(grunt);
+            if (!roamBots.ContainsKey(team))
+                roamBots.Add(team, 0);
+            roamBots[team] = CountLiveBountyHunterGrunts(team);
+            _tickNextBountyHunterGruntSpawn[team] = now + BountyHunterGruntSpawnIntervalMs;
         }
 
-        RoamingCaptain FindLiveBountyHunterCaptain()
+        RoamingCaptain FindLiveBountyHunterCaptain(Team team)
         {
-            if (_arena == null || botTeam5 == null)
+            if (_arena == null || team == null)
                 return null;
             foreach (Vehicle v in _arena.Vehicles)
             {
                 RoamingCaptain c = v as RoamingCaptain;
-                if (c != null && !c.IsDead && c._team == botTeam5)
+                if (c != null && !c.IsDead && c._team == team)
+                    return c;
+            }
+            return null;
+        }
+
+        /// <summary>Any live assassin captain (either cell).</summary>
+        RoamingCaptain FindLiveBountyHunterCaptain()
+        {
+            foreach (Team t in AssassinTeams())
+            {
+                RoamingCaptain c = FindLiveBountyHunterCaptain(t);
+                if (c != null)
                     return c;
             }
             return null;
@@ -408,7 +469,7 @@ namespace InfServer.Script.GameType_Eol
 
             if (!IsBountyHuntActive)
             {
-                TeardownBountyHunterSquad(now, announce: false);
+                ReleaseAssassins(announce: true);
                 return;
             }
 
@@ -420,37 +481,30 @@ namespace InfServer.Script.GameType_Eol
                 {
                     _bountyHunterMarkPlayerId = mark._id;
                     _arena.sendArenaMessage(string.Format(
-                        "&BHB: Retargeting — now hunting {0}.", mark._alias), 1);
+                        "&Assassins: new contract on {0}.", mark._alias), 1);
                 }
             }
 
-            EnsureBountyHunterCaptain(now);
-
-            // Keep the squad topped up to 20 (1 captain + 19 grunts) for the whole hunt.
-            int grunts = CountLiveBountyHunterGrunts();
-            if (grunts < BountyHunterMaxConcurrentGrunts && now >= _tickNextBountyHunterGruntSpawn)
+            foreach (Team team in AssassinTeams())
             {
-                // Spawn a few per poll so a wiped pack rebuilds quickly without one-tick floods.
-                int budget = Math.Min(3, BountyHunterMaxConcurrentGrunts - grunts);
-                RoamingCaptain cap = FindLiveBountyHunterCaptain();
-                for (int i = 0; i < budget; i++)
-                    TrySpawnOneBountyHunterGrunt(now, cap);
+                EnsureBountyHunterCaptain(now, team);
+                if (CountLiveBountyHunterGrunts(team) < BountyHunterMaxConcurrentGrunts)
+                    TrySpawnOneBountyHunterGrunt(now, FindLiveBountyHunterCaptain(team), team);
+                if (roamBots != null)
+                    roamBots[team] = CountLiveBountyHunterGrunts(team);
             }
-
-            if (roamBots != null && botTeam5 != null)
-                roamBots[botTeam5] = CountLiveBountyHunterGrunts();
         }
 
         void TeardownBountyHunterSquad(int now, bool announce)
         {
-            if (_arena != null && botTeam5 != null)
+            if (_arena != null)
             {
                 List<Vehicle> wipe = new List<Vehicle>();
                 foreach (Vehicle v in _arena.Vehicles)
                 {
                     if (v == null || v.IsDead)
                         continue;
-                    if (v._team != botTeam5)
+                    if (!IsBountyHunterBotTeam(v._team))
                         continue;
                     if (v is RoamingCaptain || v is RoamingAttacker)
                         wipe.Add(v);
@@ -459,24 +513,29 @@ namespace InfServer.Script.GameType_Eol
                     EnqueueVehicleDespawn(wipe[i]);
             }
 
-            if (roamBots != null && botTeam5 != null && roamBots.ContainsKey(botTeam5))
-                roamBots[botTeam5] = 0;
-            if (roamingCaptianBots != null && botTeam5 != null)
-                roamingCaptianBots.Remove(botTeam5);
-            if (capRoamBots != null && botTeam5 != null)
-                capRoamBots.Remove(botTeam5);
+            foreach (Team team in AssassinTeams())
+            {
+                if (roamBots != null && roamBots.ContainsKey(team))
+                    roamBots[team] = 0;
+                if (roamingCaptianBots != null)
+                    roamingCaptianBots.Remove(team);
+                if (capRoamBots != null)
+                    capRoamBots.Remove(team);
+            }
 
             _bountyHunterWaveActive = false;
             _bountyHunterHasLastKnown = false;
             _bountyHunterSectorSpawnValid = false;
             _bountyHunterMarkPlayerId = 0;
             _bountyHunterForceFieldNextTick.Clear();
+            _tickNextBountyHunterGruntSpawn.Clear();
+            _tickNextBountyHunterCaptainSpawn.Clear();
 
             if (announce && _arena != null)
-                _arena.sendArenaMessage("&BHB: Bounty Hunting Bots withdrawn.", 1);
+                _arena.sendArenaMessage("&Assassins withdrawn.", 1);
 
             InvalidateEolHudTickerCache();
-            Log.write(TLog.Normal, "[Eol] BHB squad torn down.");
+            Log.write(TLog.Normal, "[Eol] Assassins torn down.");
         }
     }
 }

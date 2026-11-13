@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Collections.Generic;
 using System.IO;
@@ -39,6 +39,7 @@ namespace InfServer.Script.GameType_Eol
 /// <summary>Returns true when a target was locked and combat movement ran (module AttackPlayer).</summary>
         public bool fireAtEnemy(int now)
         {
+            EolBotBrain.BeforeCombat(this, _baseScript, ref _target, now);
             Bot botTarget;
             if (!EolBotActionBridge.RunCombatKeepSticky(
                     this, InfServer.Game.Modules.BotActions.BotActionId.AttackPlayer,
@@ -50,7 +51,7 @@ namespace InfServer.Script.GameType_Eol
 
             if (_target != null && !_target.IsDead)
             {
-                EolBotCombatUtil.ChaseTargetWithoutLos(this, now, _target._state, steerForPersuePlayer);
+                EolBotBrain.CombatMove(this, _baseScript, now, _target, _target._state, steerForPersuePlayer);
                 InLiveCombat = true;
                 if (_baseScript != null)
                     _baseScript.PublishCombatCall(_team, this, _target, null, now);
@@ -59,7 +60,7 @@ namespace InfServer.Script.GameType_Eol
 
             if (botTarget != null)
             {
-                EolBotCombatUtil.ChaseTargetWithoutLos(this, now, botTarget._state, steerForPersuePlayer);
+                EolBotBrain.CombatMove(this, _baseScript, now, botTarget, botTarget._state, steerForPersuePlayer);
                 InLiveCombat = true;
                 if (_baseScript != null)
                     _baseScript.PublishCombatCall(_team, this, null, botTarget, now);
@@ -72,6 +73,16 @@ namespace InfServer.Script.GameType_Eol
 
         public void patrolHQ(int now)
         {
+            // local 2026-11-13: a hostile turret in sight gets attacked instead of patrolling past it
+            if (EolBotBrain.TryEngageTurret(this, _baseScript, now))
+                return;
+            // Bloodthirsty bugs (all of them once the ship is gone) hunt for people instead of patrolling.
+            if (EolBotBrain.IsHunter(this, vHq != null))
+            {
+                EolBotBrain.Hunt(this, _baseScript, now, vHq?._state);
+                _targetPoint = null;
+                return;
+            }
             if (vHq == null)
                 return;
 

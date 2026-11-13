@@ -217,6 +217,10 @@ namespace InfServer.Game
             _shouldFire = true;
             _tickShotTime = Environment.TickCount;
 
+            //A bot target can't report its own hits - apply the shot server-side
+            if (_aimBot != null)
+                applyTurretShotToBot(_aimBot);
+
             //Adjust ammo accordingly
             if (_ammoCapacity != 0 && --_ammoRemaining <= 0)
             {
@@ -276,18 +280,68 @@ namespace InfServer.Game
         /// </summary>
         protected Helpers.ObjectState getClosestValidAimState()
         {
+            _aimBot = null;
             Player player = getClosestValidTarget();
             Vehicle bot = getClosestValidBotTarget();
             if (player == null && bot == null)
                 return null;
             if (player == null)
-                return bot._state;
+            { _aimBot = bot; return bot._state; }
             if (bot == null)
                 return player._state;
 
             double pd = squaredDistanceTo(player);
             double bd = squaredDistanceTo(bot);
-            return bd < pd ? bot._state : player._state;
+            if (bd < pd)
+            { _aimBot = bot; return bot._state; }
+            return player._state;
+        }
+
+        /// <summary>The bot this turret is aiming at this poll (null = a player or nothing).</summary>
+        protected Vehicle _aimBot;
+
+        /// <summary>
+        /// Turret shots at BOTS (local change 2026-11-13): projectiles are simulated on players' clients and only players
+        /// report their own hits, so a turret's bullets never damaged a bot (no client). When a turret fires at a bot
+        /// target that already passed the turret's rules (team, range, weight, angle, LOS), apply the projectile's damage
+        /// server-side - the same way Eol applies bot-vs-bot shots (applyExplosionDamage).
+        /// </summary>
+        public static bool TurretShotsDamageBots = true;
+
+        protected void applyTurretShotToBot(Vehicle target)
+        {
+            if (!TurretShotsDamageBots || target == null || target.IsDead || target.bCondemned || _primaryProjectile == null)
+                return;
+            try
+            {
+                //(bots: damage + knockback recoil; any other bot-owned vehicle: damage)
+                short ix = target._state.positionX, iy = target._state.positionY;
+                if (target is InfServer.Bots.Bot hurtBot)
+                {
+                    hurtBot.NoteHurtBy(this);
+                    target.applyExplosion(null, ix, iy, _primaryProjectile);
+                }
+                else
+                    target.applyExplosionDamage(true, null, ix, iy, _primaryProjectile);
+
+                // Splash / friendly fire (local 2026-11-13): every other bot inside the blast takes it too - the
+                // turret's OWN team included (turrets can team-kill, like a player's would).
+                int blast = Helpers.getMaxBlastRadius(_primaryProjectile);
+                if (blast > 0 && _arena != null)
+                {
+                    foreach (Vehicle v in _arena.getVehiclesInRange(ix, iy, blast + 32))
+                    {
+                        if (v == target || v == this || v.IsDead || v.bCondemned || !(v is InfServer.Bots.Bot splashBot))
+                            continue;
+                        splashBot.NoteHurtBy(this);
+                        v.applyExplosion(null, ix, iy, _primaryProjectile);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.write(TLog.Warning, "Turret shot at bot failed: " + ex.Message);
+            }
         }
 
         /// <summary>

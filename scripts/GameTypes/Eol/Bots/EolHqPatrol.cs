@@ -318,8 +318,117 @@ namespace InfServer.Script.GameType_Eol
             };
         }
 
+        static readonly Random PatrolRand = new Random();
+
+        /// <summary>
+        /// Patrol variety (local change 2026-11-13): on the way home, often swing by one of the team's turrets to
+        /// check on it; on the way out, sometimes push to a random area further afield.
+        /// </summary>
+        static Helpers.ObjectState PickVariedLegDest(Bot bot, Arena arena, Vehicle hq, bool returningHome)
+        {
+            double roll = PatrolRand.NextDouble();
+            if (returningHome && roll < 0.40)
+                return PickNearOwnTurret(bot, arena, hq);
+            if (!returningHome && roll < 0.22)
+                return PickInDisk(bot, arena, hq, OutboundMaxRadiusRaw, OutboundMaxRadiusRaw + 1600, MinOutboundLegRaw, true);
+            return null;
+        }
+
+        /// <summary>An open spot 70-170 px from a random friendly turret near the base.</summary>
+        static Helpers.ObjectState PickNearOwnTurret(Bot bot, Arena arena, Vehicle hq)
+        {
+            if (arena == null || hq?._state == null || bot?._team == null)
+                return null;
+            List<Vehicle> turrets = arena.getVehiclesInRange(hq._state.positionX, hq._state.positionY, OutboundMaxRadiusRaw,
+                delegate (Vehicle v)
+                {
+                    return v != null && v != hq && !(v is Bot) && !v.IsDead && v._team == bot._team
+                        && v._type != null && v._type.Type == VehInfo.Types.Computer;
+                });
+            if (turrets == null || turrets.Count == 0)
+                return null;
+            Vehicle t = turrets[PatrolRand.Next(turrets.Count)];
+            for (int i = 0; i < 24; i++)
+            {
+                double a = PatrolRand.NextDouble() * Math.PI * 2;
+                int r = 70 + PatrolRand.Next(100);
+                short x = (short)(t._state.positionX + Math.Cos(a) * r);
+                short y = (short)(t._state.positionY + Math.Sin(a) * r);
+                if (IsOpenForBot(bot, x, y) && !Arrived(bot._state, new Helpers.ObjectState { positionX = x, positionY = y }))
+                    return new Helpers.ObjectState { positionX = x, positionY = y };
+            }
+            return null;
+        }
+
+        /// <summary>Where a base bot spends its time (local change 2026-11-13).</summary>
+        public enum PatrolRole { Guard, Perimeter, Roamer }
+
+        static readonly Dictionary<int, PatrolRole> RoleById = new Dictionary<int, PatrolRole>();
+        static readonly Dictionary<Team, int> RoleTickByTeam = new Dictionary<Team, int>();
+
+        /// <summary>
+        /// Split each base's bots like a real team: the first 2 (by id) guard inside the base, ~40 % of the rest
+        /// hold the perimeter just outside it, the others roam far out. Re-split every 5 s as bots die / spawn.
+        /// </summary>
+        public static PatrolRole RoleOf(Bot bot, Arena arena, Vehicle hq)
+        {
+            if (bot == null || arena == null || hq?._state == null || bot._team == null)
+                return PatrolRole.Perimeter;
+            int now = Environment.TickCount;
+            int last;
+            if (!RoleTickByTeam.TryGetValue(bot._team, out last) || now - last > 5000 || !RoleById.ContainsKey(bot._id))
+            {
+                RoleTickByTeam[bot._team] = now;
+                List<Vehicle> mates = arena.getVehiclesInRange(hq._state.positionX, hq._state.positionY, 8000,
+                    delegate (Vehicle v)
+                    {
+                        return v != null && !v.IsDead && v._team == bot._team
+                            && (v is BasicDefense || v is Captain || v is AlienHorde);
+                    });
+                mates.Sort((a, b) => a._id.CompareTo(b._id));
+                int rest = Math.Max(0, mates.Count - 2);
+                int perim = (int)Math.Round(rest * 0.4);
+                for (int i = 0; i < mates.Count; i++)
+                {
+                    PatrolRole r = i < 2 ? PatrolRole.Guard : (i < 2 + perim ? PatrolRole.Perimeter : PatrolRole.Roamer);
+                    if (mates[i] is Captain && r == PatrolRole.Guard)
+                        r = PatrolRole.Perimeter;
+                    RoleById[mates[i]._id] = r;
+                }
+            }
+            PatrolRole role;
+            return RoleById.TryGetValue(bot._id, out role) ? role : PatrolRole.Perimeter;
+        }
+
+        static Helpers.ObjectState PickForRole(Bot bot, Arena arena, Vehicle hq, bool returningHome)
+        {
+            PatrolRole role = RoleOf(bot, arena, hq);
+            double roll = PatrolRand.NextDouble();
+            switch (role)
+            {
+                case PatrolRole.Guard:      // inside the base, checking turrets
+                    if (roll < 0.35) return PickNearOwnTurret(bot, arena, hq);
+                    return PickInDisk(bot, arena, hq, 120, 520, 160, false);
+                case PatrolRole.Perimeter:  // just outside the base, sometimes back in to check turrets
+                    if (returningHome && roll < 0.35) return PickNearOwnTurret(bot, arena, hq);
+                    return PickInDisk(bot, arena, hq, 600, 1400, 350, true);
+                default:                    // roamers: far out; now and then swing home
+                    if (returningHome && roll < 0.30)
+                        return roll < 0.12 ? PickNearOwnTurret(bot, arena, hq) : PickInDisk(bot, arena, hq, 700, 1300, 500, true);
+                    return PickInDisk(bot, arena, hq, 1500, 3800, MinOutboundLegRaw, true);
+            }
+        }
+
         static Helpers.ObjectState PickLegDest(Bot bot, Arena arena, Vehicle hq, bool returningHome)
         {
+            Helpers.ObjectState byRole = PickForRole(bot, arena, hq, returningHome);
+            if (byRole != null && !Arrived(bot._state, byRole))
+                return byRole;
+
+            Helpers.ObjectState varied = PickVariedLegDest(bot, arena, hq, returningHome);
+            if (varied != null && !Arrived(bot._state, varied))
+                return varied;
+
             for (int attempt = 0; attempt < 16; attempt++)
             {
                 Helpers.ObjectState dest = returningHome
@@ -408,6 +517,9 @@ namespace InfServer.Script.GameType_Eol
         public static bool TryRecallToHqFromPatrol(Bot bot, Vehicle hq, EolHqPatrolState s, int now, bool recallActive)
         {
             if (!recallActive || bot == null || hq == null || hq.IsDead || s == null || s.ReturningHome)
+                return false;
+            // Roamers stay out roaming (they fight what they meet); guards/perimeter answer the recall.
+            if (RoleOf(bot, bot._arena, hq) == PatrolRole.Roamer)
                 return false;
 
             // Already on the pad / near the shuttle — allow outbound legs & combat instead of flap-recalling.
@@ -500,6 +612,11 @@ namespace InfServer.Script.GameType_Eol
             short lastY = y0;
             int x = t0x;
             int y = t0y;
+            // Keep the last few clear tiles so we can stop SHORT of the wall (local fix 2026-11-13: it used to
+            // return the tile right against the wall, so patrol/seek points sat on walls and bots hugged them).
+            short[] hx = new short[4], hy = new short[4];
+            int hn = 0;
+            bool hitWall = false;
 
             while (!(x == t1x && y == t1y))
             {
@@ -518,10 +635,20 @@ namespace InfServer.Script.GameType_Eol
                 short rawX = (short)(x * 16 + 8);
                 short rawY = (short)(y * 16 + 8);
                 if (!IsStandable(bot, rawX, rawY))
+                {
+                    hitWall = true;
                     break;
+                }
 
                 lastX = rawX;
                 lastY = rawY;
+                hx[hn % 4] = rawX; hy[hn % 4] = rawY; hn++;
+            }
+
+            if (hitWall && hn >= 4)
+            {   // 3 tiles back from the wall
+                lastX = hx[(hn - 4) % 4];
+                lastY = hy[(hn - 4) % 4];
             }
 
             if (DistSq(x0, y0, lastX, lastY) < 48L * 48L)
@@ -1154,9 +1281,10 @@ namespace InfServer.Script.GameType_Eol
                 short pX = (short)(hq._state.positionX + Math.Cos(angle) * radius);
                 short pY = (short)(hq._state.positionY + Math.Sin(angle) * radius);
 
-                if (!IsOpenForBot(bot, pX, pY) && !IsStandable(bot, pX, pY))
-                    continue;
                 if (!IsStandable(bot, pX, pY))
+                    continue;
+                // Open ground only (no wall within a tile) for the first 110 tries - no patrol points on walls.
+                if (i < 110 && !IsOpenForBot(bot, pX, pY))
                     continue;
 
                 long fromBot = DistSq(botState.positionX, botState.positionY, pX, pY);
