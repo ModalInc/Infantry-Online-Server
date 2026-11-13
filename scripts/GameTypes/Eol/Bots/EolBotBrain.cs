@@ -151,6 +151,10 @@ namespace InfServer.Script.GameType_Eol
             public int IdleStareTick;
             public short IdleStareX, IdleStareY;
             public readonly Dictionary<object, int> IgnoreUntil = new Dictionary<object, int>();
+            // progress tracking (MakingProgress)
+            public int ProgTick;
+            public double ProgBest;
+            public short ProgGoalX, ProgGoalY, ProgX, ProgY;
         }
 
         const int IgnoreAfterGiveUpMs = 8000;
@@ -472,20 +476,6 @@ namespace InfServer.Script.GameType_Eol
                 // anywhere within its patience, give up on that target like a player would.
                 if (!los)
                 {
-                    if (m.NoLosTick == 0)
-                    {
-                        m.NoLosTick = now; m.NoLosX = self._state.positionX; m.NoLosY = self._state.positionY;
-                    }
-                    else if (now - m.NoLosTick >= P.PatienceMs)
-                    {
-                        int mx = self._state.positionX - m.NoLosX, my = self._state.positionY - m.NoLosY;
-                        if (mx * mx + my * my < 64 * 64)
-                        {
-                            GiveUp(self, m, target);
-                            return false;
-                        }
-                        m.NoLosTick = now; m.NoLosX = self._state.positionX; m.NoLosY = self._state.positionY;
-                    }
                     // Lost sight of a player: go where we last SAW them (a little ahead in the way they were
                     // running) to get eyes on them again - not to wherever they really are now. Reached that spot
                     // and they're not there: give up like a person would.
@@ -513,6 +503,16 @@ namespace InfServer.Script.GameType_Eol
                         else
                             m.SearchArrivedTick = 0;
                     }
+
+                    // Real progress only: getting closer to where it's going, or actually travelling a found route.
+                    // (Sliding along a red wall toward someone on the other side is NOT progress - that used to
+                    // count as "moving", so bots ground against walls forever.) No progress within its patience:
+                    // give up and go back to roaming / patrol.
+                    if (!MakingProgress(self, m, chaseDest, now, P.PatienceMs))
+                    {
+                        GiveUp(self, m, target);
+                        return false;
+                    }
                     if (!EolBotCombatUtil.ChaseTargetWithoutLos(self, now, chaseDest, fallback))
                     {
                         GiveUp(self, m, target);
@@ -537,6 +537,11 @@ namespace InfServer.Script.GameType_Eol
                     dest.positionX, dest.positionY);
                 if (!walkClear && dist > pref * 1.15)
                 {
+                    if (!MakingProgress(self, m, dest, now, P.PatienceMs + 1500))
+                    {
+                        GiveUp(self, m, target);
+                        return false;
+                    }
                     Helpers.ObjectState goal = new Helpers.ObjectState { positionX = dest.positionX, positionY = dest.positionY };
                     self.ApplyNavigationApproach(goal, EolHqPatrol.MakeLineClearPendingSeek(self, () => goal), new BotNavigateOptions
                     {
@@ -642,7 +647,16 @@ namespace InfServer.Script.GameType_Eol
             // Unload: fire every time the gun is ready and on target. (Hits on enemy BOTS are resolved for every
             // bot shot in OnBotShotFired below, whichever code path fired it.)
             if (!gun.ableToFire()) { _fCooldown++; return; }
-            if (BotCombat.TryAimAndFire(self, gun, dest, requireLineOfSight: true, freezeMs: 0))
+            // Only weapons that must be fired standing still (charge-up / prefire) make the bot plant: stop,
+            // fire, then it keeps moving next tick. Everything else fires on the move.
+            int plantMs = 0;
+            if (gun.RequiresStationaryFire)
+            {
+                plantMs = gun.StationaryFireLockMs;
+                self.SetDrive(0f, 0f, 0f);
+                self.SetAim(gun.Projectile != null ? gun.getAimAngle(dest) : aimYaw, true);
+            }
+            if (BotCombat.TryAimAndFire(self, gun, dest, requireLineOfSight: true, freezeMs: plantMs))
                 _fFired++;
             else
                 _fNotAimed++;
@@ -699,7 +713,11 @@ namespace InfServer.Script.GameType_Eol
                 victim.NoteHurtBy(shooter);
                 shooter._arena?.NoteBotDamagedByBot(victim, shooter);
             }
-            hitVeh.applyBotHit(gun.Projectile);
+            if (hitVeh is Computer turretHit)
+                // turrets: their own damage path (health update to clients + proper destroy when it hits 0)
+                turretHit.applyExplosion(null, turretHit._state.positionX, turretHit._state.positionY, gun.Projectile);
+            else
+                hitVeh.applyBotHit(gun.Projectile);
 
             int now = Environment.TickCount;
             if (LogPersonas && now - _tickHitLog > 15000)
@@ -721,6 +739,8 @@ namespace InfServer.Script.GameType_Eol
                 delegate (Vehicle x) { return x is Computer c && c._primaryGun != null && !x.IsDead && x._team != self._team; }))
             {
                 Computer c = (Computer)v;
+                if (IsTargetIgnored(self, c, Helpers.distanceTo(self._state, c._state)))
+                    continue;   // couldn't reach it recently
                 if (c._team != null && c._team._name != null && c._team._name.StartsWith("Bot", StringComparison.OrdinalIgnoreCase)
                     && script != null && !script.ShouldEolBotTeamsFight(self._team, c._team))
                     continue;   // allied bot turret
@@ -768,7 +788,15 @@ namespace InfServer.Script.GameType_Eol
                     turret._state.positionX, turret._state.positionY);
 
                 if (!shotClear || dist > range * 1.05)
-                {   // get into a firing spot: path toward it, aiming/firing when possible
+                {   // get into a firing spot: path toward it, aiming/firing when possible - unless it can't get there
+                    if (!MakingProgress(self, m, turret._state, now, 4000))
+                    {
+                        m.IgnoreUntil[turret] = now + 12000;
+                        m.Turret = null;
+                        ResetProgress(m);
+                        self.Navigation?.Clear();
+                        return false;
+                    }
                     Helpers.ObjectState goal = new Helpers.ObjectState { positionX = turret._state.positionX, positionY = turret._state.positionY };
                     self.ApplyNavigationApproach(goal, EolHqPatrol.MakeLineClearPendingSeek(self, () => goal), new BotNavigateOptions
                     {
@@ -797,6 +825,37 @@ namespace InfServer.Script.GameType_Eol
             }
         }
 
+        /// <summary>
+        /// Progress toward <paramref name="goal"/>: true while the bot has got at least 48 px closer, or travelled
+        /// 96 px along a real navigation route, within the last <paramref name="patienceMs"/>. Shared by every
+        /// chase / hunt so no bot grinds against a wall toward a target it can't reach.
+        /// </summary>
+        static bool MakingProgress(Bot self, Mind m, Helpers.ObjectState goal, int now, int patienceMs)
+        {
+            double d = Helpers.distanceTo(self._state, goal);
+            int gx = goal.positionX - m.ProgGoalX, gy = goal.positionY - m.ProgGoalY;
+            bool newGoal = m.ProgTick == 0 || gx * gx + gy * gy > 300 * 300;   // a genuinely different goal: restart
+            if (newGoal)
+            {
+                m.ProgTick = now; m.ProgBest = d;
+                m.ProgGoalX = goal.positionX; m.ProgGoalY = goal.positionY;
+                m.ProgX = self._state.positionX; m.ProgY = self._state.positionY;
+                return true;
+            }
+            int mx = self._state.positionX - m.ProgX, my = self._state.positionY - m.ProgY;
+            bool closer = d < m.ProgBest - 48;
+            bool onRoute = self.Navigation != null && self.Navigation.HasPath && mx * mx + my * my >= 96 * 96;
+            if (closer || onRoute)
+            {
+                m.ProgTick = now; m.ProgBest = Math.Min(m.ProgBest, d);
+                m.ProgX = self._state.positionX; m.ProgY = self._state.positionY;
+                return true;
+            }
+            return now - m.ProgTick < patienceMs;
+        }
+
+        static void ResetProgress(Mind m) { m.ProgTick = 0; }
+
         /// <summary>Stop chasing a target it can't reach / see: forget it, drop the lock, back to its own business.</summary>
         static void GiveUp(Bot self, Mind m, object target)
         {
@@ -813,6 +872,7 @@ namespace InfServer.Script.GameType_Eol
                 m.HuntTarget = null;
             if (target != null)
                 m.IgnoreUntil[target] = Environment.TickCount + IgnoreAfterGiveUpMs;
+            ResetProgress(m);
             m.NoLosTick = 0;
             try { self.Actions?.Clear(); } catch { }
             self.Navigation?.Clear();
@@ -859,6 +919,8 @@ namespace InfServer.Script.GameType_Eol
                         if (EolBotSenseUtil.PlayerHasActiveCloak(p))
                             continue;
                         double d = Helpers.distanceTo(self._state, p._state);
+                        if (IsTargetIgnored(self, p, d))
+                            continue;   // gave up reaching them recently
                         if (ReferenceEquals(p, m.HuntTarget)) d *= 0.7;   // keep the same quarry
                         if (d < bestD) { bestD = d; best = p; }
                     }
@@ -870,6 +932,8 @@ namespace InfServer.Script.GameType_Eol
                             if (!IsHostileTarget(self, script, v))
                                 continue;
                             double d = Helpers.distanceTo(self._state, v._state);
+                            if (IsTargetIgnored(self, v, d))
+                                continue;
                             if (d < bestD) { bestD = d; best = v; }
                         }
                     }
@@ -892,6 +956,24 @@ namespace InfServer.Script.GameType_Eol
                 }
                 if (goal == null)
                     return;
+
+                // Can't actually get to the quarry (e.g. it's on the other side of a red wall and no route comes):
+                // drop it for a while and roam instead of grinding toward it.
+                if (hunting && !MakingProgress(self, m, goal, now, 4000))
+                {
+                    m.IgnoreUntil[m.HuntTarget] = now + 12000;
+                    m.HuntTarget = null;
+                    ResetProgress(m);
+                    self.Navigation?.Clear();
+                    m.RoamDest = PickRoamPoint(self, m, home);
+                    m.RoamPickTick = now;
+                    goal = m.RoamDest;
+                    hunting = false;
+                    if (goal == null)
+                        return;
+                    if (LogPersonas)
+                        Log.write(TLog.Normal, "[bot brain] {0} can't reach its quarry - roaming instead", self._id);
+                }
 
                 // stuck watchdog: no real progress in 3 s -> new roam point / fresh route
                 if (m.IdleTick == 0 || now - m.IdleTick >= 3000)

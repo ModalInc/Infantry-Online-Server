@@ -96,6 +96,32 @@ namespace InfServer.Bots
         private int _stuckStrikes;
         private int _insidePhysicsTries;
         private int _droppedForDeathTick = int.MinValue;
+        private int _tickHullRefresh;
+
+        /// <summary>
+        /// No invisible bots (local 2026-11-14): a client can drop a bot's body (death graphic, respawn screen)
+        /// while the server still believes it has it - the bot then shoots from nowhere. Every ~6 s re-send the
+        /// hull (SC_Vehicles repair, no Leave/Enter) to players near the bot so it can never stay invisible.
+        /// </summary>
+        private void RefreshHullForNearbyClients(int now)
+        {
+            if (_arena == null || _state == null || IsDead)
+                return;
+            if (_tickHullRefresh == 0)
+            {
+                _tickHullRefresh = now + 3000 + (_id % 3000);   // stagger bots
+                return;
+            }
+            if (now - _tickHullRefresh < 0)
+                return;
+            _tickHullRefresh = now + 6000;
+            List<Player> near = _arena.getPlayersAndSpecInRange(_state.positionX, _state.positionY, Arena.GetBotHighRateViewRange());
+            if (near == null || near.Count == 0)
+                return;
+            RequestHullReattach(now + 1000);
+            foreach (Player p in near)
+                ClearClientAwareOfBot(p);
+        }
 
         /// <summary>Nearest spot (8 px steps out to <paramref name="maxR"/>) this bot can stand on with clear tiles around it.</summary>
         private Helpers.ObjectState? NearestFreeSpot(int maxR)
@@ -935,6 +961,7 @@ namespace InfServer.Bots
 
                 TryWallEscapeRecovery(tickCount);
                 StuckWatchdog(tickCount);
+                RefreshHullForNearbyClients(tickCount);
                 if (MovementMode == BotMovementMode.Api)
                     EvaluatePinned(tickCount);
 

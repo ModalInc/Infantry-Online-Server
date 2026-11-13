@@ -6610,11 +6610,25 @@ namespace InfServer.Script.GameType_Eol
                 player.Bounty = player.ZoneStat7;
         }
 
+        readonly HashSet<InfServer.Game.Player> _pendingBountyReset = new HashSet<InfServer.Game.Player>();
+
         void SyncIngameBountyStats()
         {
             if (_arena == null)
                 return;
             int start = BountyStartValue();
+            if (_pendingBountyReset.Count > 0)
+            {
+                foreach (InfServer.Game.Player dead in _pendingBountyReset)
+                {
+                    if (dead == null)
+                        continue;
+                    dead.ZoneStat7 = 0;
+                    if (dead.Bounty != start)
+                        dead.Bounty = start;
+                }
+                _pendingBountyReset.Clear();
+            }
             foreach (InfServer.Game.Player p in _arena.Players)
             {
                 if (p == null)
@@ -6875,6 +6889,11 @@ namespace InfServer.Script.GameType_Eol
         {
             if (victim != null && victim.ZoneStat7 != 0)
                 victim.ZoneStat7 = 0;
+            // Death resets the live bounty too (local fix 2026-11-14: only the saved copy was cleared, so after
+            // respawn the old bounty - even 30k - was written straight back). Done on the next poll, after the
+            // engine has paid the killer's kill rewards (which read the victim's bounty).
+            if (victim != null)
+                _pendingBountyReset.Add(victim);
             ClearCombatCallsForPlayer(victim);
             _pendingBotDeathUpdate = update;
 
