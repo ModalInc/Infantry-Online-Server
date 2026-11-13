@@ -161,6 +161,31 @@ namespace InfServer.Script.GameType_Eol
             // curiosity
             public short InvestX, InvestY;
             public int InvestUntil, InvestPickTick;
+            // extra weapons (human-class bots)
+            public WeaponController Opener, Grenade;
+            public object OpenerTarget;
+            public int OpenerShotsLeft, GrenadesLeft, NextGrenade;
+        }
+
+        /// <summary>
+        /// Give a bot an opener gun (fired for one clip at each new human target - e.g. Kamenev AP mk2 to strip the
+        /// shield) and/or a few grenades thrown at mid range on a cooldown.
+        /// </summary>
+        public static void SetExtraWeapons(Bot b, WeaponController opener, WeaponController grenade, int grenades)
+        {
+            if (b == null)
+                return;
+            Mind m = Get(b);
+            m.Opener = opener;
+            m.Grenade = grenade;
+            m.GrenadesLeft = grenade != null ? grenades : 0;
+            m.OpenerTarget = null;
+        }
+
+        static int ClipOf(WeaponController w)
+        {
+            ItemInfo.Projectile p = w?.Projectile;
+            return p != null && p.ammoCapacity > 0 ? p.ammoCapacity : 10;
         }
 
         const int IgnoreAfterGiveUpMs = 8000;
@@ -648,6 +673,48 @@ namespace InfServer.Script.GameType_Eol
             // and the dodge layer knows we are fighting (it no longer makes us stand still).
             int gunAim = gun != null && gun.Projectile != null ? gun.getAimAngle(dest) : aimYaw;
             self.SetAim(gunAim, true);
+
+            Mind xm = Get(self);
+            int xnow = Environment.TickCount;
+
+            // grenade: mid range, clear (low-wall) line, on its own cooldown, a few per life
+            if (xm.Grenade != null && xm.GrenadesLeft > 0 && xnow - xm.NextGrenade >= 0 && xm.Grenade.ableToFire())
+            {
+                int gReach = BotWeaponUtil.GetCombatRangeRaw(xm.Grenade.ItemID != 0 ? AssetManager.Manager?.getItemByID(xm.Grenade.ItemID) : null);
+                int gMin = BotWeaponUtil.GetMinFireRangeRaw(xm.Grenade);
+                if (gReach > 0 && dist <= gReach && dist >= Math.Max(100, gMin)
+                    && BotCombat.TryAimAndFire(self, xm.Grenade, dest, requireLineOfSight: true, freezeMs: 0))
+                {
+                    xm.GrenadesLeft--;
+                    xm.NextGrenade = xnow + 6000 + xm.R.Next(5000);
+                    _fFired++;
+                    return;
+                }
+            }
+
+            // opener: one clip of it at every new human target (strip the shield), then the normal guns
+            if (xm.Opener != null && target is Player)
+            {
+                if (!ReferenceEquals(xm.OpenerTarget, target))
+                {
+                    xm.OpenerTarget = target;
+                    xm.OpenerShotsLeft = ClipOf(xm.Opener);
+                }
+                if (xm.OpenerShotsLeft > 0)
+                {
+                    int oReach = BotWeaponUtil.GetCombatRangeRaw(xm.Opener.ItemID != 0 ? AssetManager.Manager?.getItemByID(xm.Opener.ItemID) : null);
+                    if (oReach <= 0 || dist <= Math.Max(oReach * 1.5, 320))
+                    {
+                        if (xm.Opener.ableToFire()
+                            && BotCombat.TryAimAndFire(self, xm.Opener, dest, requireLineOfSight: true, freezeMs: 0))
+                        {
+                            xm.OpenerShotsLeft--;
+                            _fFired++;
+                        }
+                        return;   // keep the opener on until its clip is spent
+                    }
+                }
+            }
 
             if (gun == null)
             {

@@ -155,7 +155,7 @@ namespace InfServer.Script.GameType_Eol
             }
 
             // Elite roaming squads run their own squad logic (no raid / bounty campaign ties).
-            if (_baseScript != null && (_baseScript.IsEliteSquadTeam(_team) || _baseScript.IsReleasedAssassinTeam(_team)))
+            if (_baseScript != null && (_baseScript.IsRoamingSquadTeam(_team) || _baseScript.IsReleasedAssassinTeam(_team)))
                 return EliteSquadPoll();
 
             Vehicle capV = _baseScript._pollCacheRoamCaptainVehicle;

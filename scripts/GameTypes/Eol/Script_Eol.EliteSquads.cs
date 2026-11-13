@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 using InfServer.Bots;
@@ -58,8 +58,8 @@ namespace InfServer.Script.GameType_Eol
             RoamingAttacker best = null;
             foreach (RoamingAttacker ra in EliteSquadMembers(team))
             {
-                bool cmd = ra._type != null && ra._type.Id == EliteCommanderVehId;
-                bool bestCmd = best != null && best._type != null && best._type.Id == EliteCommanderVehId;
+                bool cmd = ra._type != null && IsSquadLeaderVehicle(ra._type.Id);
+                bool bestCmd = best != null && best._type != null && IsSquadLeaderVehicle(best._type.Id);
                 if (best == null || (cmd && !bestCmd) || (cmd == bestCmd && ra._id < best._id))
                     best = ra;
             }

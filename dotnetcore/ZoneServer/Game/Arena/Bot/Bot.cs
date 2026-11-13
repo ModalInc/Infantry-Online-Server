@@ -676,7 +676,36 @@ namespace InfServer.Bots
 
         public void HoldPosition()
         {
+            // Natural idle (local 2026-11-14): a live bot never just stands there turning - it shuffles side to
+            // side like a player waiting. Dead / condemned / frozen bots really stop.
+            if (NaturalIdle && !IsDead && !bCondemned && MovementMode == BotMovementMode.Api
+                && _movement != null && !_movement.IsMovementFrozen)
+            {
+                SetDrive(0f, 0f, 0f);
+                return;
+            }
             _motionRequest = BotMotionRequest.HoldPosition;
+        }
+
+        /// <summary>Live bots strafe instead of standing still (only weapon freezes really stop them).</summary>
+        public static bool NaturalIdle = true;
+        float _idleStrafeSign = 1f;
+        int _idleFlipTick;
+        float _idleForward;
+
+        /// <summary>A small side-to-side shuffle with a hint of forward/back, re-rolled every 0.5-1.4 s.</summary>
+        void ApplyIdleShuffle(ref float forward, ref float strafe)
+        {
+            int now = Environment.TickCount;
+            if (_idleFlipTick == 0 || now - _idleFlipTick >= 0)
+            {
+                _humanRng ??= new Random(unchecked(_id * 31337 + now));
+                _idleStrafeSign = -_idleStrafeSign;
+                _idleForward = (float)(_humanRng.NextDouble() * 0.4 - 0.2);
+                _idleFlipTick = now + 500 + _humanRng.Next(900);
+            }
+            strafe = 0.5f * _idleStrafeSign;
+            forward = _idleForward;
         }
 
         public void SetSteer(Func<InfantryVehicle, Vector3> steer, bool skipBodyRotate = false)
@@ -706,6 +735,10 @@ namespace InfServer.Bots
 
         public void SetDrive(float forward, float strafe, float rotate)
         {
+            // never "stand still and only move the mouse": an idle or aim-only drive becomes a strafe shuffle
+            if (NaturalIdle && !IsDead && !bCondemned && Math.Abs(forward) < 0.08f && Math.Abs(strafe) < 0.08f
+                && _movement != null && !_movement.IsMovementFrozen)
+                ApplyIdleShuffle(ref forward, ref strafe);
             BotWallAvoidance.AdjustDrive(this, ref forward, ref strafe, ref rotate);
             _motionRequest = BotMotionRequest.Drive(forward, strafe, rotate);
         }

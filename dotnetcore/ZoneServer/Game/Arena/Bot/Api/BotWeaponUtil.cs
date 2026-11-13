@@ -145,7 +145,12 @@ namespace InfServer.Bots
             int blast = Math.Max(proj.explosiveDamageRadius, Math.Max(proj.kineticDamageRadius, proj.proximityRadius));
             if (blast < 30)
                 return 0;
-            return Math.Max(120, Math.Min(320, blast * 2));
+            int min = Math.Max(120, Math.Min(320, blast * 2));
+            // never more than 60 % of the weapon's own reach (hand grenades: 128 blast but only ~250 throw)
+            int reach = GetCombatRangeRaw(item);
+            if (reach > 0)
+                min = Math.Min(min, (int)(reach * 0.6));
+            return min;
         }
 
         public static int GetMinFireRangeRaw(WeaponController weapon)

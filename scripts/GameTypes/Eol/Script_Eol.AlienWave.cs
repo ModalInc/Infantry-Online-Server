@@ -104,7 +104,7 @@ namespace InfServer.Script.GameType_Eol
 
         bool IsManagedEolBotFactionTeam(Team t)
         {
-            return IsDefenseBotTeam(t) || IsRoamBotTeam(t) || IsAlienBotTeam(t) || IsAssassinTeam(t) || IsEliteSquadTeam(t);
+            return IsDefenseBotTeam(t) || IsRoamBotTeam(t) || IsAlienBotTeam(t) || IsAssassinTeam(t) || IsEliteSquadTeam(t) || IsStrikeTeam(t);
         }
 
         /// <summary>The two always-on elite roaming squads (local 2026-11-13).</summary>

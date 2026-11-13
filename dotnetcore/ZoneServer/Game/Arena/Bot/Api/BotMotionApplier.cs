@@ -120,10 +120,13 @@ namespace InfServer.Bots
         public static int DefaultFireHeight;
 
         /// <summary>Shots clear a tile when it isn't blocked, or its physics top is below the fire height.</summary>
-        /// <summary>Shots always clear low physics up to this height (green 16 / yellow 32 on Pioneer Station).</summary>
+        /// <summary>Shots clear low physics up to this height (green 16 / yellow 32 on Pioneer Station) - nothing taller.</summary>
         public static int ShotOverPhysicsHeight = 32;
-        /// <summary>Sight is blocked only by physics at least this tall (full walls, 496); everything lower is see-through.</summary>
-        public static int SightBlockPhysicsHeight = 400;
+        /// <summary>
+        /// Sight is blocked by physics at least this tall: orange (64), purple (124) and red (496) are WALLS;
+        /// green / yellow below it are see-through (local 2026-11-14). Maser carriers see through everything.
+        /// </summary>
+        public static int SightBlockPhysicsHeight = 64;
 
         static bool ShotPasses(Arena arena, LvlInfo.Tile t, int fireHeight)
         {
@@ -132,7 +135,8 @@ namespace InfServer.Bots
             short[] high = arena._server._assets.Level.PhysicsHigh;
             if (high == null || t.Physics >= high.Length)
                 return false;
-            return high[t.Physics] <= ShotOverPhysicsHeight || (fireHeight > 0 && high[t.Physics] < fireHeight);
+            // only the low physics; orange / purple / red stop shots like they stop sight
+            return high[t.Physics] <= ShotOverPhysicsHeight;
         }
 
         /// <summary>Can a bot SEE along this line? Only full-height walls block sight (local 2026-11-13).</summary>

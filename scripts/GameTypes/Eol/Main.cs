@@ -778,6 +778,7 @@ namespace InfServer.Script.GameType_Eol
             botTeam9 = CreateAndRegisterBotTeam(botTeamName9);
             botTeamAlienElite1 = CreateAndRegisterBotTeam("Bot - Alien Elite");
             botTeamAlienElite2 = CreateAndRegisterBotTeam("Bot - Alien Elite 2");
+            CreateStrikeTeams();   // local 2026-11-14: three human-class strike teams
 
             _eolBorderWallTeam = new Team(_arena, _arena._server);
             _eolBorderWallTeam._name = "Eol Radiation Border";
@@ -1873,6 +1874,7 @@ namespace InfServer.Script.GameType_Eol
             PruneExpiredCombatCalls(now);
             if (now - _tickBotBrainPoll >= 250) { _tickBotBrainPoll = now; EolBotBrain.PollAll(now, _arena); }  // local: retreat/heal
             PollEliteSquads(now);   // local: two elite roaming squads
+            PollStrikeTeams(now);   // local: three human-class strike teams
             PollBotDropshipRespawns(now);
             SyncIngameBountyStats();
             PollBountyHunt(now);
@@ -7455,6 +7457,14 @@ namespace InfServer.Script.GameType_Eol
         [Scripts.Event("Shop.SkillRequest")]
         public bool shopSkillRequest(InfServer.Game.Player player, SkillInfo skill)
         {
+            // Local fix 2026-11-14: no class switching while riding a vehicle (jetpack, board, ...) - it let you
+            // change class and then use that class's weapons from the vehicle.
+            if (player != null && skill != null && skill.DefaultVehicleId > 0
+                && player._occupiedVehicle != null && player._occupiedVehicle != player._baseVehicle)
+            {
+                player.sendMessage(0, "You can't change class while in a vehicle - get out first.");
+                return false;
+            }
             return true;
         }
 
