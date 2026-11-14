@@ -845,6 +845,10 @@ namespace InfServer.Bots
         /// <summary>Tick of this bot's last shot (0 = never) - scripts use it to spot bots doing nothing.</summary>
         public int LastShotTick { get; private set; }
 
+        bool _killedByPlayer;
+        /// <summary>Death drops (helmets) only when a player made the kill.</summary>
+        public static bool DropOnlyForPlayerKills = true;
+
         /// <summary>Script hook: item id this bot drops on death (0 = the vehicle's own DropItemId).</summary>
         public static Func<Bot, int> DeathDropResolver;
 
@@ -1110,6 +1114,7 @@ namespace InfServer.Bots
         {   //Die, and then cease movement
             _state.health = 0;
             _tickDead = Environment.TickCount;
+            _killedByPlayer = killer != null;
 
             _movement.stop();
             _movement.bEnabled = false;
@@ -1211,7 +1216,9 @@ namespace InfServer.Bots
                 // spawns to every client until the corpse was removed - with many kills it flooded and DC'd players).
                 // (local 2026-11-14) also for bots that will respawn - every death drops its helmet, like a
                 // player; a script can pick the item (DeathDropResolver: e.g. pirate helmets per class)
-                if (_droppedForDeathTick != _tickDead)
+                // (local 2026-11-14) only a PLAYER's kill drops the helmet - bots killing bots all day littered
+                // the map with helmets nobody had earned
+                if (_droppedForDeathTick != _tickDead && (_killedByPlayer || !DropOnlyForPlayerKills))
                 {
                     _droppedForDeathTick = _tickDead;
                     VehInfo vehicle = _arena._server._assets.getVehicleByID(_type.Id);

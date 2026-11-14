@@ -311,6 +311,8 @@ namespace InfServer.Script.GameType_Eol
                 steering.steerDelegate = null;
                 if (bDropshipRespawnPending)
                     return base.poll();
+                if (bCondemned)
+                    return base.poll();   // (local 2026-11-14) body held for the death animation - count once
                 if (_baseScript.botCount != null && _baseScript.botCount.ContainsKey(_team))
                 {
                     _baseScript.botCount[_team]--;

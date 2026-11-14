@@ -19,6 +19,15 @@ namespace InfServer.Bots
         private const float RepulsionScale = 0.01f;
         private const float MaxRepulsion = 0.7f;
 
+        /// <summary>A ground-level wall at this raw point (overhead / light-blue physics is not a wall). Off-map = wall.</summary>
+        static bool WallAt(LvlInfo level, int rawX, int rawY)
+        {
+            int tx = rawX / 16, ty = rawY / 16;
+            if (rawX < 0 || rawY < 0 || tx >= level.Width || ty >= level.Height)
+                return true;
+            return BotCombat.IsGroundWall(level, level.Tiles[ty * level.Width + tx]);
+        }
+
         public static bool IsImpassable(Bot bot, short rawX, short rawY)
         {
             if (bot?._arena == null || bot._type == null)
@@ -32,7 +41,7 @@ namespace InfServer.Bots
             {
                 // any physics is a wall for a bot, whatever it rides (local 2026-11-14 - boards glided through red);
                 // built walls / turrets near the bot count too, so the escape scan sees them
-                return level.isTileBlocked(rawX, rawY) || (bot._movement != null && bot._movement.IsSolidObjectAt(rawX, rawY));
+                return WallAt(level, rawX, rawY) || (bot._movement != null && bot._movement.IsSolidObjectAt(rawX, rawY));
             }
             catch (ArgumentOutOfRangeException)
             {
@@ -87,7 +96,7 @@ namespace InfServer.Bots
             for (int s = TileSizeRaw; s <= dist; s += TileSizeRaw)
             {
                 bool blocked;
-                try { blocked = level.isTileBlocked((short)(x + (int)Math.Round(ux * s)), (short)(y + (int)Math.Round(uy * s))); }
+                try { blocked = WallAt(level, x + (int)Math.Round(ux * s), y + (int)Math.Round(uy * s)); }
                 catch (ArgumentOutOfRangeException) { blocked = true; }
                 if (blocked)
                     return s - TileSizeRaw;
@@ -288,7 +297,7 @@ namespace InfServer.Bots
                     bool blocked;
                     try
                     {
-                        blocked = level.isTileBlocked(sampleX, sampleY);
+                        blocked = WallAt(level, sampleX, sampleY);
                     }
                     catch (ArgumentOutOfRangeException)
                     {
@@ -334,7 +343,7 @@ namespace InfServer.Bots
 
                 try
                 {
-                    if (level.isTileBlocked(px, py))
+                    if (WallAt(level, px, py))
                         blockedAhead++;
                 }
                 catch (ArgumentOutOfRangeException)

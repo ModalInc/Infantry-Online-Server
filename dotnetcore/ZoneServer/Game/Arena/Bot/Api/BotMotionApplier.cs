@@ -128,10 +128,30 @@ namespace InfServer.Bots
         /// </summary>
         public static int SightBlockPhysicsHeight = 64;
 
+        /// <summary>
+        /// Overhead physics (local 2026-11-14): physics that doesn't start at ground level - the light-blue roofs /
+        /// bridges on Pioneer Station (low 68 and low 124) - is above everyone's head. Bots see, shoot and walk
+        /// under it like players do; it was treated as a wall, so a player under it was invisible to bots.
+        /// </summary>
+        public static bool IsOverheadPhysics(LvlInfo level, LvlInfo.Tile t)
+        {
+            if (level?.PhysicsLow == null || t.Physics >= level.PhysicsLow.Length)
+                return false;
+            return level.PhysicsLow[t.Physics] > 0;
+        }
+
+        /// <summary>Is this tile a wall a bot can't walk / see / shoot through? (Blocked and starting at the ground.)</summary>
+        public static bool IsGroundWall(LvlInfo level, LvlInfo.Tile t)
+        {
+            return t.Blocked && !IsOverheadPhysics(level, t);
+        }
+
         static bool ShotPasses(Arena arena, LvlInfo.Tile t, int fireHeight)
         {
             if (!t.Blocked)
                 return true;
+            if (IsOverheadPhysics(arena._server._assets.Level, t))
+                return true;   // overhead (light blue): shots go under it
             short[] high = arena._server._assets.Level.PhysicsHigh;
             if (high == null || t.Physics >= high.Length)
                 return false;
@@ -144,12 +164,15 @@ namespace InfServer.Bots
         {
             if (arena == null)
                 return false;
-            short[] high = arena._server._assets.Level.PhysicsHigh;
+            LvlInfo level = arena._server._assets.Level;
+            short[] high = level.PhysicsHigh;
             return Helpers.calcBresenhemsPredicate(arena, fromX, fromY, toX, toY,
                 delegate (LvlInfo.Tile t)
                 {
                     if (!t.Blocked)
                         return true;
+                    if (IsOverheadPhysics(level, t))
+                        return true;   // overhead (light blue): they see under it
                     return high != null && t.Physics < high.Length && high[t.Physics] < SightBlockPhysicsHeight;
                 });
         }

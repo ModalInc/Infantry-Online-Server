@@ -152,6 +152,10 @@ namespace InfServer.Script.GameType_Eol
             public object Turret;
             public int TurretPickTick;
             public int SearchArrivedTick;
+            /// <summary>When this bot started trading shots across a wall it can't walk through (0 = not).</summary>
+            public int WallStandoffTick;
+            /// <summary>Pushing round the wall (through the opening) until this tick.</summary>
+            public int FlankUntil;
             public int IdleStareTick;
             public short IdleStareX, IdleStareY;
             public readonly Dictionary<object, int> IgnoreUntil = new Dictionary<object, int>();
@@ -616,7 +620,33 @@ namespace InfServer.Script.GameType_Eol
                     AimFire(self, dest, target, dist, Helpers.computeLeadFireAngle(self._state, dest, 10));
                     return chasing;
                 }
-                if (!walkClear && dist > pref * 1.15)
+                // (local 2026-11-14) a standoff across a low wall (aliens outside a base vs bots inside, both
+                // strafing up and down in one spot): after a few seconds, push round through the opening like a
+                // player would - still shooting on the way - instead of trading shots there forever
+                if (walkClear)
+                {
+                    m.WallStandoffTick = 0;
+                    m.FlankUntil = 0;
+                }
+                else if (m.FlankUntil == 0 || now - m.FlankUntil >= 0)
+                {
+                    if (m.FlankUntil != 0)
+                    {   // a push just ended: start counting again
+                        m.FlankUntil = 0;
+                        m.WallStandoffTick = now;
+                    }
+                    else if (m.WallStandoffTick == 0)
+                        m.WallStandoffTick = now;
+                    else if (now - m.WallStandoffTick > 3000 + m.R.Next(3000))
+                    {
+                        m.FlankUntil = now + 7000;
+                        m.WallStandoffTick = 0;
+                        ResetProgress(m);
+                    }
+                }
+                bool flanking = !walkClear && m.FlankUntil != 0 && now - m.FlankUntil < 0;
+
+                if (!walkClear && (dist > pref * 1.15 || flanking))
                 {
                     if (!MakingProgress(self, m, dest, now, P.PatienceMs + 1500))
                     {

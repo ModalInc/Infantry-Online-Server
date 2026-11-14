@@ -291,12 +291,12 @@ namespace InfServer.Script.GameType_Eol
                         short high = arena._server._assets.Level.PhysicsHigh[t.Physics];
                         if (fireHeightType.FireHeight > high)
                             return true;
-                        return !t.Blocked;
+                        return !BotCombat.IsGroundWall(arena._server._assets.Level, t);   // overhead (light blue) is see-through
                     });
             }
             return Helpers.calcBresenhemsPredicate(arena,
                 from.positionX, from.positionY, to.positionX, to.positionY,
-                delegate (LvlInfo.Tile t) { return !t.Blocked; });
+                delegate (LvlInfo.Tile t) { return !BotCombat.IsGroundWall(arena._server._assets.Level, t); });
         }
     }
 }

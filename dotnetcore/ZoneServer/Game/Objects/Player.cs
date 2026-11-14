@@ -649,9 +649,17 @@ namespace InfServer.Game
 
                 //Do we have enough experience for this skill?
                 if (cost > Experience)
+                {   // (local 2026-11-14) say why instead of silently doing nothing
+                    if (adjust > 0)
+                        sendMessage(-1, string.Format("You need {0} experience to buy {1} (you have {2}).", cost, skill.Name, Experience));
                     return false;
+                }
 
                 Experience -= cost;
+                // Attributes can carry a cash adjustment too (Commerce: +100,000 credits) - it was only ever
+                // applied for classes (local fix 2026-11-14)
+                if (adjust > 0 && skill.CashAdjustment != 0)
+                    Cash = Math.Max(Cash + skill.CashAdjustment, 0);
             }
             //Add the skill to our skill list
             if (sk != null)

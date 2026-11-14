@@ -32,10 +32,11 @@ namespace InfServer.Script.GameType_Eol
                   ClsChiefEngineer = 135, ClsMarine = 136, ClsFieldSurgeon = 137, ClsLieutenant = 138, ClsBlackOps = 150, ClsColonel = 151;
         static readonly int[] StrikeMemberClasses =
         {
-            ClsInfantry, ClsHeavy, ClsJumpTrooper, ClsInfiltrator, ClsMedic, ClsEngineer, ClsBioChem, ClsPartisan, ClsMPAC,
-            ClsConscript, ClsNeuroTAC, ClsCombatTech, ClsSciOps, ClsDropTrooper, ClsMarine, ClsFieldSurgeon, ClsChiefEngineer, ClsBlackOps,
+            ClsInfantry, ClsHeavy, ClsJumpTrooper, ClsInfiltrator, ClsMedic, ClsEngineer, ClsBioChem, ClsMPAC,   // Partisan / Paramedic (Paramilitary) removed 2026-11-14
+            ClsConscript, ClsNeuroTAC, ClsSciOps,   // Combat Tech removed (local 2026-11-14) ClsDropTrooper, ClsMarine, ClsFieldSurgeon, ClsChiefEngineer, ClsBlackOps,
         };
-        static readonly int[] StrikeOfficerClasses = { ClsSquadLeader, ClsSergeant, ClsLieutenant, ClsCaptain, ClsColonel };
+        // Colonel (151) and Grand Marshal aren't ready yet (local 2026-11-14) - not fielded
+        static readonly int[] StrikeOfficerClasses = { ClsSquadLeader, ClsSergeant, ClsLieutenant, ClsCaptain };
         /// <summary>Leader chassis for any roaming squad (pirate commander + human officers).</summary>
         static readonly HashSet<int> SquadLeaderVehIds = new HashSet<int> { EliteCommanderVehId, ClsSquadLeader, ClsSergeant, ClsCaptain, ClsLieutenant, ClsColonel };
 

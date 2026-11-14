@@ -187,8 +187,8 @@ namespace InfServer.Script.GameType_Eol
                     int n = ny * w + nx;
                     if (seen.Contains(n))
                         continue;
-                    if (_arena.getTile((short)(nx * 16 + 8), (short)(ny * 16 + 8)).Blocked)
-                        continue;
+                    if (BotCombat.IsGroundWall(lvl, _arena.getTile((short)(nx * 16 + 8), (short)(ny * 16 + 8))))
+                        continue;   // (walk under overhead / light-blue physics)
                     if (_eol != null && !_eol.IsInAnyActiveSector((short)(nx * 16 + 8), (short)(ny * 16 + 8)))
                         continue;   // the toxic zone isn't "open ground" to escape into
                     seen.Add(n);
