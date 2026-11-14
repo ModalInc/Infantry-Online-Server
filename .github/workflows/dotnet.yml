@@ -5,9 +5,9 @@ name: .NET
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "Mode" ]
   pull_request:
-    branches: [ "master" ]
+    branches: [ "Mode" ]
 
 jobs:
   build-windows-infrastructure:
