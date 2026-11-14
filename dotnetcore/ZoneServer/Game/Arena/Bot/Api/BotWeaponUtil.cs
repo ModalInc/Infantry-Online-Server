@@ -32,9 +32,32 @@ namespace InfServer.Bots
 
             if (includeFarSlot && type.InventoryItems.Length > 1 && type.InventoryItems[1] != 0)
                 itemFar = AssetManager.Manager?.getItemByID(type.InventoryItems[1]);
+
+            itemClose = Substitute(itemClose);
+            itemFar = Substitute(itemFar);
         }
 
         /// <summary>Equip close (slot 0) and optionally far (slot 1) from the vehicle inventory.</summary>
+        /// <summary>
+        /// Bot-only weapon swaps (item id -> replacement id), set by the game script (local 2026-11-14: e.g. the
+        /// Pirate PA, useless at the close range bots fight at, becomes a Pirate AC). Players are unaffected.
+        /// </summary>
+        public static readonly System.Collections.Generic.Dictionary<int, int> BotWeaponSubstitutes = new System.Collections.Generic.Dictionary<int, int>();
+
+        static ItemInfo Substitute(ItemInfo item)
+        {
+            if (item == null || BotWeaponSubstitutes.Count == 0)
+                return item;
+            int rep;
+            if (BotWeaponSubstitutes.TryGetValue(item.id, out rep))
+            {
+                ItemInfo r = AssetManager.Manager?.getItemByID(rep);
+                if (r != null)
+                    return r;
+            }
+            return item;
+        }
+
         public static void EquipFromVehicleInventory(
             VehInfo.Car type,
             WeaponController weaponClose,

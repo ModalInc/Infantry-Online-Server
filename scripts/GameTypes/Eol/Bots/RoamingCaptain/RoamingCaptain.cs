@@ -148,6 +148,8 @@ namespace InfServer.Script.GameType_Eol
                 steering.steerDelegate = null; //Stop movements
                 if (bDropshipRespawnPending)
                     return base.poll();
+                if (bCondemned)
+                    return base.poll();   // (local 2026-11-14) body held for the death animation - count once
                 bCondemned = true; //Make sure the bot gets removed in polling
                 _baseScript.roamingCaptianBots.Remove(_team);
                 _baseScript.capRoamBots.Remove(_team);

@@ -768,6 +768,10 @@ namespace InfServer.Script.GameType_Eol
 
             // Assign a unique frequency id then register immediately — batching all _id =
             // Teams.Count() before createTeam gave every bot faction the same client freq.
+            // Bot-only weapon swaps (local 2026-11-14): the Pirate PA (a particle accelerator - does nothing at the
+            // close range bots fight at) -> Pirate AC, like the other Defenders carry
+            InfServer.Bots.BotWeaponUtil.BotWeaponSubstitutes[1162] = 3057;
+
             botTeam1 = CreateAndRegisterBotTeam(botTeamName1);
             botTeam2 = CreateAndRegisterBotTeam(botTeamName2);
             botTeam3 = CreateAndRegisterBotTeam(botTeamName3);
@@ -6604,6 +6608,12 @@ namespace InfServer.Script.GameType_Eol
             }
             int start = BountyStartValue();
             int live = player.Bounty;
+            if (DiedRecently(player) && live <= start)
+            {   // died a moment ago: there is no bounty to keep
+                if (player.ZoneStat7 != 0)
+                    player.ZoneStat7 = 0;
+                return;
+            }
             if (live < 0)
                 live = 0;
             // Keep the higher of live bounty and already-stored so spec/leave 0 cannot wipe it.
@@ -6631,11 +6641,48 @@ namespace InfServer.Script.GameType_Eol
                 player.Bounty = 0;
         }
 
+        /// <summary>
+        /// Local fix 2026-11-14: bounty came back after death - it went to 0, then in the dropship the old bounty
+        /// was restored from the saved copy. Every death (any killer, any path) is stamped here; for a minute after
+        /// a death the saved copy is wiped and NEVER restored.
+        /// </summary>
+        readonly Dictionary<InfServer.Game.Player, int> _bountyDiedTick = new Dictionary<InfServer.Game.Player, int>();
+        const int BountyNoRestoreAfterDeathMs = 60000;
+
+        void MarkBountyDeath(InfServer.Game.Player p)
+        {
+            if (p == null)
+                return;
+            if (p.ZoneStat7 != 0)
+                p.ZoneStat7 = 0;
+            _pendingBountyReset.Add(p);
+            _bountyDiedTick[p] = Environment.TickCount;
+        }
+
+        bool DiedRecently(InfServer.Game.Player p)
+        {
+            int t;
+            if (p == null || !_bountyDiedTick.TryGetValue(p, out t))
+                return false;
+            if (Environment.TickCount - t > BountyNoRestoreAfterDeathMs)
+            {
+                _bountyDiedTick.Remove(p);
+                return false;
+            }
+            return true;
+        }
+
         /// <summary>Reload persisted bounty onto the player after unspec (engine sets Bounty = start).</summary>
         void RestoreBountyFromStat(InfServer.Game.Player player)
         {
             if (player == null || player._deathTime != 0)
                 return;
+            if (DiedRecently(player))
+            {   // just died: the saved bounty is gone, never put it back
+                if (player.ZoneStat7 != 0)
+                    player.ZoneStat7 = 0;
+                return;
+            }
             ClampBountyToZero(player);
             int start = BountyStartValue();
             if (player.ZoneStat7 > start && player.Bounty <= start)
@@ -6669,7 +6716,8 @@ namespace InfServer.Script.GameType_Eol
                 if (p.IsSpectator || p._deathTime != 0)
                     continue;
                 RestoreBountyFromStat(p);
-                if (p.Bounty > start && p.ZoneStat7 != p.Bounty)
+                // only bounty earned since the death is saved (not a stale pre-death value)
+                if (p.Bounty > start && p.ZoneStat7 != p.Bounty && (!DiedRecently(p) || p.Bounty > p.ZoneStat7))
                     p.ZoneStat7 = p.Bounty;
             }
         }
@@ -6932,13 +6980,9 @@ namespace InfServer.Script.GameType_Eol
                     if (_recentAlienGore[k] - cutoff < 0) _recentAlienGore.Remove(k);
             }
 
-            if (victim != null && victim.ZoneStat7 != 0)
-                victim.ZoneStat7 = 0;
-            // Death resets the live bounty too (local fix 2026-11-14: only the saved copy was cleared, so after
-            // respawn the old bounty - even 30k - was written straight back). Done on the next poll, after the
-            // engine has paid the killer's kill rewards (which read the victim's bounty).
-            if (victim != null)
-                _pendingBountyReset.Add(victim);
+            // Death resets the bounty: saved copy wiped now, live bounty on the next poll (after the engine has paid
+            // the killer's kill rewards, which read the victim's bounty), and no restore for a minute.
+            MarkBountyDeath(victim);
             ClearCombatCallsForPlayer(victim);
             _pendingBotDeathUpdate = update;
 
@@ -7231,8 +7275,7 @@ namespace InfServer.Script.GameType_Eol
             if (bDeath && player != null)
             {
                 // Engine then sets Bounty = start (0). Clear the persisted column so they cannot reclaim it.
-                if (player.ZoneStat7 != 0)
-                    player.ZoneStat7 = 0;
+                MarkBountyDeath(player);
             }
             return true;
         }
@@ -7530,6 +7573,7 @@ namespace InfServer.Script.GameType_Eol
                 botName = BotNameModule.GetKillfeedName(bot);
 
             UpdateDeath(victim, null, botName);
+            MarkBountyDeath(victim);   // killed by a bot: bounty resets too
 
             victim.ZoneStat12++;
             if (bot != null)

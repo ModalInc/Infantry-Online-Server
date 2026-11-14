@@ -247,8 +247,15 @@ namespace InfServer.Script.GameType_Eol
         {
             if (arena == null)
                 return false;
+            LvlInfo level = arena._server._assets.Level;
+            // overhead (light-blue) physics is walked under, not a wall (local 2026-11-14)
             return Helpers.calcBresenhemsPredicate(arena, x0, y0, x1, y1,
-                delegate (LvlInfo.Tile t) { return !t.Blocked; });
+                delegate (LvlInfo.Tile t) { return !BotCombat.IsGroundWall(level, t); });
+        }
+
+        static bool GroundWallAt(Arena arena, short rawX, short rawY)
+        {
+            return BotCombat.IsGroundWall(arena._server._assets.Level, arena.getTile(rawX, rawY));
         }
 
         public static bool IsOpenForBot(Bot bot, short rawX, short rawY)
@@ -257,7 +264,7 @@ namespace InfServer.Script.GameType_Eol
                 return false;
             if (BotWallAvoidance.IsImpassable(bot, rawX, rawY))
                 return false;
-            if (bot._arena.getTile(rawX, rawY).Blocked)
+            if (GroundWallAt(bot._arena, rawX, rawY))
                 return false;
 
             for (int dy = -1; dy <= 1; dy++)
@@ -270,7 +277,7 @@ namespace InfServer.Script.GameType_Eol
                     short sy = (short)(rawY + dy * 16);
                     if (BotWallAvoidance.IsImpassable(bot, sx, sy))
                         return false;
-                    if (bot._arena.getTile(sx, sy).Blocked)
+                    if (GroundWallAt(bot._arena, sx, sy))
                         return false;
                 }
             }
@@ -284,7 +291,7 @@ namespace InfServer.Script.GameType_Eol
                 return false;
             if (BotWallAvoidance.IsImpassable(bot, rawX, rawY))
                 return false;
-            return !bot._arena.getTile(rawX, rawY).Blocked;
+            return !GroundWallAt(bot._arena, rawX, rawY);
         }
 
         public static Helpers.ObjectState AbsoluteFallback(Bot bot, Vehicle hq)

@@ -749,8 +749,8 @@ namespace InfServer.Bots
             if (tx < 0 || ty < 0 || tx >= _arena._levelWidth || ty >= _arena._server._assets.Level.Height)
                 return true;
             LvlInfo.Tile t = _arena._tiles[ty * _arena._levelWidth + tx];
-            if (t.Blocked)
-                return true;
+            if (BotCombat.IsGroundWall(_arena._server._assets.Level, t))
+                return true;   // (overhead / light-blue physics: walk under it)
             return IsSolidObjectAt(x, y);
         }
 

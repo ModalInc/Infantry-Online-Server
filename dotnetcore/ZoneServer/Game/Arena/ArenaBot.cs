@@ -180,7 +180,11 @@ namespace InfServer.Game
                     bot._itemUseID = 0;
                 }
 
-                if (bot.bCondemned)
+                // (local 2026-11-14) scripts condemn a bot on its first poll after death - removing it then
+                // deleted the body before any client played the death animation (human squads, roamers). A
+                // dead bot's body is kept BotCorpseHoldMs first; live condemned bots still go at once.
+                if (bot.bCondemned && !(bot.IsDead && bot._tickDead != 0
+                        && Environment.TickCount - bot._tickDead < BotCorpseHoldMs))
                     _condemnedBots.Add(bot);
             }
 
@@ -430,7 +434,14 @@ namespace InfServer.Game
         /// </summary>
         public static bool ShouldBotAppearOnNamelist(Bot bot)
         {
-            if (bot == null || bot.bCondemned)
+            if (bot == null)
+                return false;
+            // (local 2026-11-14) a bot that just died stays listed until its death animation has played (even
+            // once its script condemned it). Bots are drawn as players: dropping the namelist row deletes the
+            // body, so bots that die for good (human squads, roamers) vanished with no death animation.
+            if (bot.IsDead && bot._tickDead != 0 && Environment.TickCount - bot._tickDead < BotNamelistLeaveDelayMs)
+                return true;
+            if (bot.bCondemned)
                 return false;
             // Final life spent — name must leave even if a corpse still routes briefly.
             if (bot.HasExhaustedDeaths)
@@ -1052,6 +1063,8 @@ namespace InfServer.Game
         /// leave waits until the death animation has played.
         /// </summary>
         public const int BotNamelistLeaveDelayMs = 4000;
+        /// <summary>How long a dead, condemned bot's body stays in the world before removal (death animation).</summary>
+        public const int BotCorpseHoldMs = 4500;
         readonly List<KeyValuePair<Bot, int>> _pendingNamelistLeaves = new List<KeyValuePair<Bot, int>>();
 
         public void RemoveBotFromNamelistAfterDeath(Bot bot)

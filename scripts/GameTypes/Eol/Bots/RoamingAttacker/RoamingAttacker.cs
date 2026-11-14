@@ -147,6 +147,10 @@ namespace InfServer.Script.GameType_Eol
                 steering.steerDelegate = null; //Stop movements
                 if (bDropshipRespawnPending)
                     return base.poll();
+                // (local 2026-11-14) the body now stays a few seconds after death (death animation) and keeps
+                // polling - count the death once
+                if (bCondemned)
+                    return base.poll();
                 _baseScript.roamBots[_team]--; //Signal to our captain we died
                 if (_baseScript.roamBots[_team] < 0)
                     _baseScript.roamBots[_team] = 0;

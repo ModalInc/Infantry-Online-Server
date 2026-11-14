@@ -62,7 +62,7 @@ namespace InfServer.Script.GameType_Eol
                     short high = self._arena._server._assets.Level.PhysicsHigh[t.Physics];
                     if (self._type.FireHeight > high)
                         return true;
-                    return !t.Blocked;
+                    return !BotCombat.IsGroundWall(self._arena._server._assets.Level, t);   // overhead (light blue) is see-through
                 });
         }
 

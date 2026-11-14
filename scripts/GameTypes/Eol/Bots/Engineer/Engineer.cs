@@ -87,6 +87,8 @@ namespace InfServer.Script.GameType_Eol
                 HoldPosition();
                 if (bDropshipRespawnPending)
                     return base.poll();
+                if (bCondemned)
+                    return base.poll();   // (local 2026-11-14) body held for the death animation - count once
 
                 if (_baseScript != null)
                     _baseScript.OnDefenseEngineerLost(this);

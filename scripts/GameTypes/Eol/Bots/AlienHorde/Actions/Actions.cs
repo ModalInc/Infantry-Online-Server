@@ -80,6 +80,15 @@ namespace InfServer.Script.GameType_Eol
             if (!EolHqPatrol.IsGuard(this) && EolBotBrain.TryInvestigate(this, _baseScript, now))
                 return;
             // Bloodthirsty bugs (all of them once the ship is gone) hunt for people instead of patrolling.
+            // (local 2026-11-14) every alien except the ship's guards roams like the human roamers: bases, flags,
+            // turrets, crash ships and the ground between them, anywhere in the open sectors - instead of
+            // circling its own crash ship
+            if (EolBotBrain.Enabled && (vHq == null || EolHqPatrol.RoleOf(this, _arena, vHq) != EolHqPatrol.PatrolRole.Guard))
+            {
+                EolBotBrain.Hunt(this, _baseScript, now, null);
+                _targetPoint = null;
+                return;
+            }
             if (EolBotBrain.IsHunter(this, vHq != null))
             {
                 EolBotBrain.Hunt(this, _baseScript, now, vHq?._state);
