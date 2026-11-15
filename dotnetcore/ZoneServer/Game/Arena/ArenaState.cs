@@ -274,7 +274,11 @@ namespace InfServer.Game
                 }
             }
 
-            //Load the arena's item state  
+            // The bots join the player list here too, like the humans above - before the client is in game, so it
+            // prints no "<bot> entered" line for each of them (hulls follow after EnterArena)
+            SendBotRosterBeforeIngame(player);
+
+            //Load the arena's item state
             Helpers.Object_Items(player, _items.Values);
 
             //Load the arena's various lio objects
@@ -476,7 +480,7 @@ namespace InfServer.Game
             // persistentArena (server.xml): keep the arena alive so bots / match state continue.
             if (TotalPlayerCount == 0)
             {
-                if (Arena.persistentArena)
+                if (Arena.persistentArena || _bPersistent)
                 {
                     if (!_bActive)
                         _bActive = true;

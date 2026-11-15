@@ -40,6 +40,7 @@ namespace InfServer.Protocol
         public StreamState[] _streams;			//The states for each data stream
 
         public Queue<PacketBase> _packetQueue;	//The list of packets waiting to be sent
+        public Queue<PacketBase> _priorityQueue;	//Reliable acks / out-of-sync notices: sent first, outside the bandwidth budget (2026-11-15)
         #endregion
 
         #region Statistics
@@ -308,9 +309,12 @@ namespace InfServer.Protocol
                 _streams[i] = new StreamState(i);
 
             _packetQueue = new Queue<PacketBase>();
+            _priorityQueue = new Queue<PacketBase>();
 
-            _rateThreshold = RATETHRESHOLD_BASE / 250;
-            _decayRate = DECAYRATE_BASE / 250;
+            // (2026-11-15: start at the 100 ms rate - the slowest adjustRates allows - not 250 ms: the join burst
+            //  of bots + map state came before the first ping and queued up)
+            _rateThreshold = RATETHRESHOLD_BASE / 100;
+            _decayRate = DECAYRATE_BASE / 100;
         }
 
         #region State
@@ -338,9 +342,13 @@ namespace InfServer.Protocol
                 }
 
                 //Should we decay the bytes written?
+                // (2026-11-15: by the time that really passed - _decayRate is per 20 ms. A fixed amount per poll
+                //  gave ~1/3 less than intended, as Windows' poll sleep lands every ~31 ms: bot-heavy arenas went
+                //  over budget, the send queue backed up, players lagged out and dropped)
                 if (now - _tickLastDecay > 20)
                 {
-                    _bytesWritten -= _decayRate;
+                    long elapsed = Math.Min(now - _tickLastDecay, 200);
+                    _bytesWritten -= (int)(_decayRate * elapsed / 20);
                     if (_bytesWritten < 0)
                         _bytesWritten = 0;
                     _tickLastDecay = now;
@@ -409,6 +417,11 @@ namespace InfServer.Protocol
             {	//Enforce a highest speed
                 if (averageDelta < 20)
                     averageDelta = 20;
+                // (2026-11-15) and a lowest one: the budget is divided by the ping, so a lag spike shrank it,
+                // which backed the queue up, which raised the ping - a spiral that ended in a disconnect.
+                // Never below the 100 ms rate (~10 KB burst, ~78 KB/s) - a bot-heavy fight needs ~40 KB/s
+                if (averageDelta > 100)
+                    averageDelta = 100;
 
                 _rateThreshold = RATETHRESHOLD_BASE / averageDelta;
                 _decayRate = DECAYRATE_BASE / averageDelta;
@@ -505,25 +518,6 @@ namespace InfServer.Protocol
         }
 
         /// <summary>
-        /// When all reliables are acked and the sequence nears ushort wrap, reset
-        /// counters so long sessions can continue without freezing reliable traffic.
-        /// </summary>
-        void compactReliableStream(StreamState stream)
-        {
-            if (SequenceNumberLessThan(stream.S2C_ReliableConfirmed, stream.S2C_Reliable))
-                return;
-
-            const ushort wrapThreshold = (ushort)(ushort.MaxValue - 64);
-            if (stream.S2C_Reliable < wrapThreshold)
-                return;
-
-            stream.S2C_Reliable = 0;
-            stream.S2C_ReliableConfirmed = 0;
-            stream.reliablePackets.Clear();
-            stream.lastOOSPacket = 0;
-        }
-
-        /// <summary>
         /// Resends a reliable packet the client reported missing via OutOfSync.
         /// </summary>
         /// <summary>
@@ -541,12 +535,17 @@ namespace InfServer.Protocol
                 ushort current = stream.S2C_ReliableConfirmed;
                 ushort end = (ushort)(rNumber + 1);
                 int guard = 0;
+                long now = Environment.TickCount64;
                 while (SequenceNumberLessThan(current, end) && guard++ < 1024)
                 {
                     ReliableInfo ri;
-                    if (stream.reliablePackets.TryGetValue(current, out ri) && ri.packet != null)
+                    // (2026-11-15) only what really went out a while ago: one still in the send queue, or sent in
+                    // the last 300 ms, would just be a duplicate - the client repeats this report every ~300 ms,
+                    // and re-queueing everything each time snowballed into the lag-out
+                    if (stream.reliablePackets.TryGetValue(current, out ri) && ri.packet != null
+                        && ri.packet._tickOut >= ri.timeSent && now - ri.packet._tickOut >= 300)
                     {
-                        ri.timeSent = Environment.TickCount64;
+                        ri.timeSent = now;
                         _packetQueue.Enqueue(ri.packet);
                         any = true;
                     }
@@ -565,7 +564,10 @@ namespace InfServer.Protocol
                 if (!stream.reliablePackets.TryGetValue(rNumber, out ri))
                     return false;
 
-                ri.timeSent = 0;
+                // (queued now: ensureReliable waits for it to go out before timing it - timeSent 0 queued it twice)
+                if (ri.timeSent != 0 && ri.packet._tickOut < ri.timeSent)
+                    return true;
+                ri.timeSent = Environment.TickCount64;
                 ri.attempts = 0;
                 _packetQueue.Enqueue(ri.packet);
                 return true;
@@ -581,8 +583,8 @@ namespace InfServer.Protocol
         {
             long currentTick = Environment.TickCount64;
 
-            //Do we need to send an out of sync notification?
-            if (stream.lastOOSPacket > stream.C2S_Reliable &&
+            //Do we need to send an out of sync notification? (wrap-aware - 2026-11-15)
+            if (SequenceNumberLessThan(stream.C2S_Reliable, stream.lastOOSPacket) &&
                 currentTick - stream.tickOOSPacket > 100)
             {
                 OutOfSync oos = new OutOfSync(stream.streamID);
@@ -606,21 +608,18 @@ namespace InfServer.Protocol
                 ReliableInfo ri;
                 if (stream.reliablePackets.TryGetValue(current, out ri))
                 {
-                    // Give up on packets that have been resent too many times — prevents
-                    // unbounded reliablePackets growth when a client stalls. Do not disconnect;
-                    // later OutOfSync requests for this rid will simply be ignored.
-                    if (ri.attempts >= 12)
+                    // (2026-11-15) Never give up on a reliable: the client takes them strictly in order, so a dropped
+                    // one left a hole it waited on forever - its stream froze and it disconnected. A client that is
+                    // really gone is dropped by the connection timeout instead.
+                    // Still in the send queue (queued, not yet out): not lost, just waiting - don't queue it again.
+                    if (ri.timeSent != 0 && ri.packet._tickOut < ri.timeSent)
                     {
-                        Log.write(TLog.Warning,
-                            "Reliable packet #{0} on stream {1} failed after 12 attempts — abandoning packet for {2}.",
-                            current, stream.streamID, this);
-                        stream.reliablePackets.Remove(current);
                         current = (ushort)(current + 1);
                         continue;
                     }
 
-                    //Has it been delayed too long?
-                    if (currentTick - ri.timeSent >= 1000)
+                    //Has it been delayed too long? (since it really went out)
+                    if (ri.timeSent == 0 || currentTick - ri.packet._tickOut >= 1000)
                     {
                         //Resend it
                         _packetQueue.Enqueue(ri.packet);
@@ -676,7 +675,9 @@ namespace InfServer.Protocol
                 }
 
                 stream.S2C_ReliableConfirmed = end;
-                compactReliableStream(stream);
+                // (2026-11-15: no more compactReliableStream - resetting the counter to 0 near 65,536 desynced the
+                //  client, which still expected 65,472+: frozen stream then a disconnect after a long session.
+                //  The 16-bit number simply wraps, as in the original server; every compare is wrap-aware)
             }
         }
 
@@ -690,8 +691,8 @@ namespace InfServer.Protocol
             //Keep the packet around for later
             stream.oosReliable[rID] = packet;
 
-            //Is the last OOS packet still valid?
-            if (stream.lastOOSPacket > stream.C2S_Reliable)
+            //Is the last OOS packet still valid? (wrap-aware - 2026-11-15)
+            if (SequenceNumberLessThan(stream.C2S_Reliable, stream.lastOOSPacket))
                 //Ignore the request until this OOS is honored
                 return;
 
@@ -882,9 +883,14 @@ namespace InfServer.Protocol
         /// Sends a given packet to the client
         /// </summary>
         public override void send(PacketBase packet)
-        {	//Queue the packet up
+        {	//Queue the packet up (acks / out-of-sync notices: the priority queue, sent first - 2026-11-15)
             using (DdMonitor.Lock(_sync))
-                _packetQueue.Enqueue(packet);
+            {
+                if (packet is ReliableEcho || packet is OutOfSync)
+                    _priorityQueue.Enqueue(packet);
+                else
+                    _packetQueue.Enqueue(packet);
+            }
         }
 
         /// <summary>
@@ -1086,7 +1092,18 @@ namespace InfServer.Protocol
         /// Sends queued packets, grouping them where necessary
         /// </summary>
         public void sendQueuedPackets()
-        {	//Are we over threshold?
+        {	// (2026-11-15) Acks and out-of-sync notices first, whatever the budget: they're tiny, and stuck behind
+            // bot traffic they made the client resend everything and see a lag spike
+            long tickOut = Environment.TickCount64;
+            while (_priorityQueue.Count > 0)
+            {
+                PacketBase p = _priorityQueue.Dequeue();
+                p._tickOut = tickOut;
+                internalSend(p);
+                _bytesWritten += p._size;
+            }
+
+            //Are we over threshold?
             if (_bytesWritten > _rateThreshold)
                 return;
 
@@ -1097,6 +1114,7 @@ namespace InfServer.Protocol
             else if (queueCount == 1)
             {
                 PacketBase packet = _packetQueue.Dequeue();
+                packet._tickOut = tickOut;
 
                 internalSend(packet);
                 _bytesWritten += packet._size;
@@ -1112,6 +1130,7 @@ namespace InfServer.Protocol
             while (queueCount > 0 && _bytesWritten < _rateThreshold)
             {	//Get our next packet
                 PacketBase packet = _packetQueue.Dequeue();
+                packet._tickOut = tickOut;
 
                 _bytesWritten += packet._size;
                 queueCount--;

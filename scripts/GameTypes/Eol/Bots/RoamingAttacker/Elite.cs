@@ -148,7 +148,7 @@ namespace InfServer.Script.GameType_Eol
                         short px = (short)Math.Max(16, Math.Min(short.MaxValue - 16, sx + Math.Cos(a) * r));
                         short py = (short)Math.Max(16, Math.Min(short.MaxValue - 16, sy + Math.Sin(a) * r));
                         if (EolHqPatrol.IsOpenForBot(this, px, py)
-                            && EolHqPatrol.TileLineClear(_arena, _state.positionX, _state.positionY, px, py))
+                            && EolHqPatrol.TileLineClear(_arena, _state.positionX, _state.positionY, px, py, _type))
                             _drift = new Helpers.ObjectState { positionX = px, positionY = py };
                     }
                 }

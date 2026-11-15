@@ -28,7 +28,7 @@ namespace InfServer.Script.GameType_Eol
         public const int AlienWaveMaxConcurrentAlive = 18;   // local 2026-11-14 roster: Skrall Swarm 10 + an elite pack of 5-8
         /// <summary>
         /// Local 2026-11-14: the invasion never runs out - dead aliens are replaced (after a short delay) so the
-        /// alien packs are always in the field, part of the fixed 80-bot roster.
+        /// alien packs are always in the field, part of the fixed 60-bot roster.
         /// </summary>
         public const bool AlienWaveEndless = true;
         const int AlienEndlessRefillMinMs = 3000, AlienEndlessRefillMaxMs = 6000;
@@ -289,6 +289,13 @@ namespace InfServer.Script.GameType_Eol
                     continue;
                 if (!IsOpenConnectedGround(open.positionX, open.positionY))
                     continue;   // not inside a sealed building (local 2026-11-14)
+                // (2026-11-15, the zone owner's map) never at the new player buffer; in NW only in the shaded
+                // ALIEN ROAM areas (Script_Eol.Territories.cs) - sectors without territories yet: anywhere open
+                if (NearNewPlayerBuffer(open.positionX, open.positionY))
+                    continue;
+                BotTerritory crashZone = TerritoryAt(open.positionX, open.positionY);
+                if (crashZone != BotTerritory.None && crashZone != BotTerritory.Alien)
+                    continue;
                 return open;
             }
             return null;

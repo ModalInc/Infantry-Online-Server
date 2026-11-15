@@ -63,6 +63,60 @@ namespace InfServer.Bots.NavMesh
             _pathingThread.Start();
         }
 
+        // ---- hover routes (2026-11-15): boards / drop packs fly over physics no taller than their LowZ (green), so
+        // their routes come from a mesh where that physics is open. One mesh pair per LowZ, built on first use (on the
+        // pathing thread) and dropped when tiles change. Bots tell us their LowZ as they ask for a route.
+        static readonly ConcurrentDictionary<int, short> _botLowZ = new ConcurrentDictionary<int, short>();
+
+        /// <summary>Called before a bot's path request: its vehicle's LowZ (0 = walks - the normal mesh).</summary>
+        public static void NoteBotLowZ(int botId, short lowZ)
+        {
+            if (lowZ > 0)
+                _botLowZ[botId] = lowZ;
+            else
+                _botLowZ.TryRemove(botId, out _);
+        }
+
+        sealed class HoverMeshes
+        {
+            public bool[] RawMask, ClearanceMask;
+            public NavMeshData RawMesh, ClearanceMesh;
+        }
+        readonly Dictionary<short, HoverMeshes> _hover = new Dictionary<short, HoverMeshes>();   // (pathing thread only)
+
+        HoverMeshes GetHoverMeshes(short lowZ)
+        {
+            HoverMeshes hm;
+            if (_hover.TryGetValue(lowZ, out hm))
+                return hm;
+            short[] high = _lvlInfo.PhysicsHigh, low = _lvlInfo.PhysicsLow;
+            bool[] raw;
+            lock (_meshLock)
+                raw = (bool[])_rawMask.Clone();
+            bool any = false;
+            for (int i = 0; i < raw.Length; i++)
+            {
+                if (raw[i])
+                    continue;
+                Tile t = _lvlInfo.Tiles[i];
+                if (t.Blocked && t.Physics < high.Length && low[t.Physics] == 0 && high[t.Physics] <= lowZ)
+                {
+                    raw[i] = true;
+                    any = true;
+                }
+            }
+            if (!any)
+            {
+                _hover[lowZ] = null;   // nothing this vehicle can fly over: the normal meshes
+                return null;
+            }
+            bool[] clear = NavMeshBuilder.BuildWalkableMask(_lvlInfo, DefaultClearance, raw);
+            hm = new HoverMeshes { RawMask = raw, ClearanceMask = clear, RawMesh = NavMeshBuilder.Build(_lvlInfo, raw), ClearanceMesh = NavMeshBuilder.Build(_lvlInfo, clear) };
+            _hover[lowZ] = hm;
+            Log.write(TLog.Normal, "NavMesh (hover, LowZ {0}) built: raw={1} tris, clearance={2} tris", lowZ, hm.RawMesh.Triangles.Count, hm.ClearanceMesh.Triangles.Count);
+            return hm;
+        }
+
         private void pathfinder(object obj)
         {
             _workQueue.RunWorker(
@@ -72,7 +126,12 @@ namespace InfServer.Bots.NavMesh
                     List<Vector3>? path = null;
                     int pathLength = 0;
 
-                    if (calculatePath(req.startX, req.startY, req.endX, req.endY, out path, out pathLength))
+                    if (_needsRebuild)
+                        RebuildMeshes();   // (tiles changed: normal meshes now, hover ones on next use)
+                    short lowZ;
+                    HoverMeshes hover = _botLowZ.TryGetValue(req.botId, out lowZ) ? GetHoverMeshes(lowZ) : null;
+                    if (hover != null ? calculateHoverPath(hover, req.startX, req.startY, req.endX, req.endY, out path, out pathLength)
+                        : calculatePath(req.startX, req.startY, req.endX, req.endY, out path, out pathLength))
                         req.callback?.Invoke(path, pathLength);
                     else
                         req.callback?.Invoke(null, 0);
@@ -145,6 +204,28 @@ namespace InfServer.Bots.NavMesh
             }
         }
 
+        /// <summary>A route for a hover vehicle (its own meshes; tiles changed since: rebuilt first).</summary>
+        private bool calculateHoverPath(HoverMeshes hover, short startX, short startY, short endX, short endY, out List<Vector3>? path, out int pathLength)
+        {
+            path = null;
+            pathLength = 0;
+            try
+            {
+                path = FindPathOnMesh(hover.ClearanceMesh, hover.ClearanceMask, startX, startY, endX, endY);
+                if (path == null)
+                    path = FindPathOnMesh(hover.RawMesh, hover.RawMask, startX, startY, endX, endY);
+                if (path == null || path.Count == 0)
+                    return false;
+                pathLength = path.Count;
+                return true;
+            }
+            catch (Exception e)
+            {
+                Log.write(TLog.Exception, "Error while navmesh (hover) pathfinding: " + e);
+                return false;
+            }
+        }
+
         private List<Vector3>? FindPathOnMesh(
             NavMeshData mesh,
             bool[] walkableMask,
@@ -206,6 +287,7 @@ namespace InfServer.Bots.NavMesh
                 _clearanceMesh = NavMeshBuilder.Build(_lvlInfo, _clearanceMask);
                 _needsRebuild = false;
             }
+            _hover.Clear();   // (hover meshes come from the raw mask - rebuilt on next use)
         }
     }
 }

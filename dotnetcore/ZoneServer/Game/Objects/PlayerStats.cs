@@ -607,7 +607,10 @@ namespace InfServer.Game
 
             set
             {
-                int diff = SetStat(ref _stats.zonestat7, value, false);
+                // (2026-11-15) may go DOWN: Eol keeps the player's live bounty here (kept over spec / leaving the
+                // zone, 0 on death). With decreases refused, the death's reset to 0 was silently ignored, so the
+                // highest bounty ever came back on re-entry. Zones that only add to it are unaffected.
+                int diff = SetStat(ref _stats.zonestat7, value, true);
 
                 if (_statsSession != null)
                     AddStat(ref _statsSession.zonestat7, diff);

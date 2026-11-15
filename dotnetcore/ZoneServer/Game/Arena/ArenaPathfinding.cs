@@ -91,6 +91,8 @@ namespace InfServer.Game
 
             int botId = bot._id;
             Func<bool> stillNeeded = () => bot != null && !bot.IsDead && !bot.bCondemned;
+            // boards / packs get routes over the physics they fly over (2026-11-15)
+            InfServer.Bots.NavMesh.NavMeshPathfinder.NoteBotLowZ(botId, bot._type != null ? bot._type.LowZ : (short)0);
 
             _pathfinder.queueRequest(startX, startY, endX, endY, (path, pathLength) =>
             {

@@ -757,6 +757,11 @@ namespace InfServer.Game
                 if (p?._client != null)
                     p._client.sendReliable(leavePacket);
             }
+
+            // (2026-11-15) Nobody knows this id any more: a reused vehicle id must be Entered again before its hull
+            // is sent (the join stream skips an Enter for ids a client "knows")
+            foreach (HashSet<ushort> known in _botNamelistKnownByPlayerId.Values)
+                known?.Remove(wireId);
         }
 
         /// <summary>
@@ -803,6 +808,27 @@ namespace InfServer.Game
             };
         }
 
+        /// <summary>
+        /// (2026-11-15, "bots entering message spam") The bots' PlayerEnter rows for a joining client, sent with the
+        /// human player list BEFORE the client is in game - the client prints "X entered" only for players that
+        /// arrive once it's in game, so the joiner no longer sees a line for every bot. Enter rows only (small);
+        /// the hulls (SC_Vehicles) still stream after EnterArena in small batches (QueueBotNamelistJoinStream).
+        /// </summary>
+        public void SendBotRosterBeforeIngame(Player player)
+        {
+            if (player?._client == null || BotNames == null)
+                return;
+            List<Bot> named = BuildUniqueNamelistBots();
+            if (named == null)
+                return;
+            foreach (Bot bot in named)
+            {
+                if (bot == null || !ShouldBotAppearOnNamelist(bot))
+                    continue;
+                SendBotNamelistEntryTo(player, bot, leaveFirst: false);
+            }
+        }
+
         void PollBotNamelistJoinStreams()
         {
             if (_botNamelistJoinStreams.Count == 0)
@@ -830,7 +856,10 @@ namespace InfServer.Game
                     if (bot == null || !ShouldBotAppearOnNamelist(bot))
                         continue;
 
-                    SendBotNamelistEntryTo(player, bot, leaveFirst: false);
+                    // (already entered before the client went in game - SendBotRosterBeforeIngame: no second
+                    //  Enter, which would print "<bot> entered" again)
+                    if (!IsBotNamelistKnownBy(player, bot._id))
+                        SendBotNamelistEntryTo(player, bot, leaveFirst: false);
                     SC_Vehicles vehicles = new SC_Vehicles();
                     vehicles.singleUpdate = bot;
                     if (player._client.sendReliable(vehicles))
@@ -985,6 +1014,9 @@ namespace InfServer.Game
             SC_PlayerLeave leavePacket = new SC_PlayerLeave();
             leavePacket.playerID = bot._id;
             player._client.sendReliable(leavePacket);
+            HashSet<ushort> known;
+            if (_botNamelistKnownByPlayerId.TryGetValue(player._id, out known) && known != null)
+                known.Remove(bot._id);
         }
 
         /// <summary>Single-bot PlayerEnter to one client.</summary>

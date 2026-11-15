@@ -159,6 +159,8 @@ namespace InfServer.Script.GameType_Eol
             public int IdleStareTick;
             public short IdleStareX, IdleStareY;
             public readonly Dictionary<object, int> IgnoreUntil = new Dictionary<object, int>();
+            // new player buffer turn-backs (BufferGuard)
+            public int BufferPulls, LastBufferPull, BufferRetreatUntil;
             // progress tracking (MakingProgress)
             public int ProgTick;
             public double ProgBest;
@@ -201,8 +203,22 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>Engine hook: skip a target this bot recently gave up on, unless it has come close.</summary>
         static bool IsTargetIgnored(Bot self, object target, double dist)
         {
+            if (self == null || target == null)
+                return false;
+            // never a target in (or at the edge of) the new player buffer
+            if (BufferEdge != null)
+            {
+                Helpers.ObjectState ts = StateOf(target);
+                if (ts != null && BufferEdge(ts.positionX, ts.positionY) < BufferTargetMarginRaw)
+                    return true;
+            }
             Mind m;
-            if (self == null || target == null || !Minds.TryGetValue(self, out m) || m.IgnoreUntil.Count == 0)
+            if (!Minds.TryGetValue(self, out m))
+                return false;
+            // turning back from the buffer: nothing but point-blank threats until it is clear
+            if (m.BufferRetreatUntil != 0 && Environment.TickCount - m.BufferRetreatUntil < 0 && dist > 250)
+                return true;
+            if (m.IgnoreUntil.Count == 0)
                 return false;
             int until;
             if (!m.IgnoreUntil.TryGetValue(target, out until))
@@ -309,6 +325,14 @@ namespace InfServer.Script.GameType_Eol
             {
                 Mind m = Get(self);
                 EolBotPersona P = m.P;
+
+                // new player buffer: at its edge (or with a target in it) - let go and roam away (BufferGuard)
+                if (BufferGuard(self, m, now)
+                    || (playerTarget != null && BufferEdge != null && BufferEdge(playerTarget._state.positionX, playerTarget._state.positionY) < BufferTargetMarginRaw))
+                {
+                    playerTarget = null;
+                    return;
+                }
 
                 // team player: scan nearby teammates for one taking damage
                 if (P.TeamPlayer && now >= m.NextAllyScan)
@@ -600,7 +624,7 @@ namespace InfServer.Script.GameType_Eol
 
                 // can shoot over it (low physics) but can't walk through it?
                 bool walkClear = EolHqPatrol.TileLineClear(self._arena, self._state.positionX, self._state.positionY,
-                    dest.positionX, dest.positionY);
+                    dest.positionX, dest.positionY, self._type);
 
                 // EVERY approach (far chase, straight chase, route round) must actually be closing the gap; a bot
                 // that isn't getting closer / travelling a route within its patience drops the target and goes
@@ -966,8 +990,8 @@ namespace InfServer.Script.GameType_Eol
                 {
                     if (now - n.Tick > NoiseLifeMs)
                         continue;
-                    if (!InArea(n.X, n.Y))
-                        continue;
+                    if (!InArea(n.X, n.Y) || !InTerritory(self, n.X, n.Y))
+                        continue;   // (not outside its territory, never into the new player buffer)
                     double d = Helpers.distanceTo(self._state.positionX, self._state.positionY, n.X, n.Y);
                     if (d < 200 || d > earshot)
                         continue;
@@ -1204,6 +1228,24 @@ namespace InfServer.Script.GameType_Eol
                 Mind m = Get(self);
                 Arena arena = self._arena;
 
+                // new player buffer: turning back - just head for the spot away from it (BufferGuard)
+                if (BufferGuard(self, m, now))
+                {
+                    if (m.RoamDest == null)
+                        m.RoamDest = PickAwayFromBuffer(self, m, BufferAwayBaseRaw);
+                    if (m.RoamDest != null)
+                    {
+                        Helpers.ObjectState away = m.RoamDest;
+                        self.ApplyNavigationApproach(away, EolHqPatrol.MakeLineClearPendingSeek(self, () => away), new BotNavigateOptions
+                        {
+                            RequeueMinMs = 2000,
+                            PathStartIndex = 0,
+                            Priority = PathPriority.Idle,
+                        });
+                    }
+                    return;
+                }
+
                 // backed out of a corner: whatever it was walking to walled it in - pick a new destination
                 if (self.LastWallEscapeTick != 0 && self.LastWallEscapeTick != m.SeenEscapeTick)
                 {
@@ -1230,6 +1272,8 @@ namespace InfServer.Script.GameType_Eol
                             continue;
                         if (!InArea(p._state.positionX, p._state.positionY))
                             continue;   // don't chase people into the toxic zone
+                        if (NearBuffer(p._state.positionX, p._state.positionY, BufferTargetMarginRaw))
+                            continue;   // ...or into the new player buffer
                         // no radar: only someone it has actually seen / been shot by (local 2026-11-14)
                         if (!EolBotPerception.Knows(self._state, p))
                             continue;
@@ -1267,6 +1311,16 @@ namespace InfServer.Script.GameType_Eol
                         : null;
                     if (goal == null)
                         m.HuntTarget = null;
+                }
+                // Territory leash: never chase into the new player buffer; a quarry well outside the bot's own
+                // territory (NW) is let go - the bot keeps to its patch (it still fights whatever comes to it)
+                if (goal != null && m.HuntTarget != null
+                    && (IsNoGo(goal.positionX, goal.positionY)
+                        || (!InTerritory(self, goal.positionX, goal.positionY) && Helpers.distanceTo(self._state, goal) > 900)))
+                {
+                    m.IgnoreUntil[m.HuntTarget] = now + 8000;
+                    m.HuntTarget = null;
+                    goal = null;
                 }
                 bool hunting = goal != null;
                 if (!hunting && TryInvestigate(self, script, now))
@@ -1343,13 +1397,94 @@ namespace InfServer.Script.GameType_Eol
 
         static bool InArea(short x, short y) { return PlayArea == null || PlayArea(x, y); }
 
+        /// <summary>
+        /// Territories (2026-11-15, Script_Eol.Territories.cs): may this bot go to (x,y)? (its own zone in NW, never the
+        /// new player buffer). TerritoryPoint: a random spot in its zone when nothing nearby qualifies. NoGo: the buffer
+        /// (no bot chases or investigates in there). All null = no limits.
+        /// </summary>
+        public static Func<Bot, short, short, bool> Territory;
+        public static Func<Bot, Random, Helpers.ObjectState> TerritoryPoint;
+        /// <summary>Distance (px) from a point to the new player buffer's edge - negative inside; null = no buffer.</summary>
+        public static Func<short, short, double> BufferEdge;
+
+        static bool InTerritory(Bot b, short x, short y) { return Territory == null || Territory(b, x, y); }
+        static bool IsNoGo(short x, short y) { return BufferEdge != null && BufferEdge(x, y) < 0; }
+        static bool NearBuffer(short x, short y, int margin) { return BufferEdge != null && BufferEdge(x, y) < margin; }
+
+        // ---- the new player buffer (2026-11-15): a bot that comes within BufferTurnBackRaw of it drops its target and
+        // roams away; pulled back again and again (players luring it), it goes further out each time and stays away
+        // longer, so it never ends up circling the edge. Players inside the buffer are never targeted.
+        const int BufferTurnBackRaw = 450;        // this close to the edge -> turn back
+        const int BufferAwayBaseRaw = 900;        // first turn-back: roam at least this far beyond the edge
+        const int BufferAwayStepRaw = 800;        // ...this much further for every recent pull (up to 4)
+        const int BufferPullMemoryMs = 90000;     // pulls this recent count
+        const int BufferTargetMarginRaw = 150;    // a target this close to (or inside) the buffer is never engaged
+
+        /// <summary>Turn the bot away if it's at the buffer. True while it is heading away (no hunting / engaging).</summary>
+        static bool BufferGuard(Bot self, Mind m, int now)
+        {
+            if (BufferEdge == null || self?._state == null)
+                return false;
+            if (NearBuffer(self._state.positionX, self._state.positionY, BufferTurnBackRaw)
+                && (m.BufferRetreatUntil == 0 || now - m.BufferRetreatUntil >= 0 || now - m.LastBufferPull > 4000))
+            {
+                // one more pull (a fresh streak after BufferPullMemoryMs quiet)
+                m.BufferPulls = (m.LastBufferPull != 0 && now - m.LastBufferPull < BufferPullMemoryMs) ? Math.Min(4, m.BufferPulls + 1) : 1;
+                m.LastBufferPull = now == 0 ? 1 : now;
+                if (m.HuntTarget != null)
+                    m.IgnoreUntil[m.HuntTarget] = now + 8000 + 4000 * m.BufferPulls;
+                m.HuntTarget = null;
+                m.InvestUntil = 0;
+                int away = BufferAwayBaseRaw + BufferAwayStepRaw * (m.BufferPulls - 1);
+                m.RoamDest = PickAwayFromBuffer(self, m, away);
+                m.RoamPickTick = now;
+                m.BufferRetreatUntil = now + 6000 + 4000 * m.BufferPulls;
+                if (m.BufferRetreatUntil == 0) m.BufferRetreatUntil = 1;
+                ResetProgress(m);
+                self.Navigation?.Clear();
+            }
+            return m.BufferRetreatUntil != 0 && now - m.BufferRetreatUntil < 0;
+        }
+
+        /// <summary>An open spot in the bot's territory at least awayRaw beyond the buffer's edge.</summary>
+        static Helpers.ObjectState PickAwayFromBuffer(Bot self, Mind m, int awayRaw)
+        {
+            Helpers.ObjectState best = null;
+            double bestEdge = -1;
+            for (int i = 0; i < 80; i++)
+            {
+                double a = m.R.NextDouble() * Math.PI * 2;
+                int rad = awayRaw + m.R.Next(1400);
+                int x = self._state.positionX + (int)(Math.Cos(a) * rad), y = self._state.positionY + (int)(Math.Sin(a) * rad);
+                if (x < 64 || y < 64 || x > short.MaxValue - 64 || y > short.MaxValue - 64)
+                    continue;
+                short sx = (short)x, sy = (short)y;
+                double edge = BufferEdge(sx, sy);
+                if (edge < awayRaw || !InArea(sx, sy) || !InTerritory(self, sx, sy) || !EolHqPatrol.IsOpenForBot(self, sx, sy))
+                    continue;
+                if (edge > bestEdge) { bestEdge = edge; best = new Helpers.ObjectState { positionX = sx, positionY = sy }; }
+                if (bestEdge >= awayRaw + 600)
+                    break;
+            }
+            if (best == null && TerritoryPoint != null)
+            {   // nothing that far nearby: anywhere in its territory well clear of the buffer
+                for (int i = 0; i < 6 && best == null; i++)
+                {
+                    Helpers.ObjectState p = TerritoryPoint(self, m.R);
+                    if (p != null && BufferEdge(p.positionX, p.positionY) >= BufferAwayBaseRaw)
+                        best = p;
+                }
+            }
+            return best;
+        }
+
         /// <summary>Engine hook: where a bot that has idled 4 s should go (inside the open sectors). Engineers stay.</summary>
         static Helpers.ObjectState IdleRoamFor(Bot b)
         {
             if (b == null || b is Engineer || b._state == null)
                 return null;
             Helpers.ObjectState p = PickRoamPoint(b, Get(b), null);
-            return p != null && InArea(p.positionX, p.positionY) ? p : null;
+            return p != null && InArea(p.positionX, p.positionY) && InTerritory(b, p.positionX, p.positionY) ? p : null;
         }
 
         static Func<InfantryVehicle, Vector3> IdleRoamSteerFor(Bot b, Helpers.ObjectState d)
@@ -1417,7 +1552,7 @@ namespace InfServer.Script.GameType_Eol
                 int off = 120 + m.R.Next(260);
                 short sx = (short)Math.Max(64, Math.Min(short.MaxValue - 64, x + Math.Cos(ang) * off));
                 short sy = (short)Math.Max(64, Math.Min(short.MaxValue - 64, y + Math.Sin(ang) * off));
-                if (!EolHqPatrol.IsOpenForBot(self, sx, sy) || !InArea(sx, sy))
+                if (!EolHqPatrol.IsOpenForBot(self, sx, sy) || !InArea(sx, sy) || !InTerritory(self, sx, sy))
                     continue;
                 if (Helpers.distanceTo(self._state.positionX, self._state.positionY, sx, sy) < 500)
                     continue;
@@ -1465,6 +1600,8 @@ namespace InfServer.Script.GameType_Eol
                     continue;
                 if (!InArea(sx, sy))
                     continue;   // never roam into the toxic zone
+                if (!InTerritory(self, sx, sy))
+                    continue;   // its own territory (NW) and never the new player buffer
                 if (Helpers.distanceTo(self._state.positionX, self._state.positionY, sx, sy) < 600)
                     continue;
                 found++;
@@ -1485,6 +1622,8 @@ namespace InfServer.Script.GameType_Eol
             }
             if (best == null)
                 best = PickPointOfInterest(self, m);   // never left with nowhere to go
+            if (best == null && TerritoryPoint != null)
+                best = TerritoryPoint(self, m.R);      // out of its territory with none nearby: head into it
             return best;
         }
 
