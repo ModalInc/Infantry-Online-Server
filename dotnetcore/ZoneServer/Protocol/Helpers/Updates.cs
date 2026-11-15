@@ -121,6 +121,26 @@ namespace InfServer.Protocol
 		}
 
 		/// <summary>
+		/// (2026-11-15) Health stream for a computer (turret, HQ, vendor...): its state - no shot - to everyone within
+		/// far radar range. The normal route only went to players close by at that moment, so anyone further away (or
+		/// arriving later) kept a stale health bar until the turret happened to send again.
+		/// </summary>
+		static public void Update_RouteComputerHealth(Computer update)
+		{
+			if (update?._arena == null || update._state == null)
+				return;
+			SC_PlayerTeamUpdate tu = new SC_PlayerTeamUpdate();
+			tu.tickUpdate = Environment.TickCount;
+			tu.player = null;
+			tu.vehicle = update;
+			tu.itemID = -1;
+			if (update._state.health > update._type.HitpointsRequiredToOperate)
+				tu.activeUtilities = SnapshotActiveUtilities(update._activeEquip);
+			foreach (Player player in update._arena.getPlayersAndSpecInRange(update._state.positionX, update._state.positionY, Arena.routeRadarRangeFar))
+				player._client?.send(tu);
+		}
+
+		/// <summary>
 		/// Provides an easy means of routing movement update messages between players
 		/// </summary>
 		static public void Update_RoutePlayer(Player update, CS_PlayerUpdate pkt, int updateTick, int oldPosX, int oldPosY)

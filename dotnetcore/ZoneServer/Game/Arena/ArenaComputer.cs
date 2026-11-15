@@ -104,11 +104,27 @@ namespace InfServer.Game
 
                 //Does it need to send an update?
                 if (computer.poll() || computer._sendUpdate)
-                {	//Prepare and send an update packet for the vehicle                      
+                {	//Prepare and send an update packet for the vehicle
                     computer._state.updateNumber++;
 
                     Helpers.Update_RouteComputer(computer);
 
+                }
+
+                // (2026-11-15) Health stream: a health change goes out at once (max 4 a second) to everyone in far
+                // radar range, and a damaged computer repeats its health every 1.5 s so players who arrive later (or
+                // lost a packet) see the right bar - "I have to be there to receive the update".
+                if (computer.IsDead || computer._state == null)
+                    continue;
+                short hp = computer._state.health;
+                bool changed = hp != computer._hpLastStreamed;
+                bool damaged = computer._type != null && hp < computer._type.Hitpoints;
+                int since = now - computer._tickHpStreamed;
+                if ((changed && (computer._tickHpStreamed == 0 || since >= 250)) || (damaged && since >= 1500))
+                {
+                    computer._hpLastStreamed = hp;
+                    computer._tickHpStreamed = now == 0 ? 1 : now;
+                    Helpers.Update_RouteComputerHealth(computer);
                 }
             }
         }

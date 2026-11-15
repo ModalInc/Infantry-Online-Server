@@ -57,7 +57,7 @@ namespace InfServer.Script.GameType_Eol
                     { maxPlayers = 5; }
                     if (playing >= 30 && playing < 60) //30
                     { maxPlayers = 6; }
-                    if (playing > 60)
+                    if (playing >= 60)   // (2026-11-15: was > 60 - at exactly 60 the cfg cap applied)
                     { maxPlayers = 8; }
 
                     if ((pick == null && maxPlayers != -1) ||
@@ -86,7 +86,7 @@ namespace InfServer.Script.GameType_Eol
                     { maxPlayers = 5; }
                     if (playing >= 30 && playing < 60) //30
                     { maxPlayers = 6; }
-                    if (playing > 60)
+                    if (playing >= 60)
                     { maxPlayers = 8; }
 
                     if (maxPlayers == -1)
@@ -120,10 +120,10 @@ namespace InfServer.Script.GameType_Eol
                         Team team = publicTeams[idx++];
                         int maxPlayers = team._info.maxPlayers;
                         if (playing < 30) //30
-                        { maxPlayers = 1; }
+                        { maxPlayers = 5; }   // (2026-11-15, owner: teams hold at least 5 - was 1)
                         if (playing >= 30 && playing < 60) //30
                         { maxPlayers = 8; }
-                        if (playing > 60)
+                        if (playing >= 60)
                         { maxPlayers = 10; }
 
                         if (maxPlayers == -1)

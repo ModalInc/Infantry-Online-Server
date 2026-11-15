@@ -61,6 +61,23 @@ namespace InfServer.Script.GameType_Eol
             { 1342, HelmetSpecialistPrice }, { 188, HelmetSpecialistPrice },
         };
 
+        /// <summary>
+        /// (2026-11-15, owner: spiders drop a reward the trader buys) "Spider Parts" (item 2060, an inventory item like
+        /// the helmet tokens): one in each Spider Hive Drop (148) and Spider Adult Drop (147) - the hives and the
+        /// web-shooting adults. (Their gems / husk are instant cash pickups, never in the inventory.) Min $500.
+        /// </summary>
+        public const int SpiderPartsItemId = 2060;
+        static readonly Dictionary<int, int> SpiderPrices = new Dictionary<int, int>
+        {
+            { SpiderPartsItemId, 500 },
+        };
+
+        /// <summary>Anything the trader buys: helmets and spider parts.</summary>
+        static bool IsTraderItem(ItemInfo it)
+        {
+            return it != null && (SpiderPrices.ContainsKey(it.id) || IsHelmetItem(it));
+        }
+
         Vehicle _helmetTrader;
         int _tickVendorPoll;
 
@@ -185,6 +202,8 @@ namespace InfServer.Script.GameType_Eol
             int v;
             if (it != null && HelmetPrices.TryGetValue(it.id, out v))
                 return v;
+            if (it != null && SpiderPrices.TryGetValue(it.id, out v))
+                return v;
             return IsHelmetItem(it) ? HelmetBasePrice : 0;
         }
 
@@ -200,6 +219,8 @@ namespace InfServer.Script.GameType_Eol
                     HelmetSpecialistPrice, HelmetXpFor(HelmetSpecialistPrice)));
                 player.sendMessage(0, String.Format("&Command ${0} + {1} xp: Captain, Lieutenant, Bot Captain, Pirate Commander.",
                     HelmetCommandPrice, HelmetXpFor(HelmetCommandPrice)));
+                player.sendMessage(0, String.Format("&Spider Parts ${0} + {1} xp each (from spider hives and web spiders).",
+                    SpiderPrices[SpiderPartsItemId], HelmetXpFor(SpiderPrices[SpiderPartsItemId])));
                 return;
             }
             if (!product.Title.StartsWith("Sell all helmets", StringComparison.OrdinalIgnoreCase))
@@ -209,7 +230,7 @@ namespace InfServer.Script.GameType_Eol
             List<string> sold = new List<string>();
             foreach (InfServer.Game.Player.InventoryItem ii in new List<InfServer.Game.Player.InventoryItem>(player._inventory.Values))
             {
-                if (ii == null || ii.quantity == 0 || !IsHelmetItem(ii.item))
+                if (ii == null || ii.quantity == 0 || !IsTraderItem(ii.item))
                     continue;
                 int qty = ii.quantity, each = HelmetValue(ii.item);
                 if (!player.inventoryModify(false, ii.item.id, -qty))

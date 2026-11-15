@@ -50,8 +50,8 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>HQ chassis id — physical anchor for base bots (469). No leveling/bounty script layer.</summary>
         public int _hqVehId = 469;
         /// <summary>Per-player payout when the killer team destroys a defense bot HQ (469).</summary>
-        public const int EolBotHqDestroyCashPerPlayer = 120000;   // (2026-11-15, owner: ~120k cash / 20k xp per base kill)
-        public const int EolBotHqDestroyExpPerPlayer = 20000;
+        public const int EolBotHqDestroyCashPerPlayer = 80000;   // (2026-11-15, owner: 80k cash / 12k xp per base kill)
+        public const int EolBotHqDestroyExpPerPlayer = 12000;
         public const int EolBotHqDestroyPointsPerPlayer = 750;
         /// <summary>Lifetime <see cref="InfServer.Game.Player.ExperienceTotal"/> below this gets a 1.5× cash/exp/points bonus.</summary>
         public const int EolRewardScaleHighCutoffExp = 75000;
