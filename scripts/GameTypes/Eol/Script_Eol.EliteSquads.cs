@@ -75,6 +75,9 @@ namespace InfServer.Script.GameType_Eol
                 roamBots.Add(team, 0);
 
             List<RoamingAttacker> members = EliteSquadMembers(team);
+            squadSize = SquadBotRoom(team, squadSize);   // 5 max, players take bot places
+            if (members.Count > squadSize)
+                TrimSquadForHumans(team, 0);
             if (members.Count >= squadSize)
             {
                 _eliteNextSpawnTick.Remove(team);

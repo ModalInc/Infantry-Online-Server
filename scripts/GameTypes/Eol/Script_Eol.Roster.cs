@@ -39,8 +39,9 @@ namespace InfServer.Script.GameType_Eol
                 return;
             _rosterReady = true;
             Random r = new Random(Environment.TickCount);
-            _rosterPirateRoamers = r.Next(4, 7);
-            _rosterHumanRoamers = r.Next(4, 7);
+            // (2026-11-16, owner) roaming squads are 5 max
+            _rosterPirateRoamers = r.Next(4, 6);
+            _rosterHumanRoamers = r.Next(4, 6);
             _rosterAlienElite = r.Next(4, 7);
 
             int rest = EolBotTotalTarget - (RosterBaseTeams * RosterBaseSize + _rosterPirateRoamers + _rosterHumanRoamers
@@ -51,7 +52,7 @@ namespace InfServer.Script.GameType_Eol
             for (int guard = 0; rest > 0 && guard < 1000; guard++)
             {
                 int i = r.Next(RosterMixedTeamCount);
-                if (_rosterMixedSize[i] >= 8)
+                if (_rosterMixedSize[i] >= SquadMaxSize)
                     continue;
                 _rosterMixedSize[i]++;
                 rest--;

@@ -5,6 +5,8 @@ using InfServer.Bots;
 using InfServer.Game;
 using InfServer.Protocol;
 
+using Assets;
+
 namespace InfServer.Script.GameType_Eol
 {
     /// <summary>
@@ -366,10 +368,45 @@ namespace InfServer.Script.GameType_Eol
             b.SkillModeOverride = AssassinSkillMode;
             if (b._type != null)
                 ApplyHumanLoadout(b, b._type.Id, b._team);   // class weapons, SuperCharger, grenades, opener
+            ApplyAssassinWeapons(b);
             b.AgilityBonusPercent = AssassinAgilityBonusPercent;
             EnableBotDropshipRespawn(b, 0);
             if (_bots != null && !_bots.Contains(b))
                 _bots.Add(b);
+        }
+
+        /// <summary>
+        /// (2026-11-16, owner: assassins too weak) top-shelf guns instead of the class pools: close - Kamenev K3
+        /// Striker, Kuchler 201a PSMG (2), Kamenev p3 Needler; far - Steiner CG60 Chaingun, Unittech AR2012,
+        /// Maklov AR mk 606, Kamenev PCAR, Kuchler GR790. Always 3 grenades and the Kamenev AP mk2 opener.
+        /// </summary>
+        static readonly int[] AssassinClose = { 1465, 1343, 1533 };
+        static readonly int[] AssassinFar = { 3105, 3094, 1096, 1188, 1031 };
+
+        void ApplyAssassinWeapons(Bot b)
+        {
+            try
+            {
+                EquipCloseFar(b, Pick(AssassinClose), Pick(AssassinFar));
+                WeaponController grenade = null, opener = null;
+                ItemInfo g = Itm(Grenades[_arena._rand.Next(Grenades.Length)]);
+                if (g != null)
+                {
+                    grenade = new WeaponController(b._state, new WeaponController.WeaponSettings());
+                    if (grenade.equip(g)) grenade.Owner = b; else grenade = null;
+                }
+                ItemInfo k = Itm(ItmKamenevAPmk2);
+                if (k != null)
+                {
+                    opener = new WeaponController(b._state, new WeaponController.WeaponSettings());
+                    if (opener.equip(k)) opener.Owner = b; else opener = null;
+                }
+                EolBotBrain.SetExtraWeapons(b, opener, grenade, grenade != null ? 3 : 0);
+            }
+            catch (Exception ex)
+            {
+                Log.write(TLog.Warning, "[Eol] Assassin weapons failed: " + ex.Message);
+            }
         }
 
         RoamingCaptain SpawnBountyHunterCaptainAt(Helpers.ObjectState spawn, int now, Team team)

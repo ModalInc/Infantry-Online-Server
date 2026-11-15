@@ -79,6 +79,32 @@ namespace InfServer.Script.GameType_Eol
                 return base.poll();
 
             RoamingAttacker leader = _baseScript.EliteSquadLeader(_team);
+
+            // (2026-11-16, owner) a player joined this squad: the bots' mission is to attack enemy bases with them -
+            // the leader marches on the nearest bot base, fights round it once there, the others follow in formation
+            if ((leader == null || leader == this) && _baseScript.SquadHumans(_team) > 0)
+            {
+                Helpers.ObjectState hq = _baseScript.NearestEnemyBaseHq(this);
+                if (hq != null)
+                {
+                    if (Helpers.distanceTo(_state, hq) > 450)
+                    {
+                        bool force = now - _tickEliteNav > 3000;
+                        if (force) _tickEliteNav = now;
+                        ApplyNavigationApproach(hq, EolHqPatrol.MakeLineClearPendingSeek(this, () => hq), new BotNavigateOptions
+                        {
+                            RequeueMinMs = 1500,
+                            PathStartIndex = 0,
+                            ForceRequeue = force,
+                            Priority = PathPriority.Combat,
+                        });
+                    }
+                    else
+                        EolBotBrain.Hunt(this, _baseScript, now, hq);
+                    return base.poll();
+                }
+            }
+
             if (leader == null || leader == this || now - _soloUntil < 0)
             {   // the leader - or a member that got bored standing around - goes hunting
                 EolBotBrain.Hunt(this, _baseScript, now, null);
