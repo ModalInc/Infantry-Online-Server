@@ -1121,6 +1121,9 @@ namespace InfServer.Game
                 // revived meanwhile (respawn) - it stays on the list
                 if (b == null || !b.IsDead && !b.bCondemned && _bots.Contains(b))
                     continue;
+                // (2026-11-15) waiting for its dropship respawn - keeps its row (no leave + re-enter)
+                if (b.bDropshipRespawnPending && !b.bCondemned && _bots.Contains(b))
+                    continue;
                 // its id already belongs to a NEW bot: leaving it would remove that one from clients
                 bool reused = false;
                 foreach (Bot o in _bots)

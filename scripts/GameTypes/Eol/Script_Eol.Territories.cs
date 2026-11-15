@@ -11,7 +11,8 @@ namespace InfServer.Script.GameType_Eol
     /// Bot territories (2026-11-15, the zone owner's map "check.jpg"). NW (= Sector A, raw 0-8912 x 0-6304) first:
     ///   - HUMAN PATROLS: the rest of NW - human / pirate roamers and strike teams roam here;
     ///   - ALIEN ROAM: the west side (A2-B5), the top right (E1-F1) and the east edge (G3-H6) - aliens roam here;
-    ///   - ELITE / BOT BASE: the bottom-left corner (A6-B6) - the base HQ is built here and the elite squads hold it;
+    ///   - ELITE: the bottom-left corner (A6-B6) - the elite squads hold it (the two pirate bases rotate over all the
+    ///     Sector A HQ anchors outside the spawn zone, see HqSlotAllowed);
     ///   - NEW PLAYER BUFFER: the circle around the NW dropship - no bot goes in (roaming, chasing or spawning).
     /// Rectangles were measured off the map image (NW = image px 35-695 x 37-525, so ~13.5 raw per px across and
     /// ~12.9 down). Other sectors have no territory yet - bots there roam as before. A bot that is inside NW keeps to
@@ -86,8 +87,11 @@ namespace InfServer.Script.GameType_Eol
                 return BotTerritory.None;   // (bounty assassins go wherever their mark is)
             if (IsAlienBotTeam(b._team))
                 return BotTerritory.Alien;
-            // pirate base teams and the two elite roaming squads hold the base corner
-            if (b._team == botTeam1 || b._team == botTeam2 || b._team == botTeam3 || IsEliteSquadTeam(b._team))
+            // (2026-11-15) pirate base teams guard their own HQ wherever it stands (bases rotate over the Sector A
+            // objectives) - no territory; the two elite roaming squads hold the base corner
+            if (b._team == botTeam1 || b._team == botTeam2 || b._team == botTeam3)
+                return BotTerritory.None;
+            if (IsEliteSquadTeam(b._team))
                 return BotTerritory.Elite;
             return BotTerritory.Human;
         }
@@ -144,13 +148,11 @@ namespace InfServer.Script.GameType_Eol
             return there != BotTerritory.None && there == TerritoryOf(b);
         }
 
-        /// <summary>NW HQ slots: the bot base only goes in the Elite / Bot Base corner (other sectors: any slot).</summary>
+        /// <summary>HQ slots: any objective anchor away from the spawn zones (2026-11-15: Sector A holds two bases that
+        /// rotate over its anchors - it used to allow only the bottom-left corner, so just one base ever went up).</summary>
         static bool HqSlotAllowed(short x, short y)
         {
-            if (NearNewPlayerBuffer(x, y))
-                return false;
-            BotTerritory t = TerritoryAt(x, y);
-            return t == BotTerritory.None || t == BotTerritory.Elite;
+            return !NearNewPlayerBuffer(x, y);
         }
 
         /// <summary>HQ anchor slots usable for a bot base in the open sectors (-1 = templates not built yet: no cap).</summary>

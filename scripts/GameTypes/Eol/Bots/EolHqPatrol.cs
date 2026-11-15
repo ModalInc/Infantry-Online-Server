@@ -46,6 +46,10 @@ namespace InfServer.Script.GameType_Eol
         public long BestDestDistThisLeg;
         /// <summary>Last tick Dest distance materially improved (creep stall).</summary>
         public int TickLastLegProgress;
+        /// <summary>(2026-11-15) The navmesh found no route to this leg's Dest: straight hops only until this tick.</summary>
+        public int NavRouteBadUntil;
+        /// <summary>Where the bot was at the last progress mark (walking a route round a wall counts as progress).</summary>
+        public short ProgMoveX, ProgMoveY;
     }
 
     /// <summary>
@@ -863,7 +867,12 @@ namespace InfServer.Script.GameType_Eol
 
             // Only drop failed nav — keep Following corridors for smooth patrol.
             if (nav.State == BotNavigationState.Failed)
+            {
+                // (2026-11-15) a failed route to the real Dest: fall back to straight hops for a while
+                if (s.Hop == null)
+                    s.NavRouteBadUntil = now + 6000;
                 bot.Navigation.Clear();
+            }
 
             // Intermediate hop done → resume Dest (min travel time avoids hop jiggle).
             if (s.Hop != null
@@ -900,9 +909,15 @@ namespace InfServer.Script.GameType_Eol
             long destDist = DistToDest(bot, s);
             if (destDist >= 0)
             {
-                if (s.BestDestDistThisLeg == 0 || destDist + MinLegProgressRaw < s.BestDestDistThisLeg)
+                // (2026-11-15) walking a navmesh route round a wall moves the bot without getting closer in a straight
+                // line - that is progress too (the creep-stall below re-picked mid-route, the back-and-forth in rooms)
+                bool routeWalk = nav.State == BotNavigationState.Following && s.Hop == null
+                    && DistSq(bot._state.positionX, bot._state.positionY, s.ProgMoveX, s.ProgMoveY) > 96L * 96;
+                if (s.BestDestDistThisLeg == 0 || destDist + MinLegProgressRaw < s.BestDestDistThisLeg || routeWalk)
                 {
-                    s.BestDestDistThisLeg = destDist;
+                    if (s.BestDestDistThisLeg == 0 || destDist < s.BestDestDistThisLeg)
+                        s.BestDestDistThisLeg = destDist;
+                    s.ProgMoveX = bot._state.positionX; s.ProgMoveY = bot._state.positionY;
                     s.HopStallCount = 0;
                     s.TickLastLegProgress = now == 0 ? 1 : now;
                 }
@@ -933,8 +948,17 @@ namespace InfServer.Script.GameType_Eol
             bool lineClearToDest = TileLineClear(arena, bot._state.positionX, bot._state.positionY,
                 s.Dest.positionX, s.Dest.positionY, bot._type);
 
-            // No LOS to Dest → set / refresh a clear hop (never pathfind).
-            if (!lineClearToDest)
+            // (2026-11-15) No LOS to Dest → let the navmesh plan the route round the walls (out of the room through
+            // its door, whichever way it faces). The straight "clear hop" picks below only ever went toward the Dest,
+            // so a room whose door faced away could never be left - they are the fallback now, when no route is found.
+            if (!lineClearToDest && bot.MovementMode == BotMovementMode.Api
+                && (s.NavRouteBadUntil == 0 || now - s.NavRouteBadUntil >= 0))
+            {
+                if (s.Hop != null)
+                    ClearHop(s);
+            }
+            // No LOS to Dest and no route → set / refresh a clear hop.
+            else if (!lineClearToDest)
             {
                 bool needNewHop = s.Hop == null;
                 if (s.Hop != null && bot._state != null)

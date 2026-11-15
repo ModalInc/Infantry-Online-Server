@@ -277,9 +277,11 @@ namespace InfServer.Protocol
 					// Re-send Vehicles only — Leave/Enter reprints "Player entered" and can desync.
 					bool known = update._arena != null
 						&& update._arena.IsBotNamelistKnownBy(player, update._id);
-					bool repair = update.NeedsHullReattach && known;
-					if (!repair)
-						update._arena?.SendBotNamelistEntryTo(player, update, leaveFirst: known);
+					// (2026-11-15, "bots spec out and come back in, spams entering") a client that already has the
+					// bot on its list only needs the hull again (after a respawn, or coming back in range) - the old
+					// Leave + Enter here showed the bot leaving and re-entering the zone every time.
+					if (!known)
+						update._arena?.SendBotNamelistEntryTo(player, update, leaveFirst: false);
 
 					SC_Vehicles vehicles = new SC_Vehicles();
 					vehicles.singleUpdate = update;
