@@ -150,6 +150,10 @@ namespace InfServer.Script.GameType_Eol
                 Vehicle v = nearBots[i];
                 if (v == null || v.IsDead || !ShouldEolBotTeamsFight(team, v._team))
                     continue;
+                // (2026-11-15) only a hostile this bot can actually see - a bot behind a wall made every defender queue
+                // a fight it couldn't start each poll, which cleared its patrol route every poll (jitter in the room)
+                if (!InfServer.Bots.BotCombat.SightLineClear(_arena, botX, botY, v._state.positionX, v._state.positionY))
+                    continue;
                 if (Helpers.isInRange(fireRangeRaw, bot, v._state))
                     return true;
                 if (Helpers.isInRange(seekRangeRaw, bot, v._state))

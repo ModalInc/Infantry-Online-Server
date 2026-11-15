@@ -67,6 +67,10 @@ namespace InfServer.Script.GameType_Eol
         int _tickLastFireActionExec;
         int _tickLastRetreatActionExec;
         bool _combatMovedLastPoll;
+        // (2026-11-15) a fight that can't start (no line of sight) cleared the patrol route EVERY poll - the
+        // defenders jittered in place. Clear it for a new fight at most every 3 s.
+        int _tickFireNavClear;
+        bool FireNavClearDue() { int n = Environment.TickCount; if (_tickFireNavClear != 0 && n - _tickFireNavClear < 3000) return false; _tickFireNavClear = n == 0 ? 1 : n; return true; }
 
         protected int _lawQuantity = 1;
 
@@ -409,7 +413,7 @@ namespace InfServer.Script.GameType_Eol
                     switch (currentAction.type)
                     {
                         case Action.Type.fireAtEnemy:
-                            if (!_combatMovedLastPoll)
+                            if (!_combatMovedLastPoll && FireNavClearDue())
                                 Navigation.Clear();
                             needPatrol = !fireAtEnemy(now);
                             break;
@@ -421,7 +425,7 @@ namespace InfServer.Script.GameType_Eol
                 }
                 else if (currentAction.type == Action.Type.fireAtEnemy)
                 {
-                    if (!_combatMovedLastPoll)
+                    if (!_combatMovedLastPoll && FireNavClearDue())
                         Navigation.Clear();
                     needPatrol = !fireAtEnemy(now);
                 }

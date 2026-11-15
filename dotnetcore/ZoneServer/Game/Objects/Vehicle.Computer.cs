@@ -116,6 +116,9 @@ namespace InfServer.Game
         protected ItemInfo.RepairItem _supportItem;
         int _tickSupport;
         const int SupportMinIntervalMs = 1000;
+        /// <summary>(2026-11-15) Heal / recharge turrets only help teammates close by (raw units, ~12 tiles) - they used the
+        /// gun's full tracking radius, which reached across half the base.</summary>
+        const int SupportMaxRange = 200;
 
         /// <summary>Recharge items (repairType 2) restore energy; everything else restores health.</summary>
         bool SupportIsEnergy { get { return _supportItem != null && _supportItem.repairType == 2; } }
@@ -138,7 +141,8 @@ namespace InfServer.Game
             Player best = null;
             Vehicle bestBot = null;
             double bestD = double.MaxValue;
-            foreach (Player p in _arena.getPlayersInRange(_state.positionX, _state.positionY, _type.TrackingRadius))
+            int range = Math.Min((int)_type.TrackingRadius, SupportMaxRange);
+            foreach (Player p in _arena.getPlayersInRange(_state.positionX, _state.positionY, range))
             {
                 if (p == null || p.IsSpectator || p.IsDead || p._team != _team || p.ActiveVehicle == null)
                     continue;
@@ -150,7 +154,7 @@ namespace InfServer.Game
                 if (d < bestD) { bestD = d; best = p; }
             }
             if (!SupportIsEnergy)   // (bots have no energy to give - health only)
-                foreach (Vehicle v in _arena.getVehiclesInRange(_state.positionX, _state.positionY, _type.TrackingRadius,
+                foreach (Vehicle v in _arena.getVehiclesInRange(_state.positionX, _state.positionY, range,
                     v => v != null && v != this && v._bBotVehicle && !v.IsDead && !v.bCondemned))
                 {
                     if (v._team == null || v._team != _team || v._state == null || !NeedsSupport(v._state, v._type) || !InRange(v))

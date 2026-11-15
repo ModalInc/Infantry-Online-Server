@@ -151,6 +151,11 @@ namespace InfServer.Script.GameType_Eol
             public int OddsTick;
             public object Turret;
             public int TurretPickTick;
+            // (2026-11-15) turret fights: is it losing health while we strafe it; backing off after giving up
+            public int TurretStrafeSince, TurretWatchHp;
+            public object TurretWatched;
+            public short LeaveX, LeaveY;
+            public int LeaveUntil;
             public int SearchArrivedTick;
             /// <summary>When this bot started trading shots across a wall it can't walk through (0 = not).</summary>
             public int WallStandoffTick;
@@ -168,6 +173,8 @@ namespace InfServer.Script.GameType_Eol
             // curiosity
             public short InvestX, InvestY;
             public int InvestUntil, InvestPickTick;
+            public short InvestFailX, InvestFailY;
+            public int InvestFailUntil;
             // areas searched recently (packed x<<16|y), for logical sweeping
             public readonly Queue<long> Searched = new Queue<long>();
             // extra weapons (human-class bots)
@@ -228,7 +235,15 @@ namespace InfServer.Script.GameType_Eol
                 m.IgnoreUntil.Remove(target);
                 return false;
             }
-            return dist > IgnoreUnlessWithinRaw;
+            // (2026-11-15) a given-up target stays ignored at any distance - unless it is close AND the bot can actually
+            // shoot it from where it stands. Turrets always stay ignored. (The plain "unless within 500" picked the same
+            // unreachable target / unbeatable turret straight back: the 4-7 s approach-fail-strafe loop repeated forever.)
+            if (target is Computer)
+                return true;
+            if (dist > IgnoreUnlessWithinRaw)
+                return true;
+            Helpers.ObjectState tst = StateOf(target);
+            return tst == null || !BotCombat.CanDirectEngage(self, tst);
         }
 
         static readonly ConditionalWeakTable<Bot, Mind> Minds = new ConditionalWeakTable<Bot, Mind>();
@@ -903,11 +918,12 @@ namespace InfServer.Script.GameType_Eol
                 victim.NoteHurtBy(shooter);
                 shooter._arena?.NoteBotDamagedByBot(victim, shooter);
             }
+            // (2026-11-15) turrets too: applyExplosion ignores a direct-fire round (blast radius 0), so bots' bullets
+            // never hurt a turret and squads strafed in front of one forever. applyBotHit does the listed damage and
+            // destroys it at 0; _sendUpdate pushes the new health to clients.
+            hitVeh.applyBotHit(gun.Projectile);
             if (hitVeh is Computer turretHit)
-                // turrets: their own damage path (health update to clients + proper destroy when it hits 0)
-                turretHit.applyExplosion(null, turretHit._state.positionX, turretHit._state.positionY, gun.Projectile);
-            else
-                hitVeh.applyBotHit(gun.Projectile);
+                turretHit._sendUpdate = true;
 
             int now = Environment.TickCount;
             if (LogPersonas && now - _tickHitLog > 15000)
@@ -970,8 +986,13 @@ namespace InfServer.Script.GameType_Eol
             if (m.InvestUntil != 0 && now - m.InvestUntil < 0)
             {
                 Helpers.ObjectState spot = new Helpers.ObjectState { positionX = m.InvestX, positionY = m.InvestY };
-                if (Helpers.distanceTo(self._state, spot) < 160 || !MakingProgress(self, m, spot, now, 4000))
+                bool arrived = Helpers.distanceTo(self._state, spot) < 160;
+                if (arrived || !MakingProgress(self, m, spot, now, 4000))
                 {
+                    if (!arrived)
+                    {   // (2026-11-15) couldn't get there: don't pick the same spot again straight away
+                        m.InvestFailX = m.InvestX; m.InvestFailY = m.InvestY; m.InvestFailUntil = now + 12000;
+                    }
                     m.InvestUntil = 0;
                     ResetProgress(m);
                     return false;
@@ -989,6 +1010,13 @@ namespace InfServer.Script.GameType_Eol
                 foreach (Noise n in Noises)
                 {
                     if (now - n.Tick > NoiseLifeMs)
+                        continue;
+                    // (2026-11-15) not its own side's gunfire (its base turrets firing drew the whole base team into
+                    // a wall), and not a spot it just failed to reach
+                    if (n.Team != null && n.Team == self._team)
+                        continue;
+                    if (m.InvestFailUntil != 0 && now - m.InvestFailUntil < 0
+                        && Helpers.distanceTo(n.X, n.Y, m.InvestFailX, m.InvestFailY) < 400)
                         continue;
                     if (!InArea(n.X, n.Y) || !InTerritory(self, n.X, n.Y))
                         continue;   // (not outside its territory, never into the new player buffer)
@@ -1021,6 +1049,51 @@ namespace InfServer.Script.GameType_Eol
 
         // ---------------------------------------------------------------- turrets
         const int TurretSightRaw = 900;
+        const int TurretNoDamageGiveUpMs = 3500;   // strafing a turret that never loses health: give up
+        const int TurretGiveUpMs = 30000;          // and leave it alone this long
+        const int TurretLeaveRaw = 1000;           // backing off to at least this far from it
+
+        /// <summary>
+        /// (2026-11-15) Stop fighting a turret it can't beat: ignored for TurretGiveUpMs at ANY distance (the normal
+        /// "ignored unless close" exception picked the same turret again at once), and the bot backs off out of its
+        /// range (Mind.LeaveX/Y, used by CombatMove / roam while LeaveUntil runs).
+        /// </summary>
+        static void GiveUpTurret(Bot self, Mind m, Computer turret, int now)
+        {
+            m.IgnoreUntil[turret] = now + TurretGiveUpMs;
+            m.Turret = null;
+            m.TurretStrafeSince = 0;
+            ResetProgress(m);
+            self.Navigation?.Clear();
+            // a point away from the turret, out of its reach
+            double dx = self._state.positionX - turret._state.positionX, dy = self._state.positionY - turret._state.positionY;
+            double len = Math.Sqrt(dx * dx + dy * dy);
+            if (len < 1) { dx = 1; dy = 0; len = 1; }
+            int lx = turret._state.positionX + (int)(dx / len * TurretLeaveRaw), ly = turret._state.positionY + (int)(dy / len * TurretLeaveRaw);
+            if (InArea((short)lx, (short)ly))
+            {
+                m.LeaveX = (short)lx; m.LeaveY = (short)ly; m.LeaveUntil = now + 6000;
+                GoTo(self, new Helpers.ObjectState { positionX = m.LeaveX, positionY = m.LeaveY }, PathPriority.Combat);
+            }
+        }
+
+        /// <summary>Still backing off from a turret it gave up on: keep heading out (true while busy).</summary>
+        public static bool TryLeaveTurret(Bot self, int now)
+        {
+            if (!Enabled || self?._state == null || self.IsDead)
+                return false;
+            Mind m = Get(self);
+            if (m.LeaveUntil == 0 || now - m.LeaveUntil >= 0)
+                return false;
+            Helpers.ObjectState spot = new Helpers.ObjectState { positionX = m.LeaveX, positionY = m.LeaveY };
+            if (Helpers.distanceTo(self._state, spot) < 160)
+            {
+                m.LeaveUntil = 0;
+                return false;
+            }
+            GoTo(self, spot, PathPriority.Combat);
+            return true;
+        }
 
         /// <summary>A hostile armed turret this bot can see (nearest first), or null.</summary>
         static Computer FindHostileTurret(Bot self, Script_Eol script, int range)
@@ -1057,6 +1130,9 @@ namespace InfServer.Script.GameType_Eol
                 Mind m = Get(self);
                 if (m.Retreating)
                     return false;
+                // backing off from a turret it gave up on: keep going until out of its range
+                if (TryLeaveTurret(self, now))
+                    return true;
                 Computer turret = m.Turret as Computer;
                 if (turret == null || turret.IsDead || now - m.TurretPickTick > 1500)
                 {
@@ -1065,7 +1141,17 @@ namespace InfServer.Script.GameType_Eol
                     m.Turret = turret;
                 }
                 if (turret == null)
+                {
+                    // still being shot by a turret it gave up on: get out of its range again (not stand in its fire)
+                    Computer hurt = self.LastHurtBy as Computer;
+                    if (hurt != null && !hurt.IsDead && now - self.LastHurtTick < 2000
+                        && Helpers.distanceTo(self._state, hurt._state) < TurretLeaveRaw - 100)
+                    {
+                        GiveUpTurret(self, m, hurt, now);
+                        return m.LeaveUntil != 0;
+                    }
                     return false;
+                }
                 SteeringController steering = self._movement as SteeringController;
                 if (steering == null)
                     return false;
@@ -1075,17 +1161,16 @@ namespace InfServer.Script.GameType_Eol
                 int rFar = self._weaponFarItem != null ? EolBotCombatUtil.GetCombatRangeRaw(self._weaponFarItem) : 0;
                 range = Math.Max(140, Math.Min(700, Math.Max(range, rFar)));
                 double pref = Math.Max(150, range * 0.7);
-                bool shotClear = EolBotTargetUtil.TileLineClearForWeaponFire(self._arena, self._state.positionX, self._state.positionY,
-                    turret._state.positionX, turret._state.positionY);
+                // (2026-11-15) the same fire line the gun itself uses (the tile test used another fire height, so a
+                // bot was told "clear", strafed, and its shots were silently refused)
+                bool shotClear = BotCombat.CanDirectEngage(self, turret._state);
 
                 if (!shotClear || dist > range * 1.05)
                 {   // get into a firing spot: path toward it, aiming/firing when possible - unless it can't get there
+                    m.TurretStrafeSince = 0;
                     if (!MakingProgress(self, m, turret._state, now, 4000))
                     {
-                        m.IgnoreUntil[turret] = now + 12000;
-                        m.Turret = null;
-                        ResetProgress(m);
-                        self.Navigation?.Clear();
+                        GiveUpTurret(self, m, turret, now);
                         return false;
                     }
                     Helpers.ObjectState goal = new Helpers.ObjectState { positionX = turret._state.positionX, positionY = turret._state.positionY };
@@ -1098,6 +1183,22 @@ namespace InfServer.Script.GameType_Eol
                     if (shotClear)
                         AimFire(self, turret._state, turret, dist, Helpers.computeLeadFireAngle(self._state, turret._state, 10));
                     return true;
+                }
+
+                // (2026-11-15) strafing in front of it: if the turret takes no damage for a while (out of reach, armour,
+                // a wall the shots don't clear) stop - give up on it and leave its range instead of dancing in its fire
+                if (m.TurretStrafeSince == 0 || m.TurretWatched != turret)
+                {
+                    m.TurretStrafeSince = now; m.TurretWatched = turret; m.TurretWatchHp = turret._state.health;
+                }
+                else if (turret._state.health < m.TurretWatchHp)
+                {
+                    m.TurretStrafeSince = now; m.TurretWatchHp = turret._state.health;
+                }
+                else if (now - m.TurretStrafeSince > TurretNoDamageGiveUpMs)
+                {
+                    GiveUpTurret(self, m, turret, now);
+                    return false;
                 }
 
                 if (m.NextFlip == 0 || now >= m.NextFlip)
@@ -1561,9 +1662,28 @@ namespace InfServer.Script.GameType_Eol
                     if (Helpers.distanceTo(sx, sy, (short)(v >> 16), (short)(v & 0xFFFF)) < 450) { recent = true; break; }
                 if (recent)
                     continue;
+                if (NearGivenUpTurret(m, sx, sy))
+                    continue;   // (2026-11-15) not back into the fire of a turret it just gave up on
                 return new Helpers.ObjectState { positionX = sx, positionY = sy };
             }
             return null;
+        }
+
+        /// <summary>Within reach of a live turret this bot gave up on (still ignored)?</summary>
+        static bool NearGivenUpTurret(Mind m, short x, short y)
+        {
+            if (m.IgnoreUntil.Count == 0)
+                return false;
+            int now = Environment.TickCount;
+            foreach (KeyValuePair<object, int> kv in m.IgnoreUntil)
+            {
+                Computer c = kv.Key as Computer;
+                if (c == null || c.IsDead || c._state == null || now - kv.Value >= 0)
+                    continue;
+                if (Helpers.distanceTo(x, y, c._state.positionX, c._state.positionY) < TurretLeaveRaw)
+                    return true;
+            }
+            return false;
         }
 
         static Helpers.ObjectState PickRoamPoint(Bot self, Mind m, Helpers.ObjectState home)

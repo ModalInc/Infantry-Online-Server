@@ -13,7 +13,8 @@ namespace InfServer.Script.GameType_Eol
     /// <summary>Collision / stuck recovery via pathfinder escape. Combat may keep firing while escaping.</summary>
     internal static class EolBotPhysicsUtil
     {
-        public const int CollisionUnstickCooldownMs = 900;
+        // (2026-11-15) 900 -> 2500: in a crowded room every wall brush started an escape that fought the patrol
+        public const int CollisionUnstickCooldownMs = 2500;
 
         public const int StuckCheckIntervalMs = 1800;
 
@@ -112,7 +113,10 @@ namespace InfServer.Script.GameType_Eol
                     return true;
             }
 
-            if (hasCollision && (tickLastCollision == 0 || now - tickLastCollision >= CollisionUnstickCooldownMs))
+            // (2026-11-15) a brush against a wall while walking a navmesh route is not "stuck" - the route goes round
+            // it (real stucks are still caught by the no-movement check above)
+            bool onRoute = bot?.Navigation != null && bot.Navigation.State == BotNavigationState.Following;
+            if (hasCollision && !onRoute && (tickLastCollision == 0 || now - tickLastCollision >= CollisionUnstickCooldownMs))
             {
                 tickLastCollision = now;
                 if (TryBeginUnstickPath(bot, state, now, arena, baseScript, steering, ref tickLastCollision, ref unstickPathActive, ref unstickEscapeTarget, ref tickUnstickStarted, ref tickLastUnstickNoCollision, setPathState, onUnstickBegin, combatBiasToward))

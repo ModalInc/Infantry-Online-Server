@@ -43,17 +43,22 @@ namespace InfServer.Script.GameType_Eol
         // Raw = tile x 16 + 8 (the tile's centre). Yaw: 240 steps a turn, 0 = north, 120 = south.
         const short HelmetTraderX = 1667 * 16 + 8, HelmetTraderY = 165 * 16 + 8;
         const byte HelmetTraderYaw = 120;
-        const int HelmetBasePrice = 20;
+        // (2026-11-15, owner: min $500 + 200 xp a helmet, a bit more for the better ones)
+        const int HelmetBasePrice = 500, HelmetSpecialistPrice = 750, HelmetCommandPrice = 1000;
+        /// <summary>Experience per helmet = its cash value x 2/5 (500 -> 200, 750 -> 300, 1000 -> 400).</summary>
+        static int HelmetXpFor(int cash) { return cash * 2 / 5; }
 
         /// <summary>Officers' and specialists' helmets are worth more (everything else that is a helmet: base price).</summary>
         static readonly Dictionary<int, int> HelmetPrices = new Dictionary<int, int>
         {
             // command: Captain's, Lieutenant's, Bot Captain, Pirate Commander - x2
-            { 85, 40 }, { 1473, 40 }, { 185, 40 }, { 131, 40 }, { 1595, 40 }, { 1673, 40 },
+            { 85, HelmetCommandPrice }, { 1473, HelmetCommandPrice }, { 185, HelmetCommandPrice }, { 131, HelmetCommandPrice },
+            { 1595, HelmetCommandPrice }, { 1673, HelmetCommandPrice },
             // leaders and specialists: Sergeant's, Squad Leader's, Field Surgeon's, Chief Engineer's, BlackOps',
             // Drop Trooper's, MPAC's, NeuroTAC's, Marine's, Bot Engineer - x1.5
-            { 93, 30 }, { 94, 30 }, { 1472, 30 }, { 1340, 30 }, { 170, 30 }, { 1338, 30 }, { 1339, 30 }, { 1341, 30 },
-            { 1342, 30 }, { 188, 30 },
+            { 93, HelmetSpecialistPrice }, { 94, HelmetSpecialistPrice }, { 1472, HelmetSpecialistPrice }, { 1340, HelmetSpecialistPrice },
+            { 170, HelmetSpecialistPrice }, { 1338, HelmetSpecialistPrice }, { 1339, HelmetSpecialistPrice }, { 1341, HelmetSpecialistPrice },
+            { 1342, HelmetSpecialistPrice }, { 188, HelmetSpecialistPrice },
         };
 
         Vehicle _helmetTrader;
@@ -190,15 +195,17 @@ namespace InfServer.Script.GameType_Eol
                 return;
             if (product.Title.StartsWith("Helmet prices", StringComparison.OrdinalIgnoreCase))
             {
-                player.sendMessage(0, String.Format("&Helmet Trader: ${0} for each helmet.", HelmetBasePrice));
-                player.sendMessage(0, "&Officers and specialists - $30: Sergeant, Squad Leader, Field Surgeon, Chief Engineer, BlackOps, Drop Trooper, MPAC, NeuroTAC, Marine, Bot Engineer.");
-                player.sendMessage(0, "&Command - $40: Captain, Lieutenant, Bot Captain, Pirate Commander.");
+                player.sendMessage(0, String.Format("&Helmet Trader: ${0} + {1} xp for each helmet.", HelmetBasePrice, HelmetXpFor(HelmetBasePrice)));
+                player.sendMessage(0, String.Format("&Specialists ${0} + {1} xp: Sergeant, Squad Leader, Surgeon, Chief Eng, BlackOps, Drop Trooper, MPAC, NeuroTAC, Marine, Bot Eng.",
+                    HelmetSpecialistPrice, HelmetXpFor(HelmetSpecialistPrice)));
+                player.sendMessage(0, String.Format("&Command ${0} + {1} xp: Captain, Lieutenant, Bot Captain, Pirate Commander.",
+                    HelmetCommandPrice, HelmetXpFor(HelmetCommandPrice)));
                 return;
             }
             if (!product.Title.StartsWith("Sell all helmets", StringComparison.OrdinalIgnoreCase))
                 return;
 
-            int total = 0, count = 0;
+            int total = 0, count = 0, xp = 0;
             List<string> sold = new List<string>();
             foreach (InfServer.Game.Player.InventoryItem ii in new List<InfServer.Game.Player.InventoryItem>(player._inventory.Values))
             {
@@ -208,6 +215,7 @@ namespace InfServer.Script.GameType_Eol
                 if (!player.inventoryModify(false, ii.item.id, -qty))
                     continue;
                 total += each * qty;
+                xp += HelmetXpFor(each) * qty;
                 count += qty;
                 sold.Add(qty > 1 ? String.Format("{0} x{1}", ii.item.name, qty) : ii.item.name);
             }
@@ -217,8 +225,28 @@ namespace InfServer.Script.GameType_Eol
                 return;
             }
             player.Cash += total;
+            player.Experience += xp;
             player.syncInventory();
-            player.sendMessage(0, String.Format("&Sold {0} helmet{1} for ${2}: {3}", count, count == 1 ? "" : "s", total, string.Join(", ", sold)));
+            player.syncState();
+            // (2026-11-15, "handing in a lot of helmets caused a crash") the message listed every helmet sold - a big
+            // hand-in made one chat line far longer than the client takes. Now: the totals, plus the kinds only while
+            // they fit in a short line.
+            string head = String.Format("&Sold {0} helmet{1} for ${2} + {3} xp", count, count == 1 ? "" : "s", total, xp);
+            string list = "";
+            foreach (string s in sold)
+            {
+                string next = list.Length == 0 ? s : list + ", " + s;
+                if (head.Length + 2 + next.Length > MaxChatLine)
+                {
+                    list = list.Length == 0 ? "" : list + ", ...";
+                    break;
+                }
+                list = next;
+            }
+            player.sendMessage(0, list.Length == 0 ? head : head + ": " + list);
         }
+
+        /// <summary>Longest chat line sent to a client (theirs crash on very long lines).</summary>
+        const int MaxChatLine = 180;
     }
 }

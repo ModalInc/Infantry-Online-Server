@@ -50,8 +50,8 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>HQ chassis id — physical anchor for base bots (469). No leveling/bounty script layer.</summary>
         public int _hqVehId = 469;
         /// <summary>Per-player payout when the killer team destroys a defense bot HQ (469).</summary>
-        public const int EolBotHqDestroyCashPerPlayer = 11250;
-        public const int EolBotHqDestroyExpPerPlayer = 1875;
+        public const int EolBotHqDestroyCashPerPlayer = 120000;   // (2026-11-15, owner: ~120k cash / 20k xp per base kill)
+        public const int EolBotHqDestroyExpPerPlayer = 20000;
         public const int EolBotHqDestroyPointsPerPlayer = 750;
         /// <summary>Lifetime <see cref="InfServer.Game.Player.ExperienceTotal"/> below this gets a 1.5× cash/exp/points bonus.</summary>
         public const int EolRewardScaleHighCutoffExp = 75000;
@@ -79,6 +79,7 @@ namespace InfServer.Script.GameType_Eol
 
         //KOTH
         private Team _victoryKothTeam;			//The team currently winning!
+        private bool _kothRewardPaid;           //This KOTH round's reward went out (paid once per round)
         private int _tickGameLastTickerUpdate;  //The tick at which the ticker was last updated
         private long _tickKOTHGameStarting;
         private long _tickKOTHGameStart;				//The tick at which the game started (0 == stopped)
@@ -1228,19 +1229,19 @@ namespace InfServer.Script.GameType_Eol
             _maxRoamingBots = 30;
             if (playing < 30)
             {
-                _maxDefenseBots = EolMaxConcurrentBaseDefenseBots;
+                _maxDefenseBots = EolMaxConcurrentBaseDefenseBots * RosterBaseTeams;   // (both bases, for the ticker)
                 _maxRoamingBots = 20;
                 _maxRoamingAliens = 20;
             }
             if (playing >= 30 && playing < 60)
             {
-                _maxDefenseBots = EolMaxConcurrentBaseDefenseBots;
+                _maxDefenseBots = EolMaxConcurrentBaseDefenseBots * RosterBaseTeams;   // (both bases, for the ticker)
                 _maxRoamingBots = 25;
                 _maxRoamingAliens = 20;
             }
             if (playing >= 60)
             {
-                _maxDefenseBots = EolMaxConcurrentBaseDefenseBots;
+                _maxDefenseBots = EolMaxConcurrentBaseDefenseBots * RosterBaseTeams;   // (both bases, for the ticker)
                 _maxRoamingBots = 30;
                 _maxRoamingAliens = 20;
             }
@@ -1453,6 +1454,15 @@ namespace InfServer.Script.GameType_Eol
             }
         }
 
+        /// <summary>True while a sector is pinned (EolBoundaries.PinnedFirstSector) and it is the only one open.</summary>
+        bool SectorRotationOnlyPinned()
+        {
+            string pin = EolBoundaries.PinnedFirstSector;
+            if (pin == null || _eol == null || _eol._activeSectors == null)
+                return false;
+            return _eol._activeSectors.Count <= 1 && (_eol._activeSectors.Count == 0 || _eol._activeSectors[0] == pin);
+        }
+
         private void PollEolSectorWind(int now)
         {
             if (_arena == null || !_arena._bGameRunning || _bbetweengames)
@@ -1467,6 +1477,14 @@ namespace InfServer.Script.GameType_Eol
             // Live KOTH round blocks rotation; lobby/cooldown do not. Stay due until idle.
             if (_kothGameRunning)
                 return;
+
+            // (2026-11-15) Sector A only for now: with the pinned sector the only one open there is nothing to change
+            // to - no radiation wind change (no 90 s warning, nobody sent back to the station)
+            if (SectorRotationOnlyPinned())
+            {
+                _tickNextSectorRotation = now + SectorRotationIntervalMs;
+                return;
+            }
 
             preNewSector();
             _tickNextSectorRotation = now + SectorRotationIntervalMs;
@@ -2149,9 +2167,7 @@ namespace InfServer.Script.GameType_Eol
             short hx = pick.Value.getX();
             short hy = pick.Value.getY();
             if (!TryApplyPylonLocationFromXY(hx, hy))
-            {
-                Log.write(TLog.Warning, "[Eol] Bot HQ: no turret layout id for anchor ({0},{1}) — HQ will still place, turrets skipped.", hx, hy);
-            }
+                _pylonLocation = 0;   // (an objective slot: turret ring fitted to the ground - PlaceObjectiveBaseTurrets)
 
             // Exact layout anchor — do not search for an open tile (that shifts HQ and all turret offsets).
             Helpers.ObjectState pylonBase = new Helpers.ObjectState();
@@ -2318,7 +2334,9 @@ namespace InfServer.Script.GameType_Eol
                                 createVehicleAtObjectState(460, -64, 64, team, pylonBase);
                                 createVehicleAtObjectState(823, 352, -160, team, pylonBase);
                                 break;
-
+                            default:
+                                PlaceObjectiveBaseTurrets(team, pylonBase);
+                                break;
                         }
                     #endregion
 
@@ -4346,6 +4364,16 @@ namespace InfServer.Script.GameType_Eol
 
             _usedpylons = new Dictionary<int, pylonObject>();
             int idx = 0;
+            // (2026-11-15) bases stand at the fixed objectives (Major Resource Points) - Script_Eol.ObjectiveBases.cs
+            List<pylonObject> objectiveSlots = BuildObjectiveHqSlots();
+            if (objectiveSlots.Count > 0)
+            {
+                foreach (pylonObject s in objectiveSlots)
+                    _usedpylons.Add(idx++, s);
+                _botHqAnchorSectorKey = CurrentBotHqAnchorSectorKey();
+                Log.write(TLog.Normal, "[Eol] Bot HQ slots: {0} at the Major Resource Points of the open sectors.", objectiveSlots.Count);
+                return;
+            }
             foreach (string sec in _eol._activeSectors)
             {
                 Dictionary<int, pylonObject> tpl = GetPylonsTemplateForSectorName(sec);
@@ -4463,6 +4491,7 @@ namespace InfServer.Script.GameType_Eol
             _tickNextKothEligible = 0;
             _victoryKothTeam = null;
             _playerCrownStatus.Clear();
+            _kothRewardPaid = false;
             _kothGameRunning = true;
 
             //Let everyone know
@@ -4565,10 +4594,19 @@ namespace InfServer.Script.GameType_Eol
             // Mark victory immediately so a concurrent poll cannot race into "no winner".
             _victoryKothTeam = victors;
 
-            int rewardedPlayers = 0;
-            foreach (InfServer.Game.Player p in victors.AllPlayers)
+            // (2026-11-15) Pay each round ONCE: a second call for the same round (poll + mod end, re-entry) pays nothing.
+            if (_kothRewardPaid)
             {
-                if (p == null || p.IsSpectator)
+                endKOTH();
+                return;
+            }
+            _kothRewardPaid = true;
+
+            int rewardedPlayers = 0;
+            HashSet<InfServer.Game.Player> paid = new HashSet<InfServer.Game.Player>();
+            foreach (InfServer.Game.Player p in victors.AllPlayers.ToList())
+            {
+                if (p == null || p.IsSpectator || !paid.Add(p))
                     continue;
 
                 int cashReward = _config.king.cashReward * _arena.PlayerCount;
@@ -4578,6 +4616,8 @@ namespace InfServer.Script.GameType_Eol
                 p.Cash += cashReward;
                 p.Experience += experienceReward;
                 p.BonusPoints += pointReward;
+                // (2026-11-15) the reward never showed: cash/xp were changed on the server only - send them to the client
+                p.syncState();
                 QueueKothVictoryPlayerNotify(p,
                     String.Format("Your Personal Reward: Points={0} Cash={1} Experience={2}", pointReward, cashReward, experienceReward));
                 rewardedPlayers++;
@@ -5927,7 +5967,9 @@ namespace InfServer.Script.GameType_Eol
             _arena.sendArenaMessage("A new game has started!", _config.flag.victoryWarningBong);
             int nowArm = Environment.TickCount;
             _tickNextSectorRotation = nowArm + SectorRotationIntervalMs;
-            _arena.sendArenaMessage("&Radiation sectors change once a day - new sectors and a fresh start. A 90-second warning will be given before the change.", _config.flag.periodicBong);
+            // (2026-11-15, owner: Sector A only for now - don't announce a daily change)
+            if (EolBoundaries.PinnedFirstSector == null)
+                _arena.sendArenaMessage("&Radiation sectors change once a day - new sectors and a fresh start. A 90-second warning will be given before the change.", _config.flag.periodicBong);
             _lastFlagReward = nowArm;
             ResetFlagRewardCycleNotices();
             _flagRewardsSinceReset = 0;
@@ -6142,6 +6184,40 @@ namespace InfServer.Script.GameType_Eol
 
         #region Player Events
         /// <summary>
+        /// (2026-11-15) Minimum cash / experience for killing a bot (before the newer-player / happy hour scale):
+        ///   - fixed base bots (base Captain, Engineer, Defender): 2k / 1k;
+        ///   - roamers: 3k / 2k, specialists (Sergeant, Squad Leader, Surgeon, ... - the $750 helmets) 4k / 2.5k,
+        ///     command (roaming captains, Captain / Lieutenant / Pirate Commander - the $1000 helmets) 5k / 3k.
+        /// Aliens keep their own .cfg / settings reward. False = no floor for this bot.
+        /// </summary>
+        static bool BotKillRewardFloor(Bots.Bot victim, out int cash, out int exp)
+        {
+            cash = 0; exp = 0;
+            if (victim == null)
+                return false;
+            if (victim is Captain || victim is Engineer || victim is BasicDefense)
+            {
+                cash = 2000; exp = 1000;
+                return true;
+            }
+            if (!(victim is RoamingAttacker || victim is RoamingCaptain))
+                return false;
+            int helm = PirateHelmetFor(victim);
+            if (helm == 0 && victim._type != null)
+                helm = victim._type.DropItemId;
+            int tier;
+            if (!HelmetPrices.TryGetValue(helm, out tier))
+                tier = HelmetBasePrice;
+            if (victim is RoamingCaptain || tier >= HelmetCommandPrice)
+            { cash = 5000; exp = 3000; }
+            else if (tier >= HelmetSpecialistPrice)
+            { cash = 4000; exp = 2500; }
+            else
+            { cash = 3000; exp = 2000; }
+            return true;
+        }
+
+        /// <summary>
         /// Calculates and rewards a players for a bot kill
         /// </summary>
         static public void calculateBotKillRewards(Bots.Bot victim, InfServer.Game.Player killer)
@@ -6172,6 +6248,14 @@ namespace InfServer.Script.GameType_Eol
                 killerExp = Convert.ToInt32(((int)cfg.bot.expKillReward) + (killerBounty * c_expMultiplier));
                 victimBounty = (int)cfg.bot.fixedBountyToKiller;
                 killerBountyIncrease = 0;
+            }
+
+            // (2026-11-15, owner: roamer rewards were low) minimum reward per bot kind - see BotKillRewardFloor
+            int floorCash, floorExp;
+            if (BotKillRewardFloor(victim, out floorCash, out floorExp))
+            {
+                killerCash = Math.Max(killerCash, floorCash);
+                killerExp = Math.Max(killerExp, floorExp);
             }
 
             //Update his stats
@@ -7050,6 +7134,7 @@ namespace InfServer.Script.GameType_Eol
                         p.BonusPoints += scaledPoints;
                         p.Cash += scaledCash;
                         p.Experience += scaledExp;
+                        p.syncState();   // (2026-11-15) show it on the client right away
                         p.sendMessage(0, string.Format("&Headquarters - Your team destroyed {0}'s bot HQ! Cash={1} Experience={2} Points={3}",
                             dead._team._name, scaledCash, scaledExp, scaledPoints));
                     }
