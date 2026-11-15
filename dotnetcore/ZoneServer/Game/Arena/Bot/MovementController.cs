@@ -29,8 +29,14 @@ namespace InfServer.Bots
         public bool bCollision;
         public Vector3 _lastCollision;
 
-        //Hardcode the terrain for now until we get access to the map info!
+        /// <summary>
+        /// The vehicle's terrain-speed row in use: the terrain under the bot, like the client does for a player
+        /// (local 2026-11-15: it was hard-coded to 0, so bots kept full speed / low friction on slow terrain - e.g. the
+        /// Eol map's terrain 9, where every infantry vehicle is ~10% slower with more friction - and out-ran players).
+        /// </summary>
         private int _terrainType = 0;
+        private BotUtilityMovementModifiers _movementMods;
+        private int _tickTerrainCheck;
 		
 		//Our internal representation of position/velocity/direction
 		//These are vectors using float precision
@@ -130,6 +136,7 @@ namespace InfServer.Bots
         /// </summary>
         public void ApplyUtilityMovementModifiers(BotUtilityMovementModifiers mods)
         {
+            _movementMods = mods;
             SpeedValues t0 = _type.TerrainSpeeds[_terrainType];
 
             _rollFriction = t0.RollFriction;
@@ -138,6 +145,43 @@ namespace InfServer.Bots
             _rollThrustBack = (t0.BackwardThrust + mods.ReverseThrustBonus) * 4800 / 128;
             _rollRotate = t0.RollRotate + mods.RotateBonus;
             _rollTopSpeed = t0.RollTopSpeed + mods.TopSpeedBonus;
+        }
+
+        /// <summary>
+        /// Switch to the terrain-speed row of the tile under the bot (an all-zero row = not set for that terrain: the
+        /// vehicle's base row 0, as the client treats it).
+        /// </summary>
+        private void UpdateTerrainSpeeds()
+        {
+            int now = Environment.TickCount;
+            if (_tickTerrainCheck != 0 && now - _tickTerrainCheck < 200)
+                return;
+            _tickTerrainCheck = now;
+            if (_arena == null || _type == null || _type.TerrainSpeeds == null)
+                return;
+
+            int terrain = 0;
+            try
+            {
+                int x = _state.positionX, y = _state.positionY;
+                if (x >= 0 && y >= 0 && x / 16 < _arena._levelWidth && y / 16 < _arena._levelHeight)
+                    terrain = _arena.getTerrainID(x, y);
+            }
+            catch (Exception)
+            {
+                terrain = 0;
+            }
+            if (terrain < 0 || terrain >= _type.TerrainSpeeds.Length)
+                terrain = 0;
+            SpeedValues row = _type.TerrainSpeeds[terrain];
+            // (a row without a top speed is not set up for that terrain - e.g. alien vehicles carry only a friction
+            // value there; using it would freeze the bot at speed 0)
+            if (row == null || row.RollTopSpeed <= 0)
+                terrain = 0;
+            if (terrain == _terrainType)
+                return;
+            _terrainType = terrain;
+            ApplyUtilityMovementModifiers(_movementMods);
         }
 
 		/// <summary>
@@ -182,8 +226,8 @@ namespace InfServer.Bots
             else
                 _tickMovementFrozenUntil = 0;
 
-            //Get our speed values for our current terrain
-            SpeedValues stats = _type.TerrainSpeeds[_terrainType];
+            //Speeds for the terrain we're on (checked a few times a second)
+            UpdateTerrainSpeeds();
 
             //Apply our rotation
             if (_useAnalogDrive)
@@ -246,6 +290,12 @@ namespace InfServer.Bots
             //Clamp our resulting velocity
             if (_velocity.Length >= _rollTopSpeed / 1)
                 _velocity.Normalize(_rollTopSpeed / 1);
+            // (never let a bad value through: Normalize of a zero vector gives NaN)
+            if (double.IsNaN(_velocity.x) || double.IsNaN(_velocity.y) || double.IsInfinity(_velocity.x) || double.IsInfinity(_velocity.y))
+            {
+                _velocity.x = 0;
+                _velocity.y = 0;
+            }
 
             //Calculate our new position
             double xPerTick = _velocity.x / 10000.0d;
@@ -615,6 +665,11 @@ namespace InfServer.Bots
 
 			if (_velocity.Length >= _rollTopSpeed / 1)
 				_velocity.Normalize(_rollTopSpeed / 1);
+			if (double.IsNaN(_velocity.x) || double.IsNaN(_velocity.y))
+			{
+				_velocity.x = 0;
+				_velocity.y = 0;
+			}
 
 			writeStateFromPhysics();
 
@@ -749,8 +804,9 @@ namespace InfServer.Bots
             if (tx < 0 || ty < 0 || tx >= _arena._levelWidth || ty >= _arena._server._assets.Level.Height)
                 return true;
             LvlInfo.Tile t = _arena._tiles[ty * _arena._levelWidth + tx];
-            if (BotCombat.IsGroundWall(_arena._server._assets.Level, t))
-                return true;   // (overhead / light-blue physics: walk under it)
+            // (overhead / light-blue physics: walk under it; boards and packs fly over low green - BotCombat.IsWallFor)
+            if (BotCombat.IsWallFor(_arena._server._assets.Level, t, _type))
+                return true;
             return IsSolidObjectAt(x, y);
         }
 

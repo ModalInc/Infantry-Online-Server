@@ -153,7 +153,7 @@ namespace InfServer.Script.GameType_Eol
                 return false;
 
             return TileLineClear(bot._arena, bot._state.positionX, bot._state.positionY,
-                hq._state.positionX, hq._state.positionY);
+                hq._state.positionX, hq._state.positionY, bot._type);
         }
 
         static string LegName(EolHqPatrolState s)
@@ -243,19 +243,20 @@ namespace InfServer.Script.GameType_Eol
             return DistSq(bot.positionX, bot.positionY, dest.positionX, dest.positionY) <= a * a;
         }
 
-        public static bool TileLineClear(Arena arena, short x0, short y0, short x1, short y1)
+        /// <param name="type">The vehicle moving (null = on foot): boards / packs fly over low green (2026-11-15).</param>
+        public static bool TileLineClear(Arena arena, short x0, short y0, short x1, short y1, VehInfo type = null)
         {
             if (arena == null)
                 return false;
             LvlInfo level = arena._server._assets.Level;
             // overhead (light-blue) physics is walked under, not a wall (local 2026-11-14)
             return Helpers.calcBresenhemsPredicate(arena, x0, y0, x1, y1,
-                delegate (LvlInfo.Tile t) { return !BotCombat.IsGroundWall(level, t); });
+                delegate (LvlInfo.Tile t) { return !BotCombat.IsWallFor(level, t, type); });
         }
 
-        static bool GroundWallAt(Arena arena, short rawX, short rawY)
+        static bool GroundWallAt(Arena arena, short rawX, short rawY, VehInfo type = null)
         {
-            return BotCombat.IsGroundWall(arena._server._assets.Level, arena.getTile(rawX, rawY));
+            return BotCombat.IsWallFor(arena._server._assets.Level, arena.getTile(rawX, rawY), type);
         }
 
         public static bool IsOpenForBot(Bot bot, short rawX, short rawY)
@@ -264,7 +265,7 @@ namespace InfServer.Script.GameType_Eol
                 return false;
             if (BotWallAvoidance.IsImpassable(bot, rawX, rawY))
                 return false;
-            if (GroundWallAt(bot._arena, rawX, rawY))
+            if (GroundWallAt(bot._arena, rawX, rawY, bot._type))
                 return false;
 
             for (int dy = -1; dy <= 1; dy++)
@@ -277,7 +278,7 @@ namespace InfServer.Script.GameType_Eol
                     short sy = (short)(rawY + dy * 16);
                     if (BotWallAvoidance.IsImpassable(bot, sx, sy))
                         return false;
-                    if (GroundWallAt(bot._arena, sx, sy))
+                    if (GroundWallAt(bot._arena, sx, sy, bot._type))
                         return false;
                 }
             }
@@ -291,7 +292,7 @@ namespace InfServer.Script.GameType_Eol
                 return false;
             if (BotWallAvoidance.IsImpassable(bot, rawX, rawY))
                 return false;
-            return !GroundWallAt(bot._arena, rawX, rawY);
+            return !GroundWallAt(bot._arena, rawX, rawY, bot._type);
         }
 
         public static Helpers.ObjectState AbsoluteFallback(Bot bot, Vehicle hq)
@@ -753,7 +754,7 @@ namespace InfServer.Script.GameType_Eol
                 Helpers.ObjectState aim = dest;
                 float scale = 1.15f;
 
-                if (!TileLineClear(bot._arena, bx, by, dest.positionX, dest.positionY))
+                if (!TileLineClear(bot._arena, bx, by, dest.positionX, dest.positionY, bot._type))
                 {
                     // Local 2026-11-14: it can SEE the wall - never walk up to it and push. Plan round it with
                     // memory (EolWallMemory): open ground that gets closer, not where it has just been.
@@ -930,7 +931,7 @@ namespace InfServer.Script.GameType_Eol
             }
 
             bool lineClearToDest = TileLineClear(arena, bot._state.positionX, bot._state.positionY,
-                s.Dest.positionX, s.Dest.positionY);
+                s.Dest.positionX, s.Dest.positionY, bot._type);
 
             // No LOS to Dest → set / refresh a clear hop (never pathfind).
             if (!lineClearToDest)
@@ -1156,7 +1157,7 @@ namespace InfServer.Script.GameType_Eol
             }
 
             bool lineClearToDest = TileLineClear(arena, bot._state.positionX, bot._state.positionY,
-                s.Dest.positionX, s.Dest.positionY);
+                s.Dest.positionX, s.Dest.positionY, bot._type);
 
             if (!lineClearToDest)
             {

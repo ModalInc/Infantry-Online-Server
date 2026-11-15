@@ -47,6 +47,7 @@ namespace InfServer.Script.GameType_Eol
         void KothBotsStart()
         {
             _botCrownExpire.Clear();
+            _kothRoundHadBots = false;
             if (!KothBotsParticipate || _arena == null)
                 return;
             int until = Environment.TickCount + KothCrownMs;
@@ -59,8 +60,15 @@ namespace InfServer.Script.GameType_Eol
                 ids.Add((short)b._id);
             }
             SendBotCrowns(true, ids);
+            _kothRoundHadBots = ids.Count > 0;
             Log.write(TLog.Normal, "[Eol] KOTH: {0} bots crowned.", ids.Count);
         }
+
+        /// <summary>
+        /// True when bots wore crowns this round - then one team of players is a real KOTH: the last crowned team
+        /// beat the bots and wins (2026-11-15: a lone player who outlasted every crowned bot got "cancelled - no winner").
+        /// </summary>
+        bool _kothRoundHadBots;
 
         /// <summary>Round over: take every bot crown off.</summary>
         void KothBotsEnd()
@@ -114,15 +122,16 @@ namespace InfServer.Script.GameType_Eol
             bool wasCrowned = _botCrownExpire.ContainsKey(dead);
             RemoveBotCrown(dead);
 
-            if (killer != null && _playerCrownStatus != null && _playerCrownStatus.TryGetValue(killer, out PlayerCrownStatus ks))
-            {
+            if (killer != null)
+            {   // (CrownOf: players who joined / unspecced mid-round count too - 2026-11-15)
+                PlayerCrownStatus ks = CrownOf(killer);
                 if (ks.crown)
                     updateCrownTime(killer);
                 else if (wasCrowned)
                 {
                     ks.crownKills++;
                     if (_config.king.crownRecoverKills != 0 && ks.crownKills >= _config.king.crownRecoverKills)
-                        giveCrown(killer);
+                        GiveCrownBack(killer);
                 }
             }
             if (killerBot != null && _botCrownExpire.ContainsKey(killerBot))
@@ -135,7 +144,7 @@ namespace InfServer.Script.GameType_Eol
             if (!_kothGameRunning || victim == null || _playerCrownStatus == null)
                 return;
             PlayerCrownStatus vs;
-            if (_playerCrownStatus.TryGetValue(victim, out vs) && vs.crown)
+            if (_playerCrownStatus.TryGetValue(victim, out vs) && vs != null && vs.crown)
             {
                 vs.crownDeaths++;
                 if (vs.crownDeaths >= _config.king.deathCount)

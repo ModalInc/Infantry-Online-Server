@@ -162,7 +162,7 @@ namespace InfServer.Script.GameType_Eol
             // Direct seek only when the WALKING line is clear too - shots fly over low walls but bots can't walk
             // through them (local fix 2026-11-14: this seeked straight into low physics and bots hugged it).
             bool walkLineClear = losClear && bot._arena != null && bot._state != null
-                && EolHqPatrol.TileLineClear(bot._arena, bot._state.positionX, bot._state.positionY, dest.positionX, dest.positionY);
+                && EolHqPatrol.TileLineClear(bot._arena, bot._state.positionX, bot._state.positionY, dest.positionX, dest.positionY, bot._type);
             Func<InfantryVehicle, Vector3> fallback = (walkLineClear && pursueFallback != null)
                 ? pursueFallback
                 : EolHqPatrol.MakeLineClearPendingSeek(bot, () => dest);

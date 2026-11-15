@@ -11,9 +11,9 @@ namespace InfServer.Script.GameType_Eol
 {
     /// <summary>
     /// Human-class roaming squads (local change 2026-11-14), built on the real PLAYER classes so they wear the same
-    /// skins as human players. Part of the 80-bot roster (see Script_Eol.Roster.cs):
+    /// skins as human players. Part of the 60-bot roster (see Script_Eol.Roster.cs):
     ///   - "Storm Rangers Bots": human roamers, 5-8, normal skill mix;
-    ///   - five mixed teams of 3-8 that make up the rest of the 80, each with its own skill (ace .. normal mix);
+    ///   - three mixed teams of 3-8 that make up the rest of the 60, each with its own skill (ace .. normal mix);
     ///   - "Ghost Reapers Bots" (botTeam8): an elite vehicle squad of 3 - Deathboard, Shimmerboard, Drop Pack.
     /// Every class is kept on the field (each new bot takes the class with the fewest bots out) and every class
     /// draws from its own weapon pools, so loadouts vary. Every bot carries the Suit SuperCharger; about a third
@@ -122,7 +122,7 @@ namespace InfServer.Script.GameType_Eol
                 KeepStrikeTeamFilled(botTeam8, now, false);
             }
 
-            // mixed teams top the field up to 80 (not past it while the assassins are out)
+            // mixed teams top the field up to 60 (not past it while the assassins are out)
             int live = CountLiveRosterBots();
             for (int i = 0; i < _mixedTeams.Count; i++)
             {

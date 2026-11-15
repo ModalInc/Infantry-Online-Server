@@ -19,13 +19,16 @@ namespace InfServer.Bots
         private const float RepulsionScale = 0.01f;
         private const float MaxRepulsion = 0.7f;
 
-        /// <summary>A ground-level wall at this raw point (overhead / light-blue physics is not a wall). Off-map = wall.</summary>
-        static bool WallAt(LvlInfo level, int rawX, int rawY)
+        /// <summary>
+        /// A ground-level wall for this vehicle at this raw point (overhead / light-blue physics is not a wall; boards and
+        /// packs fly over low green - BotCombat.IsWallFor). Off-map = wall.
+        /// </summary>
+        static bool WallAt(LvlInfo level, int rawX, int rawY, VehInfo type)
         {
             int tx = rawX / 16, ty = rawY / 16;
             if (rawX < 0 || rawY < 0 || tx >= level.Width || ty >= level.Height)
                 return true;
-            return BotCombat.IsGroundWall(level, level.Tiles[ty * level.Width + tx]);
+            return BotCombat.IsWallFor(level, level.Tiles[ty * level.Width + tx], type);
         }
 
         public static bool IsImpassable(Bot bot, short rawX, short rawY)
@@ -39,9 +42,9 @@ namespace InfServer.Bots
 
             try
             {
-                // any physics is a wall for a bot, whatever it rides (local 2026-11-14 - boards glided through red);
-                // built walls / turrets near the bot count too, so the escape scan sees them
-                return WallAt(level, rawX, rawY) || (bot._movement != null && bot._movement.IsSolidObjectAt(rawX, rawY));
+                // physics is a wall unless this vehicle rides above it (2026-11-15: boards over green; red / orange / yellow
+                // still stop them); built walls / turrets near the bot count too, so the escape scan sees them
+                return WallAt(level, rawX, rawY, bot._type) || (bot._movement != null && bot._movement.IsSolidObjectAt(rawX, rawY));
             }
             catch (ArgumentOutOfRangeException)
             {
@@ -96,7 +99,7 @@ namespace InfServer.Bots
             for (int s = TileSizeRaw; s <= dist; s += TileSizeRaw)
             {
                 bool blocked;
-                try { blocked = WallAt(level, x + (int)Math.Round(ux * s), y + (int)Math.Round(uy * s)); }
+                try { blocked = WallAt(level, x + (int)Math.Round(ux * s), y + (int)Math.Round(uy * s), type); }
                 catch (ArgumentOutOfRangeException) { blocked = true; }
                 if (blocked)
                     return s - TileSizeRaw;
@@ -297,7 +300,7 @@ namespace InfServer.Bots
                     bool blocked;
                     try
                     {
-                        blocked = WallAt(level, sampleX, sampleY);
+                        blocked = WallAt(level, sampleX, sampleY, type);
                     }
                     catch (ArgumentOutOfRangeException)
                     {
@@ -343,7 +346,7 @@ namespace InfServer.Bots
 
                 try
                 {
-                    if (WallAt(level, px, py))
+                    if (WallAt(level, px, py, type))
                         blockedAhead++;
                 }
                 catch (ArgumentOutOfRangeException)

@@ -86,7 +86,12 @@ namespace InfServer.Script.GameType_Eol
         private int _tickKothGameStart;
         private int _minPlayers;                //The minimum amount of players needed for a KOTH game
         /// <summary>How often open radiation sectors reshuffle during a live match.</summary>
-        public const int SectorRotationIntervalMs = 6 * 60 * 60 * 1000;
+        /// <summary>
+        /// (2026-11-15: once a day, was every 6 hours) The arena no longer resets when it empties, so this rotation is the
+        /// zone's daily fresh start: new sectors (different ones where possible), the old bases and structures cleared.
+        /// Due while nobody is in: it happens quietly (PollEmptyArena); with players: the usual 90 s warning first.
+        /// </summary>
+        public const int SectorRotationIntervalMs = 24 * 60 * 60 * 1000;
         int _tickNextSectorRotation;
         private bool _kothGameRunning;
         private Dictionary<InfServer.Game.Player, Team> _startTeams;
@@ -699,6 +704,11 @@ namespace InfServer.Script.GameType_Eol
         {	//Populate our variables
             currentHour = DateTime.Now.Hour;
             _arena = invoker as Arena;
+            // (2026-11-15) Eol never resets when it empties: the public arena stays open with every structure where
+            // it was (this arena only - private arenas still close when their last player leaves). Bots are only
+            // there while somebody is (see PollEmptyArena).
+            if (_arena._bIsPublic)
+                _arena._bPersistent = true;
             _config = _arena._server._zoneConfig;
             _arena.setTicker(0, 2, 0, "");
             if (_arena.BotActionModule != null)
@@ -1256,10 +1266,55 @@ namespace InfServer.Script.GameType_Eol
 
         bool EolHasArenaPresence()
         {
-            if (Arena.persistentArena)
-                return true;
+            // (2026-11-15: no longer "always" in a persistent arena - an empty Eol keeps its structures but runs
+            //  no bots; they come back when someone joins)
             return EolArenaPresenceCount() > 0;
         }
+
+        /// <summary>
+        /// (2026-11-15) Nobody in Eol (players or spectators) for EmptyArenaBotClearMs: every bot leaves (paced
+        /// despawn), nothing spawns, sector rotation waits - structures (HQs, walls, turrets, converters) stay
+        /// exactly as they are. Someone joins: the normal spawn timers bring the bots back a few at a time.
+        /// True = the arena is empty, skip the rest of poll.
+        /// </summary>
+        bool PollEmptyArena(int now)
+        {
+            if (EolHasArenaPresence())
+            {
+                _tickArenaEmptySince = 0;
+                _botsClearedForEmpty = false;
+                return false;
+            }
+            if (_tickArenaEmptySince == 0)
+                _tickArenaEmptySince = now == 0 ? 1 : now;
+            // (a short grace: a player who drops and reconnects finds the fight where it was)
+            if (!_botsClearedForEmpty && now - _tickArenaEmptySince >= EmptyArenaBotClearMs)
+            {
+                _botsClearedForEmpty = true;
+                Log.write(TLog.Normal, "[Eol] Arena empty - bots leave, structures stay.");
+                if (_kothGameRunning)
+                    endKOTH();   // (nobody left to win it - a fresh round comes with the players)
+                DestroyAllTrackedScriptBots();
+            }
+            // (and any bot an event spawned while it stayed empty)
+            else if (_botsClearedForEmpty && _bots != null && _bots.Count > 0)
+                DestroyAllTrackedScriptBots();
+
+            // The daily sector change is due and nobody is here: do it now, quietly (no warning needed) - the next
+            // player finds new sectors and a fresh field.
+            if (_botsClearedForEmpty && _arena._bGameRunning && !_bbetweengames && !_sectorChangeCountdownActive
+                && !_kothGameRunning && _tickNextSectorRotation != 0 && now - _tickNextSectorRotation >= 0)
+            {
+                Log.write(TLog.Normal, "[Eol] Daily sector change while the arena is empty.");
+                newSectorDSRecall();
+                _tickNextSectorRotation = now + SectorRotationIntervalMs;
+            }
+            DrainDespawnQueue(now);   // (the paced despawn still has to run)
+            return true;
+        }
+        int _tickArenaEmptySince;
+        bool _botsClearedForEmpty;
+        const int EmptyArenaBotClearMs = 20000;
 
         /// <summary>Population used for bot caps/HQ counts — treat spectators as presence so bots do not stall when everyone is in spec.</summary>
         int EolBotPopulationForCaps(int playingIngame)
@@ -1406,7 +1461,7 @@ namespace InfServer.Script.GameType_Eol
                 return;
             if (_sectorChangeCountdownActive)
                 return;
-            if (now < _tickNextSectorRotation)
+            if (now - _tickNextSectorRotation < 0)   // (wrap-safe: TickCount turns negative after ~25 days)
                 return;
 
             // Live KOTH round blocks rotation; lobby/cooldown do not. Stay due until idle.
@@ -1439,8 +1494,9 @@ namespace InfServer.Script.GameType_Eol
                 return false;
 
             // No opposing teams left — cancel without awarding a winner. (Bot teams holding crowns count as
-            // opponents - local 2026-11-14, bots play KOTH too.)
-            if (_arena.ActiveTeams.Count() <= 1 && _botCrownExpire.Count == 0)
+            // opponents - local 2026-11-14, bots play KOTH too. A round the bots were crowned in is never cancelled
+            // this way: the last crowned team beat them and wins below - 2026-11-15, solo player vs bots.)
+            if (_arena.ActiveTeams.Count() <= 1 && _botCrownExpire.Count == 0 && !_kothRoundHadBots)
             {
                 _arena.sendArenaMessage("KOTH cancelled — only one team remains. No winner.");
                 endKOTH();
@@ -1880,11 +1936,15 @@ namespace InfServer.Script.GameType_Eol
             int playing = _arena.PlayerCount;
             int botPop = EolBotPopulationForCaps(playing);
 
+            if (PollEmptyArena(now))
+                return true;
+
             PruneExpiredCombatCalls(now);
             if (now - _tickBotBrainPoll >= 250) { _tickBotBrainPoll = now; EolBotBrain.PollAll(now, _arena); }  // local: retreat/heal
             if (_playAreaFn == null)
                 _playAreaFn = (px, py) => InPlayArea(px, py, 150);
             EolBotBrain.PlayArea = _playAreaFn;   // bots stay out of the toxic zones (re-set: survives script reloads)
+            WireTerritoryHooks();                 // NW territories + the new player buffer (Script_Eol.Territories.cs)
             Bots.Bot.DeathDropResolver = _helmetDropFn;   // pirate / class helmets on death
             PollEliteSquads(now);   // local: two elite roaming squads
             PollStrikeTeams(now);   // local: three human-class strike teams
@@ -1895,6 +1955,7 @@ namespace InfServer.Script.GameType_Eol
             PollEolHappyHour(now);
             RefreshPollVehicleCache(now);
             DrainDespawnQueue(now);
+            PollVendors(now);   // helmet trader + supply vendors (Script_Eol.Vendors.cs)
             DrainKothEndQueue(now);
             DrainExplosionNetQueue(now);
             PollAlienCrashEvent(now);
@@ -1960,6 +2021,11 @@ namespace InfServer.Script.GameType_Eol
                 catch { playingForHq = playing; }
             }
             int desiredHqs = DesiredBotHqCountForPlayers(playingForHq);
+            // (2026-11-15) never more bases than the open sectors have allowed slots for - NW holds one (its bot base
+            // corner); asking for more only looped "no usable slot" warnings every few seconds
+            int allowedSlots = CountAllowedHqSlots();
+            if (allowedSlots >= 0 && desiredHqs > allowedSlots)
+                desiredHqs = allowedSlots;
             int liveHqs = CountLiveDefenseBotHqs();
             if (liveHqs >= desiredHqs)
                 return;
@@ -2009,6 +2075,8 @@ namespace InfServer.Script.GameType_Eol
                 short py = kv.Value.getY();
                 if (_eol != null && !_eol.IsInAnyActiveSector(px, py))
                     continue;
+                if (!HqSlotAllowed(px, py))
+                    continue;   // NW: the bot base corner only (Script_Eol.Territories.cs)
                 // Never stack a new HQ on top of a live one (stale exists flag / same coords).
                 if (IsLiveHqNearAnchor(px, py))
                     continue;
@@ -2027,6 +2095,8 @@ namespace InfServer.Script.GameType_Eol
                     short px = kv.Value.getX();
                     short py = kv.Value.getY();
                     if (_eol != null && !_eol.IsInAnyActiveSector(px, py))
+                        continue;
+                    if (!HqSlotAllowed(px, py))
                         continue;
                     if (IsLiveHqNearAnchor(px, py))
                         continue;
@@ -2274,7 +2344,7 @@ namespace InfServer.Script.GameType_Eol
         public void preNewSector()
         {
             Log.write(TLog.Normal, "[Eol] Sector rotation: 90s warning (radiation wind change).");
-            _arena.sendArenaMessage("&Radiation wind change — new sectors in 90 seconds. Get safe. You will be sent to Pioneer Station before the change. Bases and bots in old sectors will clear.", _config.flag.victoryWarningBong);
+            _arena.sendArenaMessage("&Radiation wind change — new sectors in 90 seconds. Get safe. You will be sent back to Pioneer Station when it changes. Bases and bots in old sectors will clear.", _config.flag.victoryWarningBong);
             _sectorChangeCountdownActive = true;
             _lastHudActivityTickerSent = null;
             _arena.setTicker(1, KothLobbyTickerIdx, 90 * 100, "New sectors in: ",
@@ -2293,18 +2363,7 @@ namespace InfServer.Script.GameType_Eol
             int playersTotal = _arena != null && _arena.Players != null ? _arena.Players.Count() : 0;
             int vehiclesTotal = _arena != null && _arena.Vehicles != null ? _arena.Vehicles.Count() : 0;
             Log.write(TLog.Normal, "[Eol] Sector rotation recall burst: playersIngame={0}, playersTotal={1}, vehicles={2}", playersIngame, playersTotal, vehiclesTotal);
-            Helpers.ObjectState warpPoint;
-            foreach (InfServer.Game.Player player in _arena.PlayersIngame)
-            {
-                warpPoint = findOpenWarp(player, _arena, 27008, 3360, 300);
-                if (warpPoint == null)
-                {
-                    Log.write(TLog.Warning, "[Eol] Sector recall: no open warp for {0} (blocked).", player._alias);
-                    player.sendMessage(-1, "There was an issue sending you back to Pioneer Station, please contact the dev team about this issue.");
-                    continue;
-                }
-                warp(player, warpPoint);
-            }
+            // (players are sent to the NEW sectors' dropship buffers once the sectors have changed - below)
             foreach (InfServer.Game.Player player in _arena.Players)
             {
                 player.clearProjectiles();
@@ -2330,6 +2389,10 @@ namespace InfServer.Script.GameType_Eol
             {
                 _eol.RotateMatchSectors();
                 _eol.RebuildBorderWallVehicles();
+                // everyone to a dropship buffer of the new sectors (2026-11-15; Pioneer Station if none is open)
+                foreach (InfServer.Game.Player player in _arena.PlayersIngame.ToList())
+                    if (!_eol.TryWarpPlayerToDropship(player, announce: false))
+                        player.sendMessage(-1, "There was an issue sending you to the dropship, please contact the dev team about this issue.");
             }
 
             _bbetweengames = false;
@@ -2337,7 +2400,7 @@ namespace InfServer.Script.GameType_Eol
                 _eol.bbetweengames = false;
             if (EolBaseSetupEnabled)
                 RebuildBotHqSlotTemplates();
-            Log.write(TLog.Normal, "[Eol] Sector rotation complete; next rotation in 6 hours.");
+            Log.write(TLog.Normal, "[Eol] Sector rotation complete; next rotation in 24 hours.");
         }
 
         #endregion
@@ -4231,10 +4294,19 @@ namespace InfServer.Script.GameType_Eol
         #region Pylons
         private Dictionary<int, pylonObject> GetPylonsTemplateForSectorName(string sec)
         {
+            // every HQ anchor, by the sector it lies in on the barrier-wall sector map (2026-11-15: three sectors -
+            // the old per-sector lists followed the straight seams)
+            if (_pylons != null && _eol.SectorAt(6305, 4277) != null)   // (null = sector map not built)
+            {
+                Dictionary<int, pylonObject> mine = new Dictionary<int, pylonObject>();
+                foreach (KeyValuePair<int, pylonObject> kv in _pylons.OrderBy(k => k.Key))
+                    if (kv.Value != null && string.Equals(_eol.SectorAt(kv.Value.getX(), kv.Value.getY()), sec, StringComparison.OrdinalIgnoreCase))
+                        mine.Add(mine.Count, kv.Value);
+                return mine;
+            }
             if (sec == _eol.sectorA) return _pylonsA;
             if (sec == _eol.sectorB) return _pylonsB;
             if (sec == _eol.sectorC) return _pylonsC;
-            if (sec == _eol.sectorD) return _pylonsD;
             return null;
         }
 
@@ -4625,7 +4697,9 @@ namespace InfServer.Script.GameType_Eol
         /// </summary>
         public void giveCrown(InfServer.Game.Player p, bool broadcast = true)
         {//Give the player a crown; startKOTH batches the arena packet.
-            var v = _playerCrownStatus[p];
+            if (p == null)
+                return;
+            var v = CrownOf(p);
             v.crown = true;
             v.crownDeaths = 0;
             v.crownKills = 0;
@@ -4634,12 +4708,40 @@ namespace InfServer.Script.GameType_Eol
                 QueueKothCrownBroadcast(true, _activeCrowns);
         }
 
+        /// <summary>Crown won back with crown kills: the crown, plus a line so the player knows why.</summary>
+        void GiveCrownBack(InfServer.Game.Player p)
+        {
+            if (p == null)
+                return;
+            giveCrown(p);
+            p.sendMessage(0, String.Format("&{0} crown kills - you have your crown back!", _config.king.crownRecoverKills));
+        }
+
+        /// <summary>
+        /// The player's crown entry, made on demand (not crowned) - players who unspec or join after a round starts
+        /// have none, and every crown rule must still work for them (2026-11-15).
+        /// </summary>
+        PlayerCrownStatus CrownOf(InfServer.Game.Player p)
+        {
+            if (_playerCrownStatus == null)
+                _playerCrownStatus = new Dictionary<InfServer.Game.Player, PlayerCrownStatus>();
+            PlayerCrownStatus s;
+            if (!_playerCrownStatus.TryGetValue(p, out s) || s == null)
+            {
+                s = new PlayerCrownStatus(false);
+                _playerCrownStatus[p] = s;
+            }
+            return s;
+        }
+
         /// <summary>
         /// Updates the crown time for the specified player
         /// </summary>
         public void updateCrownTime(InfServer.Game.Player p)
         {   //Reset the player's counter
-            _playerCrownStatus[p].expireTime = Environment.TickCount + (_config.king.expireTime * 1000);
+            if (p == null)
+                return;
+            CrownOf(p).expireTime = Environment.TickCount + (_config.king.expireTime * 1000);
         }
 
         #endregion
@@ -4798,6 +4900,12 @@ namespace InfServer.Script.GameType_Eol
                 Helpers.ObjectState pt = findOpenWarpInAxisAlignedRect(_arena, minX, maxX, minY, maxY, 20);
                 if (pt == null || !_eol.IsInAnyActiveSector(pt.positionX, pt.positionY))
                     continue;
+                // NW: raiders roam the human patrol ground, never near the new player buffer (Script_Eol.Territories.cs)
+                if (NearNewPlayerBuffer(pt.positionX, pt.positionY))
+                    continue;
+                BotTerritory raidZone = TerritoryAt(pt.positionX, pt.positionY);
+                if (raidZone != BotTerritory.None && raidZone != BotTerritory.Human)
+                    continue;
 
                 long dx = (long)pt.positionX - fromX;
                 long dy = (long)pt.positionY - fromY;
@@ -4955,6 +5063,8 @@ namespace InfServer.Script.GameType_Eol
                     Helpers.randomPositionInArea(_arena, radius, ref pX, ref pY);
                     if (_arena.getTile(pX, pY).Blocked)
                         continue;
+                    if (NearNewPlayerBuffer(pX, pY))
+                        continue;   // no bot spawns at the new player buffer (Script_Eol.Territories.cs)
                     warpPoint = new Helpers.ObjectState();
                     warpPoint.positionX = pX;
                     warpPoint.positionY = pY;
@@ -5817,7 +5927,7 @@ namespace InfServer.Script.GameType_Eol
             _arena.sendArenaMessage("A new game has started!", _config.flag.victoryWarningBong);
             int nowArm = Environment.TickCount;
             _tickNextSectorRotation = nowArm + SectorRotationIntervalMs;
-            _arena.sendArenaMessage("&Radiation sectors rotate every 6 hours. A 90-second warning will be given before the change.", _config.flag.periodicBong);
+            _arena.sendArenaMessage("&Radiation sectors change once a day - new sectors and a fresh start. A 90-second warning will be given before the change.", _config.flag.periodicBong);
             _lastFlagReward = nowArm;
             ResetFlagRewardCycleNotices();
             _flagRewardsSinceReset = 0;
@@ -6549,9 +6659,8 @@ namespace InfServer.Script.GameType_Eol
             if (_kothGameRunning)
                 KothBotsSyncTo(player);   // the bots' crowns too
             //Send them the crowns if KOTH is enabled
-            if (_minPlayers > 0)
-                if (_playerCrownStatus == null)
-                    _playerCrownStatus = new Dictionary<InfServer.Game.Player, PlayerCrownStatus>();
+            if (_playerCrownStatus == null)   // (was only made when _minPlayers > 0 - the line below then threw)
+                _playerCrownStatus = new Dictionary<InfServer.Game.Player, PlayerCrownStatus>();
 
             if (!_playerCrownStatus.ContainsKey(player))
             {
@@ -6733,10 +6842,11 @@ namespace InfServer.Script.GameType_Eol
             OnBountyHuntPlayerSpec(player);
             if (_kothGameRunning)
             {
-                if (_playerCrownStatus != null && _playerCrownStatus.ContainsKey(player))
+                PlayerCrownStatus cs;
+                if (_playerCrownStatus != null && _playerCrownStatus.TryGetValue(player, out cs) && cs != null && cs.crown)
                 {
-                    _playerCrownStatus[player].crown = false;
-                    QueueKothCrownBroadcast(false, _noCrowns);
+                    cs.crown = false;
+                    QueueKothCrownBroadcast(false, new List<InfServer.Game.Player> { player });
                 }
             }
             if (_playerCrownStatus != null)
@@ -6818,6 +6928,13 @@ namespace InfServer.Script.GameType_Eol
             for (int attempt = 0; attempt < portalWarpAttempts; attempt++)
             {
                 string sec = sectors[_rand.Next(sectors.Count)];
+                // (2026-11-15) Sector A: land in its SPAWN zone (the owner's drawing - Script_Eol.SpawnZones.cs)
+                if (DropshipLandsInZone(sec))
+                {
+                    warpPoint = PickPlayerSpawnInZone(sec);
+                    if (warpPoint != null)
+                        break;
+                }
                 short minX;
                 short maxX;
                 short minY;
@@ -7108,35 +7225,31 @@ namespace InfServer.Script.GameType_Eol
                 _arena.ballResetPlayer(victim, killer);
             }
 
-            if (_kothGameRunning && _activeCrowns.Count == 0)
-                return false;
-
+            // (2026-11-15) Crown kills: kill CrownRecoverKills (2) crowned players or bots without a crown and you get one
+            // back. Two things stopped it: an early return whenever no PLAYER held a crown (with bots crowned that is
+            // most of a round), and players who unspecced / joined after the round started had no crown entry, so the
+            // lookups below threw and nothing was counted. CrownOf makes the entry on demand.
             if (_kothGameRunning)
             {
-                if (_playerCrownStatus[victim].crown)
+                PlayerCrownStatus vs = CrownOf(victim), ks = CrownOf(killer);
+                if (vs.crown)
                 {
-                    _playerCrownStatus[victim].crownDeaths++;
+                    vs.crownDeaths++;
 
-                    if (_playerCrownStatus[victim].crownDeaths >= _config.king.deathCount)
+                    if (vs.crownDeaths >= _config.king.deathCount)
                     {
-                        _playerCrownStatus[victim].crown = false;
+                        vs.crown = false;
                         QueueKothCrownBroadcast(false, _noCrowns);
                     }
 
-                    if (!_playerCrownStatus[killer].crown)
-                        _playerCrownStatus[killer].crownKills++;
+                    if (!ks.crown)
+                        ks.crownKills++;
                 }
 
-                if (_playerCrownStatus[killer].crown)
+                if (ks.crown)
                     updateCrownTime(killer);
-                else if (_config.king.crownRecoverKills != 0)
-                {
-                    if (_playerCrownStatus[killer].crownKills >= _config.king.crownRecoverKills)
-                    {
-                        _playerCrownStatus[killer].crown = true;
-                        giveCrown(killer);
-                    }
-                }
+                else if (_config.king.crownRecoverKills != 0 && ks.crownKills >= _config.king.crownRecoverKills)
+                    GiveCrownBack(killer);
             }
             return false;
         }
@@ -7242,7 +7355,51 @@ namespace InfServer.Script.GameType_Eol
         [Scripts.Event("Player.Produce")]
         public bool playerProduce(InfServer.Game.Player player, Computer computer, VehInfo.Computer.ComputerProduct product)
         {
-            return true;
+            // (2026-11-15) Alloy priced in the product's title - "Slick Parts (10 Alloy)". The .veh no longer lists
+            // Titanium Alloy as the needed item: the client hid every product you couldn't pay for, so nobody could
+            // see what the VPPC sells or what it costs. Charged here instead, only once the purchase went through.
+            // Helmet Trader: its products are handled in Script_Eol.Vendors.cs (nothing for the engine to produce)
+            if (computer != null && computer._type != null && computer._type.Id == HelmetTraderVehId)
+            {
+                HandleHelmetTrader(player, product);
+                return false;
+            }
+
+            int alloy = AlloyCostFromTitle(product);
+            // (a product that also needs team items can be queued without being made - left to the engine as it was;
+            //  alloy is charged exactly when the engine charges the cash: when the request is accepted)
+            if (alloy <= 0 || player == null || computer == null || product.TeamItemNeededId != 0)
+                return true;
+
+            ItemInfo alloyItem = _arena._server._assets.getItemByName("Titanium Alloy");
+            if (alloyItem == null)
+                return true;
+            int have = player.getInventoryAmount(alloyItem.id);
+            if (have < alloy)
+            {
+                player.sendMessage(-1, String.Format("You need {0} Titanium Alloy for {1} (you have {2}).",
+                    alloy, product.Title.Substring(0, product.Title.LastIndexOf('(')).Trim(), have));
+                return false;
+            }
+            // the engine's own checks (class, cash, busy) and the purchase; the alloy only if it went through
+            if (_arena.produceRequest(player, computer, product))
+            {
+                player.inventoryModify(false, alloyItem.id, -alloy);
+                player.syncInventory();
+            }
+            return false;   // (done here - the engine must not produce it a second time)
+        }
+
+        static readonly System.Text.RegularExpressions.Regex AlloyInTitle =
+            new System.Text.RegularExpressions.Regex(@"\((\d+) Alloy\)\s*$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        static int AlloyCostFromTitle(VehInfo.Computer.ComputerProduct product)
+        {
+            if (product == null || string.IsNullOrEmpty(product.Title))
+                return 0;
+            System.Text.RegularExpressions.Match m = AlloyInTitle.Match(product.Title);
+            int n;
+            return m.Success && int.TryParse(m.Groups[1].Value, out n) ? n : 0;
         }
 
         /// <summary>
@@ -7398,13 +7555,22 @@ namespace InfServer.Script.GameType_Eol
             SaveBountyToStat(player);
             // Going to spectator ends the hunt (fresh pots on next unspec if still eligible).
             OnBountyHuntPlayerSpec(player);
+            // Going to spec in KOTH costs the crown (and its crown kills) - 2026-11-15: also clear the "Crown: N" timer,
+            // which stayed on screen, and say so
             if (_playerCrownStatus != null && _playerCrownStatus.ContainsKey(player))
             {
+                bool hadCrown = _playerCrownStatus[player].crown;
                 _playerCrownStatus[player].crown = false;
-                QueueKothCrownBroadcast(false, _noCrowns);
+                if (hadCrown)
+                {
+                    QueueKothCrownBroadcast(false, new List<InfServer.Game.Player> { player });
+                    if (_kothGameRunning)
+                        player.sendMessage(0, "&You went to spectator - your KOTH crown is gone.");
+                }
                 _playerCrownStatus.Remove(player);
                 _lastKothCrownTickerSec.Remove(player);
                 _lastCtfPersonalScoreTicker.Remove(player);
+                SendPlayerTicker(player, KothCrownTimerTickerIdx, 1, "");
             }
             if (_startTeams != null)
                 _startTeams.Remove(player);
@@ -7551,7 +7717,76 @@ namespace InfServer.Script.GameType_Eol
                 player.sendMessage(0, "You can't change class while in a vehicle - get out first.");
                 return false;
             }
+            // F11 "Class Reset" (.rpg attribute -666): back to Conscript - handled here, the attribute itself is never added
+            if (player != null && skill != null && skill.SkillId == ClassResetSkillId)
+            {
+                ResetClassToConscript(player);
+                return false;
+            }
             return true;
+        }
+
+        /// <summary>The .rpg's "Class Reset" entry (category "Reset").</summary>
+        const int ClassResetSkillId = -666;
+
+        /// <summary>
+        /// (2026-11-15) F11 Class Reset did nothing: nothing handled the -666 entry. Now it puts the player back in the
+        /// default class (Conscript) - and ONLY that: weapons and inventory, experience, cash and attributes stay exactly
+        /// as they are (it does not go through skillModify, which charges experience, adjusts cash and can clear the
+        /// inventory). The Conscript body is applied the way skillModify applies a class's default vehicle.
+        /// </summary>
+        void ResetClassToConscript(InfServer.Game.Player player)
+        {
+            SkillInfo conscript = _arena._server._assets.getSkillByName("Conscript");
+            if (conscript == null)
+            {
+                player.sendMessage(-1, "Class reset is not available right now.");
+                return;
+            }
+            if (!player.IsSpectator && !player.IsDead && player._occupiedVehicle != null && player._occupiedVehicle != player._baseVehicle)
+            {
+                player.sendMessage(0, "You can't reset your class while in a vehicle - get out first.");
+                return;
+            }
+            bool onlyConscript = player._skills.ContainsKey(conscript.SkillId);
+            foreach (InfServer.Game.Player.SkillItem si in player._skills.Values)
+                if (si?.skill != null && si.skill.SkillId > 0 && si.skill.SkillId != conscript.SkillId)
+                    onlyConscript = false;
+            if (onlyConscript)
+            {
+                player.sendMessage(0, "&You are already a Conscript.");
+                return;
+            }
+
+            // every class goes (attributes - negative ids - stay), Conscript comes in
+            List<int> classes = new List<int>();
+            foreach (KeyValuePair<int, InfServer.Game.Player.SkillItem> kv in player._skills)
+                if (kv.Key > 0)
+                    classes.Add(kv.Key);
+            foreach (int id in classes)
+                player._skills.Remove(id);
+            player._skills[conscript.SkillId] = new InfServer.Game.Player.SkillItem { skill = conscript, quantity = 1 };
+
+            // the Conscript body (with the team's relative vehicle, as skillModify does)
+            if (conscript.DefaultVehicleId != -1)
+            {
+                VehInfo body = _arena._server._assets.getVehicleByID(conscript.DefaultVehicleId);
+                try
+                {
+                    if (!player.IsSpectator && player._team != null)
+                    {
+                        int rel = player._team.IsPublic ? _arena._server._zoneConfig.teams[player._team._id].relativeVehicle : player._team._relativeVehicle;
+                        VehInfo relBody = _arena._server._assets.getVehicleByID(conscript.DefaultVehicleId + rel);
+                        if (relBody != null)
+                            body = relBody;
+                    }
+                }
+                catch { /* private team / no team config: the plain Conscript body */ }
+                if (body != null)
+                    player.setDefaultVehicle(body);
+            }
+            player.syncState();
+            player.sendMessage(0, "&Class reset - you are a Conscript again. Your weapons, experience and cash are unchanged.");
         }
 
         /// <summary>

@@ -97,7 +97,12 @@ namespace InfServer.Game
         /// When true (server.xml arena/persistentArena), arenas stay open and polling with zero players.
         /// </summary>
         static public bool persistentArena;
-        static public int maxBalls;                     //The maxium amount of playing balls we can have
+        /// <summary>
+        /// This arena alone stays open with zero players (2026-11-15: set by a zone script for its main arena, e.g. Eol -
+        /// the static flag above would keep every private / overflow arena open forever).
+        /// </summary>
+        public bool _bPersistent;
+        static public int maxBalls;                    //The maxium amount of playing balls we can have
 
         //CFG variables to allow for script changes on the fly. Max per team, private teams allowed etc.
         public bool _allowPrivate;                      //Arena allow private teams on or off.

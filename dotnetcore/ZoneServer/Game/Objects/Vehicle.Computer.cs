@@ -86,6 +86,23 @@ namespace InfServer.Game
                 else
                     //Treat it as no weapon
                     _primaryGun = null;
+
+                // (2026-11-15) A support turret: its round bursts into a repair item (Auto Turret - Heal -> Area Heal,
+                // Auto Turret - Recharge -> Broadcast Recharge). It works on its OWN team - see pollSupport.
+                // (only a round that does no damage itself - a gun whose shell happens to burst into a repair item
+                //  stays a gun)
+                // (the repair item's id sits in the column Assets parses as projectileRadarMode - Auto Heal I: 432
+                //  Area Heal, Auto Recharge I: 1719 Broadcast Recharge - so both that and explodeItem are checked)
+                ItemInfo.Projectile pr = _primaryProjectile;
+                if (pr != null
+                    && pr.kineticDamageInner == 0 && pr.explosiveDamageInner == 0 && pr.electronicDamageInner == 0
+                    && pr.psionicDamageInner == 0 && pr.bypassDamageInner == 0 && pr.energyDamageInner == 0)
+                {
+                    if (pr.explodeItem > 0)
+                        _supportItem = am.getItemByID(pr.explodeItem) as ItemInfo.RepairItem;
+                    if (_supportItem == null && pr.projectileRadarMode > 0)
+                        _supportItem = am.getItemByID(pr.projectileRadarMode) as ItemInfo.RepairItem;
+                }
             }
             else
             {
@@ -93,6 +110,77 @@ namespace InfServer.Game
             }
 
             configureComp();
+        }
+
+        /// <summary>The repair item a support (heal / recharge) turret hands out; null = an ordinary gun turret.</summary>
+        protected ItemInfo.RepairItem _supportItem;
+        int _tickSupport;
+        const int SupportMinIntervalMs = 1000;
+
+        /// <summary>Recharge items (repairType 2) restore energy; everything else restores health.</summary>
+        bool SupportIsEnergy { get { return _supportItem != null && _supportItem.repairType == 2; } }
+
+        /// <summary>
+        /// (2026-11-15) Heal / recharge turrets did nothing for their team: the targeting only ever picks enemies, so the
+        /// healing round was fired at (and healed) the other side, or not at all. Now: the nearest hurt teammate in range
+        /// (player or bot, same angle / LOS rules as a gun) is healed by the server directly - the same SC_ItemUsed a
+        /// medic's heal sends, so it shows the repair effect and can't be lost. No projectile is fired, so it can never
+        /// heal an enemy or count twice. Returns true when an update should be sent.
+        /// </summary>
+        protected bool pollSupport(int now)
+        {
+            int interval = Math.Max(SupportMinIntervalMs, _fireDelay);
+            // (_tickSupport 0 = never yet: TickCount goes negative after ~25 days of host uptime, and "now - 0" would
+            //  then never pass the interval)
+            if ((_tickSupport != 0 && now - _tickSupport < interval) || _tickAntiFire > now)
+                return false;
+
+            Player best = null;
+            Vehicle bestBot = null;
+            double bestD = double.MaxValue;
+            foreach (Player p in _arena.getPlayersInRange(_state.positionX, _state.positionY, _type.TrackingRadius))
+            {
+                if (p == null || p.IsSpectator || p.IsDead || p._team != _team || p.ActiveVehicle == null)
+                    continue;
+                if (!NeedsSupport(p._state, p.ActiveVehicle._type) || !InRange(p))
+                    continue;
+                if (!InTurretAngle(p._state.positionX, p._state.positionY) || (_type.ObeyLos != 0 && IsPlayerOccluded(p)))
+                    continue;
+                double d = squaredDistanceTo(p);
+                if (d < bestD) { bestD = d; best = p; }
+            }
+            if (!SupportIsEnergy)   // (bots have no energy to give - health only)
+                foreach (Vehicle v in _arena.getVehiclesInRange(_state.positionX, _state.positionY, _type.TrackingRadius,
+                    v => v != null && v != this && v._bBotVehicle && !v.IsDead && !v.bCondemned))
+                {
+                    if (v._team == null || v._team != _team || v._state == null || !NeedsSupport(v._state, v._type) || !InRange(v))
+                        continue;
+                    if (!InTurretAngle(v._state.positionX, v._state.positionY) || (_type.ObeyLos != 0 && IsPositionOccluded(v._state.positionX, v._state.positionY)))
+                        continue;
+                    double d = squaredDistanceTo(v);
+                    if (d < bestD) { bestD = d; best = null; bestBot = v; }
+                }
+
+            if (best == null && bestBot == null)
+                return false;
+            _tickSupport = now == 0 ? 1 : now;
+            Helpers.ObjectState at = best != null ? best._state : bestBot._state;
+            if (_tickAntiRotate < now)
+                _state.fireAngle = Helpers.computeLeadFireAngle(_state, at, Math.Max(1, (_primaryProjectile?.muzzleVelocity ?? 1000) / 1000));
+            if (best != null)
+                best.heal(_supportItem, best, best._state.positionX, best._state.positionY);
+            else if (bestBot._inhabitant == null)   // (Vehicle.heal reads the healer for an occupied vehicle - bots have none)
+                bestBot.heal(null, _supportItem);
+            return true;
+        }
+
+        bool NeedsSupport(Helpers.ObjectState s, VehInfo type)
+        {
+            if (s == null || type == null)
+                return false;
+            if (SupportIsEnergy)
+                return type.EnergyMax > 0 && s.energy < type.EnergyMax;
+            return type.Hitpoints > 0 && s.health > 0 && s.health < type.Hitpoints;
         }
 
         /// <summary>
@@ -191,8 +279,12 @@ namespace InfServer.Game
             }
 
             //Are we a peaceful vehicle?
-            if (_team._id == -1)
+            if (_team == null || _team._id == -1)
                 return false;
+
+            // Heal / recharge turret: works on its own team, never shoots (pollSupport)
+            if (_supportItem != null)
+                return pollSupport(now);
 
             //See if there are any valid targets within the tracking radius (players or bots, not our team)
             Helpers.ObjectState aim = getClosestValidAimState();

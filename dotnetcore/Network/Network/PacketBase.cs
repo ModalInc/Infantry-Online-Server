@@ -21,6 +21,7 @@ namespace InfServer.Network
 		protected BinaryReader	_contentReader;		//Class for reading
 		private BinaryWriter	_contentWriter;		//Class for writing
 		public bool				_bSerialized;		//Have we already been serialized?
+		public long				_tickOut;			//When it last actually left the send queue (Client.sendQueuedPackets) - reliable resends time from this, not from queueing
 
 		//The client and packet handler which this packet was received from
 		public NetworkClient _client;

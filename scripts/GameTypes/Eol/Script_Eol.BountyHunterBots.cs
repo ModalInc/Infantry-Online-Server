@@ -20,8 +20,8 @@ namespace InfServer.Script.GameType_Eol
         public const int BountyHunterCaptainVehId = 150;
         /// <summary>Operatives: Black Ops, Infiltrator, BioChem, NeuroTAC, DropTrooper (Black Ops twice = most common).</summary>
         static readonly int[] AssassinOperativeClasses = { 150, 150, 14, 100, 112, 117 };
-        /// <summary>"Max Deftness": percent bonus to acceleration, strafe and top speed.</summary>
-        public const int AssassinAgilityBonusPercent = 35;
+        /// <summary>No speed bonus: assassins move at their vehicle's own speeds (2026-11-15 - the +35% read as a strafe cheat).</summary>
+        public const int AssassinAgilityBonusPercent = 0;
         /// <summary>Live assassins per cell (captain + operatives).</summary>
         public const int BountyHunterSquadSize = 3;
         /// <summary>Operatives per cell - cell size minus the captain.</summary>

@@ -151,7 +151,7 @@ namespace InfServer.Script.GameType_Eol
                 int wdx = m.WpX - bx, wdy = m.WpY - by;
                 bool reached = wdx * wdx + wdy * wdy < WaypointArriveRaw * WaypointArriveRaw;
                 bool stale = now - m.WpUntil > 0;
-                bool blocked = !EolHqPatrol.TileLineClear(bot._arena, bx, by, m.WpX, m.WpY);
+                bool blocked = !EolHqPatrol.TileLineClear(bot._arena, bx, by, m.WpX, m.WpY, bot._type);
                 if (!reached && !stale && !blocked)
                     return new Helpers.ObjectState { positionX = m.WpX, positionY = m.WpY };
                 m.HasWp = false;
@@ -172,7 +172,7 @@ namespace InfServer.Script.GameType_Eol
                 short ex = (short)(bx + Math.Cos(ang) * len), ey = (short)(by + Math.Sin(ang) * len);
                 double after = Math.Sqrt((double)(dest.positionX - ex) * (dest.positionX - ex) + (double)(dest.positionY - ey) * (dest.positionY - ey));
                 double score = (toGoal - after);                                  // progress toward the goal
-                if (EolHqPatrol.TileLineClear(bot._arena, ex, ey, dest.positionX, dest.positionY))
+                if (EolHqPatrol.TileLineClear(bot._arena, ex, ey, dest.positionX, dest.positionY, bot._type))
                     score += 260;                                                   // the way through
                 score += len * 0.35;                                                // open runs (doorways / open ground)
                 score -= Familiarity(m, ex, ey, now) * 150;                         // been there - it was walled in

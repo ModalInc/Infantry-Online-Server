@@ -7,21 +7,22 @@ using InfServer.Game;
 namespace InfServer.Script.GameType_Eol
 {
     /// <summary>
-    /// Fixed bot roster (local change 2026-11-14) - always 80 bots in the field:
-    ///   2 pirate bases x 10, pirate roamers 5-8, human roamers 5-8, alien elite pack 5-8, alien pack 10,
-    ///   an elite vehicle squad of 3 (Deathboard / Shimmerboard / Drop Pack), and mixed human roaming teams
-    ///   (3-8 each, skill from ace down to a normal mix) that make up the rest.
-    /// Sizes are rolled once per server run so the total stays at 80; the 2 assassin cells of 3 come on top
-    /// while a 30k hunt is on (max 86).
+    /// Fixed bot roster (local change 2026-11-14; 80 -> 60 on 2026-11-15, the two bases unchanged) - always 60
+    /// bots in the field:
+    ///   2 pirate bases x 10, pirate roamers 4-6, human roamers 4-6, alien elite pack 4-6, alien pack 8,
+    ///   an elite vehicle squad of 3 (Deathboard / Shimmerboard / Drop Pack), and 3 mixed human roaming teams
+    ///   (3-8 each, skill from ace down to a normal mix) that make up the rest (11-17).
+    /// Sizes are rolled once per server run so the total stays at 60; the 2 assassin cells of 3 come on top
+    /// while a 30k hunt is on (max 66).
     /// </summary>
     public partial class Script_Eol
     {
-        public const int EolBotTotalTarget = 80;
+        public const int EolBotTotalTarget = 60;
         public const int RosterBaseTeams = 2;
         public const int RosterBaseSize = EolMaxConcurrentBaseDefenseBots;   // 10
-        public const int RosterAlienMainSize = 10;
+        public const int RosterAlienMainSize = 8;
         public const int RosterVehicleSquadSize = 3;
-        public const int RosterMixedTeamCount = 5;
+        public const int RosterMixedTeamCount = 3;
 
         bool _rosterReady;
         int _rosterPirateRoamers, _rosterHumanRoamers, _rosterAlienElite;
@@ -38,12 +39,12 @@ namespace InfServer.Script.GameType_Eol
                 return;
             _rosterReady = true;
             Random r = new Random(Environment.TickCount);
-            _rosterPirateRoamers = r.Next(5, 9);
-            _rosterHumanRoamers = r.Next(5, 9);
-            _rosterAlienElite = r.Next(5, 9);
+            _rosterPirateRoamers = r.Next(4, 7);
+            _rosterHumanRoamers = r.Next(4, 7);
+            _rosterAlienElite = r.Next(4, 7);
 
             int rest = EolBotTotalTarget - (RosterBaseTeams * RosterBaseSize + _rosterPirateRoamers + _rosterHumanRoamers
-                + _rosterAlienElite + RosterAlienMainSize + RosterVehicleSquadSize);   // 23..32
+                + _rosterAlienElite + RosterAlienMainSize + RosterVehicleSquadSize);   // 11..17 (3 teams of 3-8 hold 9..24)
             for (int i = 0; i < RosterMixedTeamCount; i++)
                 _rosterMixedSize[i] = 3;
             rest -= 3 * RosterMixedTeamCount;
@@ -57,7 +58,7 @@ namespace InfServer.Script.GameType_Eol
             }
 
             // from elite level down to a normal mixed bag
-            string[] skills = { "ace", "elite", "veteran", null, null };
+            string[] skills = { "ace", "veteran", null };   // (3 teams now: one ace, one veteran, one normal mix)
             for (int i = skills.Length - 1; i > 0; i--)
             {
                 int j = r.Next(i + 1);
@@ -105,7 +106,7 @@ namespace InfServer.Script.GameType_Eol
                 if (b == null || b.bCondemned || !IsManagedEolBotFactionTeam(b._team))
                     continue;
                 if (IsAssassinTeam(b._team))
-                    continue;   // assassins come on top of the 80 (max 86 while a 30k hunt is on)
+                    continue;   // assassins come on top of the 60 (max 66 while a 30k hunt is on)
                 if (!b.IsDead || b.bDropshipRespawnPending)
                     n++;
             }

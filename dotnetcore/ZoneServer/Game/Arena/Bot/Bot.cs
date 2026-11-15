@@ -800,17 +800,10 @@ namespace InfServer.Bots
                     _utilityArmorPercent[c] = Math.Min(1000, _utilityArmorPercent[c] + pct);
                 }
             }
+            // Movement = the vehicle's own speeds plus the utility items the bot really carries - nothing else
+            // (local 2026-11-15: AgilityBonusPercent added up to +35% thrust/strafe/top speed beyond the vehicle,
+            // which players called out as a strafe-speed cheat; it no longer changes movement).
             _utilityMovementMods = BotUtilityEffects.ComputeMovementModifiers(Loadout.GetActiveUtilities());
-            if (AgilityBonusPercent > 0 && _type != null && _type.TerrainSpeeds != null && _type.TerrainSpeeds.Length > 0)
-            {
-                SpeedValues t0 = _type.TerrainSpeeds[0];
-                int p = AgilityBonusPercent;
-                _utilityMovementMods.ThrustBonus += t0.RollThrust * p / 100;
-                _utilityMovementMods.StrafeThrustBonus += t0.StrafeThrust * p / 100;
-                _utilityMovementMods.ReverseThrustBonus += t0.BackwardThrust * p / 100;
-                _utilityMovementMods.TopSpeedBonus += t0.RollTopSpeed * p / 100;
-                _utilityMovementMods.RotateBonus += t0.RollRotate * p / 200;
-            }
             _movement.ApplyUtilityMovementModifiers(_utilityMovementMods);
         }
 
@@ -876,8 +869,8 @@ namespace InfServer.Bots
 
         int _agilityBonusPercent;
         /// <summary>
-        /// Extra agility, like a player's Deftness attribute (local 2026-11-14): percent bonus to thrust, strafe,
-        /// reverse and top speed (half that to turning). Setting it re-applies movement immediately.
+        /// Kept for scripts that set it; it no longer changes movement (2026-11-15) - bots move at their vehicle's
+        /// own speeds plus the utility items they carry, exactly like a player.
         /// </summary>
         public int AgilityBonusPercent
         {

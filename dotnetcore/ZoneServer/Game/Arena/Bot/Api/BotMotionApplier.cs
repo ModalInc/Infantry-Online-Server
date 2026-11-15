@@ -146,6 +146,24 @@ namespace InfServer.Bots
             return t.Blocked && !IsOverheadPhysics(level, t);
         }
 
+        /// <summary>
+        /// (2026-11-15) A vehicle that rides at or above a physics' top flies over it, as in the client: hover boards
+        /// and drop packs (LowZ 16) cross green (0-16), but not yellow (0-32) or walls (0-496). Everyone else (LowZ 0)
+        /// is stopped by every ground physics, as before.
+        /// </summary>
+        public static bool CanFlyOver(LvlInfo level, LvlInfo.Tile t, VehInfo type)
+        {
+            if (type == null || type.LowZ <= 0 || level?.PhysicsHigh == null || t.Physics >= level.PhysicsHigh.Length)
+                return false;
+            return level.PhysicsHigh[t.Physics] <= type.LowZ;
+        }
+
+        /// <summary>A wall for THIS vehicle: a ground wall it can't fly over.</summary>
+        public static bool IsWallFor(LvlInfo level, LvlInfo.Tile t, VehInfo type)
+        {
+            return IsGroundWall(level, t) && !CanFlyOver(level, t, type);
+        }
+
         static bool ShotPasses(Arena arena, LvlInfo.Tile t, int fireHeight)
         {
             if (!t.Blocked)

@@ -22,7 +22,7 @@ namespace InfServer.Script.GameType_Eol
         private int _tickSectorExpand;			//The tick at which we last checked for sector expansion
         public int _tickEolGameStart;				//The tick at which the game started (0 == stopped)
         private int _tickSectorScramble;        // The tick at which we check for scrambling of area
-        /// <summary>Priority order A–D for this match; open count = Take(N). Shuffled once in gameStart when null. Poll/portal never reshuffle.</summary>
+        /// <summary>Priority order A–C for this match; open count = Take(N). Shuffled once in gameStart when null. Poll/portal never reshuffle.</summary>
         private List<string> _matchSectorOrder;
         /// <summary>Suppress duplicate arena lines if layout logic re-runs with the same sectors.</summary>
         private string _lastSectorLayoutBroadcastKey;
@@ -48,7 +48,7 @@ namespace InfServer.Script.GameType_Eol
         readonly Dictionary<int, int> _dropshipRecallDueByPlayerId = new Dictionary<int, int>();
         /// <summary>
         /// Axis-aligned union of <c>PioneerRecallA</c>–<c>D</c> in <c>PioneerStation.lio</c> (dropship / neutral station).
-        /// It is outside Eol radiation sectors A–D, so <see cref="IsInAnyActiveSector"/> is false there without this check.
+        /// It is outside Eol radiation sectors A–C, so <see cref="IsInAnyActiveSector"/> is false there without this check.
         /// </summary>
         const short DropshipSafeMinX = 26048;
         const short DropshipSafeMaxX = 28080;
@@ -147,6 +147,7 @@ namespace InfServer.Script.GameType_Eol
             bAllSectors = false;
             bbetweengames = false;
             Sectors(emptyp, emptyp, emptyp, emptyp);
+            EnsureSectorMap();   // (the barrier-wall sector map, built once up front)
         }
 
         /// <summary>
@@ -161,6 +162,18 @@ namespace InfServer.Script.GameType_Eol
                 return x >= _left && x <= _right && y >= _top && y <= _bottom;
             }
 
+            // the sector map (the zone owner's barrier walls); outside the play map = in no sector
+            int here = SectorIndexAt(x, y);
+            if (here != 0 || _sectorOfTile != null)
+            {
+                if (here == 0)
+                    return false;
+                foreach (string s in _activeSectors)
+                    if (s != null && SectorIndexOfName(s) == here)
+                        return true;
+                return false;
+            }
+
             foreach (string s in _activeSectors)
             {
                 if (s == null)
@@ -173,6 +186,23 @@ namespace InfServer.Script.GameType_Eol
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Toxic = inside a sector of the play map that is closed. Outside the map (Pioneer Station, the dropship) is
+        /// never toxic.
+        /// </summary>
+        public bool IsInClosedSector(short x, short y)
+        {
+            if (_activeSectors == null || _activeSectors.Count == 0)
+                return false;
+            int here = SectorIndexAt(x, y);
+            if (here == 0)
+                return false;
+            foreach (string s in _activeSectors)
+                if (s != null && SectorIndexOfName(s) == here)
+                    return false;
+            return true;
         }
 
         /// <summary>
@@ -195,10 +225,15 @@ namespace InfServer.Script.GameType_Eol
             return TryGetSectorRect(sectorName, out minX, out maxX, out minY, out maxY);
         }
 
-        /// <summary>Bounds for A–D; name match is ordinal case-insensitive.</summary>
+        /// <summary>Bounds for A–C (the sector map's bounding box); name match is ordinal case-insensitive.</summary>
         private bool TryGetSectorRect(string sectorName, out short minX, out short maxX, out short minY, out short maxY)
         {
+            if (TryGetSectorBox(sectorName, out minX, out maxX, out minY, out maxY))
+                return true;
             minX = maxX = minY = maxY = 0;
+            if (SectorIndexOfName(sectorName) == 0)
+                return false;
+            // (sector map not built: the old straight seams)
             if (string.Equals(sectorName, sectorA, StringComparison.OrdinalIgnoreCase))
             {
                 minX = aTL.x; maxX = aTR.x; minY = aTL.y; maxY = aBL.y;
@@ -214,30 +249,14 @@ namespace InfServer.Script.GameType_Eol
                 minX = cTL.x; maxX = cTR.x; minY = cTL.y; maxY = cBL.y;
                 return true;
             }
-            if (string.Equals(sectorName, sectorD, StringComparison.OrdinalIgnoreCase))
-            {
-                minX = dTL.x; maxX = dTR.x; minY = dTL.y; maxY = dBL.y;
-                return true;
-            }
             return false;
         }
 
-        /// <summary>Two sectors share a positive-length edge (not only a corner).</summary>
+        /// <summary>Two sectors border each other (A, B and C all do on the three-sector map).</summary>
         private bool SectorsShareEdge(string sectorName1, string sectorName2)
         {
-            if (string.Equals(sectorName1, sectorName2, StringComparison.OrdinalIgnoreCase))
-                return false;
-            if (!TryGetSectorRect(sectorName1, out short minX1, out short maxX1, out short minY1, out short maxY1))
-                return false;
-            if (!TryGetSectorRect(sectorName2, out short minX2, out short maxX2, out short minY2, out short maxY2))
-                return false;
-            int min1x = minX1, max1x = maxX1, min1y = minY1, max1y = maxY1;
-            int min2x = minX2, max2x = maxX2, min2y = minY2, max2y = maxY2;
-            bool xOverlap = Math.Min(max1x, max2x) > Math.Max(min1x, min2x);
-            bool yOverlap = Math.Min(max1y, max2y) > Math.Max(min1y, min2y);
-            bool verticalNeighbor = (max1x == min2x || max2x == min1x) && yOverlap;
-            bool horizontalNeighbor = (max1y == min2y || max2y == min1y) && xOverlap;
-            return verticalNeighbor || horizontalNeighbor;
+            int a = SectorIndexOfName(sectorName1), b = SectorIndexOfName(sectorName2);
+            return a != 0 && b != 0 && a != b;
         }
 
         /// <summary>True when <paramref name="candidate"/> shares an edge with any sector in <paramref name="openSectors"/>.</summary>
@@ -261,7 +280,6 @@ namespace InfServer.Script.GameType_Eol
                 case 'a': sectorName = sectorA; return true;
                 case 'b': sectorName = sectorB; return true;
                 case 'c': sectorName = sectorC; return true;
-                case 'd': sectorName = sectorD; return true;
                 default: return false;
             }
         }
@@ -278,7 +296,7 @@ namespace InfServer.Script.GameType_Eol
             return string.Join("|", copy);
         }
 
-        /// <summary>Maps any case variant of A–D to the canonical public label string.</summary>
+        /// <summary>Maps any case variant of A–C to the canonical public label string.</summary>
         private string NormalizeSectorNameToCanonical(string raw)
         {
             if (raw == null)
@@ -286,7 +304,6 @@ namespace InfServer.Script.GameType_Eol
             if (string.Equals(raw, sectorA, StringComparison.OrdinalIgnoreCase)) return sectorA;
             if (string.Equals(raw, sectorB, StringComparison.OrdinalIgnoreCase)) return sectorB;
             if (string.Equals(raw, sectorC, StringComparison.OrdinalIgnoreCase)) return sectorC;
-            if (string.Equals(raw, sectorD, StringComparison.OrdinalIgnoreCase)) return sectorD;
             return raw;
         }
 
@@ -308,21 +325,8 @@ namespace InfServer.Script.GameType_Eol
         /// </summary>
         private bool ActiveUnionIsSingleAxisRectangle(IReadOnlyList<string> sectors)
         {
-            if (sectors == null || sectors.Count <= 1)
-                return true;
-            if (sectors.Count >= 4)
-                return true;
-
-            var set = new HashSet<string>(sectors);
-            if (sectors.Count == 2)
-            {
-                return (set.Contains(sectorA) && set.Contains(sectorB))
-                    || (set.Contains(sectorC) && set.Contains(sectorD))
-                    || (set.Contains(sectorA) && set.Contains(sectorC))
-                    || (set.Contains(sectorB) && set.Contains(sectorD));
-            }
-
-            return false;
+            // (the sectors follow the barrier walls now - no union of them is a rectangle except one alone or all)
+            return sectors == null || sectors.Count <= 1 || sectors.Count >= SectorCount;
         }
 
         /// <summary>Ensure <see cref="_activeSectors"/> is filled when the match is running (portal may run before Poll).</summary>
@@ -397,6 +401,8 @@ namespace InfServer.Script.GameType_Eol
         {
             if (IsInPioneerDropshipSafeZone(x, y))
                 return false;
+            if (_sectorOfTile != null || SectorIndexAt(x, y) != 0)
+                return IsInClosedSector(x, y);   // (outside the play map is never toxic)
             return !IsInAnyActiveSector(x, y);
         }
 
@@ -457,7 +463,7 @@ namespace InfServer.Script.GameType_Eol
                 else
                 {
                     _dropshipRecallDueByPlayerId[id] = now + ClosedSectorRecallCountdownMs;
-                    player.sendMessage(-1, "&Radiation — you left the open sectors. Returning to Pioneer Station in 3 seconds!");
+                    player.sendMessage(-1, "&Radiation — you left the open sectors. Returning to the dropship in 3 seconds!");
                 }
             }
         }
@@ -531,12 +537,14 @@ namespace InfServer.Script.GameType_Eol
             if (player == null || _baseScript == null)
                 return false;
 
+            // (players reach the sectors through the dropship teleport, which lands them in the sector's spawn zone -
+            // see Script_Eol.SpawnZones.cs and the portal)
             Helpers.ObjectState warpPoint = _baseScript.findOpenWarp(player, _arena, PioneerStationX, PioneerStationY, 300);
             if (warpPoint == null)
             {
-                Log.write(TLog.Warning, "[Eol] Dropship warp: no open tile for {0} at Pioneer Station.", player._alias);
+                Log.write(TLog.Warning, "[Eol] Dropship warp: no open tile for {0}.", player._alias);
                 if (announce)
-                    player.sendMessage(-1, "Could not find a clear spot at Pioneer Station — move toward the dropship or contact staff.");
+                    player.sendMessage(-1, "Could not find a clear spot at the dropship — contact staff.");
                 return false;
             }
 
@@ -564,15 +572,19 @@ namespace InfServer.Script.GameType_Eol
                 return 1;
             if (playing < 46)
                 return 2;
-            if (playing < 60)
-                return 3;
-            return 4;
+            return SectorCount;
         }
+
+        /// <summary>
+        /// The sector that always opens first (2026-11-15, the zone owner: "for now only sector A"); null = random,
+        /// and the daily rotation picks another sector again.
+        /// </summary>
+        public static string PinnedFirstSector = "Sector A";
 
         /// <summary>Random shuffle once per fresh match (only from gameStart when order is null after reset).</summary>
         private void BeginNewMatchSectorOrder()
         {
-            _matchSectorOrder = new List<string> { sectorA, sectorB, sectorC, sectorD };
+            _matchSectorOrder = new List<string>(AllSectorNames);
             for (int i = _matchSectorOrder.Count - 1; i > 0; i--)
             {
                 int j = _rand.Next(i + 1);
@@ -580,6 +592,20 @@ namespace InfServer.Script.GameType_Eol
                 _matchSectorOrder[i] = _matchSectorOrder[j];
                 _matchSectorOrder[j] = tmp;
             }
+            PinFirstSector(_matchSectorOrder);
+        }
+
+        /// <summary>Move the pinned sector to the front of the open order (no-op when nothing is pinned).</summary>
+        void PinFirstSector(List<string> order)
+        {
+            if (order == null || string.IsNullOrEmpty(PinnedFirstSector))
+                return;
+            int at = order.FindIndex(s => string.Equals(s, PinnedFirstSector, StringComparison.OrdinalIgnoreCase));
+            if (at <= 0)
+                return;
+            string pinned = order[at];
+            order.RemoveAt(at);
+            order.Insert(0, pinned);
         }
 
         /// <summary>
@@ -593,7 +619,7 @@ namespace InfServer.Script.GameType_Eol
             if (!_sectorLayoutCommitted && _matchSectorOrder == null)
                 BeginNewMatchSectorOrder();
 
-            if (_matchSectorOrder == null || _matchSectorOrder.Count < 4)
+            if (_matchSectorOrder == null || _matchSectorOrder.Count < SectorCount)
                 return;
 
             ApplySectorsFromMatchOrder(DesiredSectorCountForPlayers(PlayingCountForSectorTiers()));
@@ -675,7 +701,7 @@ namespace InfServer.Script.GameType_Eol
                 if (may > maxY) maxY = may;
             }
 
-            if (chosen.Count == 4)
+            if (chosen.Count >= SectorCount)
             {
                 Sectors(fTL, fBL, fTR, fBR);
                 if (announce)
@@ -730,6 +756,9 @@ namespace InfServer.Script.GameType_Eol
                 _baseScript._maxY = maxY;
             }
 
+            Log.write(TLog.Normal, "[Eol] Open sectors: {0} (sector map {1}).", string.Join(", ", chosen),
+                EnsureSectorMap() ? "from the barrier walls" : "NOT BUILT - old straight seams");
+
             if (anySectorClosed && _arena._bGameRunning)
                 ScheduleDropshipRecallForPlayersInClosedAreas(Environment.TickCount);
 
@@ -741,13 +770,13 @@ namespace InfServer.Script.GameType_Eol
         /// </summary>
         public void ApplySectorsFromMatchOrder(int desiredCount, bool forceArenaAnnounce = false)
         {
-            if (_matchSectorOrder == null || _matchSectorOrder.Count < 4)
+            if (_matchSectorOrder == null || _matchSectorOrder.Count < SectorCount)
                 return;
 
             if (desiredCount < 1)
                 desiredCount = 1;
-            if (desiredCount > 4)
-                desiredCount = 4;
+            if (desiredCount > SectorCount)
+                desiredCount = SectorCount;
 
             List<string> chosen = BuildMergedChosenSectors(desiredCount);
             if (!forceArenaAnnounce && _activeSectors != null
@@ -757,13 +786,13 @@ namespace InfServer.Script.GameType_Eol
             ApplyChosenSectorLayout(chosen, forceArenaAnnounce);
         }
 
-        /// <summary>Moderator: open a sector by letter A–D. Must share an edge with a sector already open.</summary>
+        /// <summary>Moderator: open a sector by letter A–C. Must share an edge with a sector already open.</summary>
         /// <returns>null on success, otherwise an error message.</returns>
         public string TryModOpenSectorByLetter(char letter)
         {
             if (!TryGetSectorKeyFromLetter(letter, out string sectorName))
-                return "Unknown sector key (use A–D).";
-            if (!_sectorLayoutCommitted || _matchSectorOrder == null || _matchSectorOrder.Count < 4)
+                return "Unknown sector key (use A, B or C).";
+            if (!_sectorLayoutCommitted || _matchSectorOrder == null || _matchSectorOrder.Count < SectorCount)
                 return "Sector layout not ready yet.";
             if (_activeSectors == null || _activeSectors.Count == 0)
                 return "No sectors are open yet.";
@@ -778,13 +807,13 @@ namespace InfServer.Script.GameType_Eol
             return null;
         }
 
-        /// <summary>Moderator: close a sector by letter A–D. Cannot remove the last open sector.</summary>
+        /// <summary>Moderator: close a sector by letter A–C. Cannot remove the last open sector.</summary>
         /// <returns>null on success, otherwise an error message.</returns>
         public string TryModCloseSectorByLetter(char letter)
         {
             if (!TryGetSectorKeyFromLetter(letter, out string sectorName))
-                return "Unknown sector key (use A–D).";
-            if (!_sectorLayoutCommitted || _matchSectorOrder == null || _matchSectorOrder.Count < 4)
+                return "Unknown sector key (use A, B or C).";
+            if (!_sectorLayoutCommitted || _matchSectorOrder == null || _matchSectorOrder.Count < SectorCount)
                 return "Sector layout not ready yet.";
             if (_activeSectors == null || !ActiveSectorsContainsName(sectorName))
                 return "That sector is not open.";
@@ -806,7 +835,7 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>Recompute how many sectors are open from current population; same match order, no reshuffle. No-op if layout never committed.</summary>
         public void whichSector()
         {
-            if (!_sectorLayoutCommitted || _matchSectorOrder == null || _matchSectorOrder.Count < 4)
+            if (!_sectorLayoutCommitted || _matchSectorOrder == null || _matchSectorOrder.Count < SectorCount)
                 return;
             ApplySectorsFromMatchOrder(DesiredSectorCountForPlayers(PlayingCountForSectorTiers()));
         }
@@ -820,8 +849,8 @@ namespace InfServer.Script.GameType_Eol
             int n = DesiredSectorCountForPlayers(PlayingCountForSectorTiers());
             if (n < 1)
                 n = 1;
-            if (n > 4)
-                n = 4;
+            if (n > SectorCount)
+                n = SectorCount;
 
             var previous = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (_activeSectors != null)
@@ -833,7 +862,7 @@ namespace InfServer.Script.GameType_Eol
                 }
             }
 
-            string[] all = { sectorA, sectorB, sectorC, sectorD };
+            string[] all = AllSectorNames;
             var prefer = new List<string>(4);
             var fallback = new List<string>(4);
             foreach (string s in all)
@@ -855,6 +884,7 @@ namespace InfServer.Script.GameType_Eol
             // If prefer was empty (all four already open), still reshuffle so Take(n) order can change.
             if (prefer.Count == 0)
                 ShuffleSectorList(ordered);
+            PinFirstSector(ordered);   // (the pinned sector stays open through the daily change)
 
             _matchSectorOrder = ordered;
             _sectorLayoutCommitted = true;
@@ -894,72 +924,15 @@ namespace InfServer.Script.GameType_Eol
             _bottomRightx = bottomRight.x;
             _bottomRighty = bottomRight.y;
             RebuildBorderWallVehicles();
-            ApplySectorSeamDoors();
         }
 
-        // LIO switch IDs gating the four internal sector seams (PioneerStation.lio).
-        const int SeamSwitchAC = 910; // vertical seam between Sector A (top-left) and Sector C (top-right)
-        const int SeamSwitchBD = 911; // vertical seam between Sector B (bottom-left) and Sector D (bottom-right)
-        const int SeamSwitchAB = 912; // horizontal seam between Sector A (top-left) and Sector B (bottom-left)
-        const int SeamSwitchCD = 913; // horizontal seam between Sector C (top-right) and Sector D (bottom-right)
+        // (2026-11-15: the LIO seam doors along the old straight seams - and their red energy-door strip - were removed
+        // from PioneerStation.lio. The zone owner's barrier walls separate the three sectors now; a closed sector is
+        // kept clear by the radiation recall, see IsInClosedSector.)
 
         /// <summary>
-        /// Drives the four seam-door switches purely from <see cref="_activeSectors"/>. A seam is opened
-        /// (passable) only when both sectors it divides are open; otherwise it stays walled. Combined with
-        /// the solid map edges this fully seals any closed sector. State is persistent — each switch holds
-        /// its state until set again (the seam switches have no autoclose), and players cannot toggle them.
-        /// </summary>
-        private void ApplySectorSeamDoors()
-        {
-            if (_arena == null)
-                return;
-
-            bool a = ActiveSectorsContainsName(sectorA);
-            bool b = ActiveSectorsContainsName(sectorB);
-            bool c = ActiveSectorsContainsName(sectorC);
-            bool d = ActiveSectorsContainsName(sectorD);
-
-            SetSeamSwitch(SeamSwitchAC, a && c);
-            SetSeamSwitch(SeamSwitchBD, b && d);
-            SetSeamSwitch(SeamSwitchAB, a && b);
-            SetSeamSwitch(SeamSwitchCD, c && d);
-        }
-
-        /// <summary>
-        /// Forces a door-switch (and its linked doors) to the given open/closed state via the engine's
-        /// <see cref="Arena.switchRequest"/> in force mode (bypasses range/ammo/frequency/skill/delay checks).
-        /// No-op if the switch is unknown or already in the requested state. <paramref name="bOpen"/> true =
-        /// door open / passable, false = door closed / walled (restores original map physics).
-        /// </summary>
-        private void SetSeamSwitch(int switchId, bool bOpen)
-        {
-            if (_arena == null || _arena._switches == null)
-                return;
-
-            Arena.SwitchState ss;
-            if (!_arena._switches.TryGetValue(switchId, out ss) || ss.Switch == null)
-                return;
-
-            // Already in the desired state - switchRequest would no-op anyway, but skip the player lookup.
-            if (ss.bOpen == bOpen)
-                return;
-
-            // switchRequest still wants a Player reference for its skill/ammo branch even in force mode.
-            // Any arena player works (the door-switch path never reads player state). With nobody present
-            // there is no one to wall in/out; the minimal-sector layout already matches the doors' initial
-            // closed state, and the next layout change with a player present will sync everything.
-            Player driver = _arena.PlayersIngame.FirstOrDefault();
-            if (driver == null)
-                driver = _arena.Players.FirstOrDefault();
-            if (driver == null)
-                return;
-
-            _arena.switchRequest(true, bOpen, driver, ss.Switch);
-        }
-
-        /// <summary>
-        /// No-op. Sector boundaries are enforced by the LIO seam doors (see <see cref="ApplySectorSeamDoors"/>);
-        /// the hide-vehicle border ring is no longer spawned or cleared. Kept so existing callers compile.
+        /// No-op. The barrier walls in the map separate the sectors; the hide-vehicle border ring is no longer spawned
+        /// or cleared. Kept so existing callers compile.
         /// </summary>
         public void RebuildBorderWallVehicles()
         {

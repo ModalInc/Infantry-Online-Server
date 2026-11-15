@@ -11,22 +11,26 @@ namespace InfServer.Logic
 	/// Deals with handling and keeping track of reliable packets
 	///////////////////////////////////////////////////////
 	class Logic_Reliable
-	{	/// <summary>
+	{	/// <summary>a is after b in 16-bit sequence space (wraps)</summary>
+		static bool Ahead(ushort a, ushort b) { return a != b && (ushort)(a - b) < 0x8000; }
+
+		/// <summary>
 		/// Handles all reliable packets received from clients
 		/// </summary>
 		static public void Handle_Reliable(Reliable pkt, Client client)
 		{	//Get the relevant stream
 			Client.StreamState stream = client._streams[pkt.streamID];
 			
-			//Is the reliable number what we expected?
-			if (pkt.rNumber > stream.C2S_Reliable)
+			//Is the reliable number what we expected? (wrap-aware - plain > / < broke once the client's 16-bit
+			// counter wrapped past 65,535: 2026-11-15)
+			if (Ahead(pkt.rNumber, stream.C2S_Reliable))
 			{	//Report it!
                 Log.write(TLog.Inane, "OOS Reliable Packet Stream[{0}]. {1} vs {2} from {3}", pkt.streamID, pkt.rNumber, stream.C2S_Reliable, client._connectionID);
 				client.reportOutOfSync(pkt, pkt.rNumber, pkt.streamID);
 				return;
 			}
 			//A previously received reliable?
-			else if (pkt.rNumber < stream.C2S_Reliable)
+			else if (Ahead(stream.C2S_Reliable, pkt.rNumber))
 			{	//Re-send the echo
 				ReliableEcho resent = new ReliableEcho(pkt.streamID);
 				resent.rNumber = (ushort)(stream.C2S_Reliable - 1);
@@ -70,9 +74,10 @@ namespace InfServer.Logic
 		static public void Handle_OutOfSync(OutOfSync pkt, Client client)
 		{
 			// Fill the gap at once: resend every unconfirmed reliable up to the reported one (local fix 2026-11-14).
+			// (2026-11-15: no fallback to resending #rNumber itself - the client reports the one it got OUT OF ORDER, so
+			//  it already has it; resending it on every repeat report was pure duplicate traffic. When nothing was due
+			//  (all sent < 300 ms ago) the regular resend timer covers the gap.)
 			if (client.resendReliableUpTo(pkt.streamID, pkt.rNumber))
-				return;
-			if (client.resendReliable(pkt.streamID, pkt.rNumber))
 				return;
 
 			// Nothing left to resend (already confirmed / gone) - normal, the client catches up by itself.
