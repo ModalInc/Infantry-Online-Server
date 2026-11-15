@@ -48,7 +48,7 @@ namespace InfServer.Script.GameType_Eol
         // items (Pioneer Station .itm)
         const int ItmSuperCharger = 14;
         const int ItmKamenevAPmk2 = 3003;
-        const int ItmTitanAR = 1097, ItmA2GL = 3075;
+        const int ItmTitanAR = 1097, ItmKuchlerCAW = 1004;
         static readonly int[] Grenades = { 1011, 1011, 1435, 1012 };   // frag (most common), incendiary, EMP
 
         // weapon pools - each class mixes from these so no two squads look the same
@@ -190,7 +190,8 @@ namespace InfServer.Script.GameType_Eol
             if (at == null)
                 return false;
 
-            RoamingAttacker bot = _arena.newBot(typeof(RoamingAttacker), (ushort)cls, team, null, at, this, null) as RoamingAttacker;
+            RoamingAttacker bot = !CanSpawnBotOnTeam(team) ? null
+                : _arena.newBot(typeof(RoamingAttacker), (ushort)cls, team, null, at, this, null) as RoamingAttacker;
             if (bot == null)
                 return false;
             string skill;
@@ -262,7 +263,9 @@ namespace InfServer.Script.GameType_Eol
             {
                 case ClsHeavy:
                     close = Pick(PoolHeavy);
-                    far = team != null && CountTeamSplashGunners(team) < MaxGrenadiersPerTeam && r.Next(2) == 0 ? ItmA2GL : Pick(PoolHeavy);
+                    // (2026-11-16, owner: one-shot from range) no A2 Grenade Launcher - its shell is the vehicle Harrier GL
+                    // round; heavies carry the close-range Kuchler A6 CAW instead
+                    far = r.Next(2) == 0 ? ItmKuchlerCAW : Pick(PoolHeavy);
                     break;
                 case ClsMPAC:
                     close = Pick(PoolHeavy);

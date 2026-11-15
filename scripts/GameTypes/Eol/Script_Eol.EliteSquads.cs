@@ -108,7 +108,8 @@ namespace InfServer.Script.GameType_Eol
             if (at == null)
                 return;
 
-            RoamingAttacker bot = _arena.newBot(typeof(RoamingAttacker), (ushort)vehId, team, null, at, this, null) as RoamingAttacker;
+            RoamingAttacker bot = !CanSpawnBotOnTeam(team) ? null
+                : _arena.newBot(typeof(RoamingAttacker), (ushort)vehId, team, null, at, this, null) as RoamingAttacker;
             if (bot == null)
                 return;
             bot.SkillModeOverride = "elite";   // pirate roamers: veteran..ace

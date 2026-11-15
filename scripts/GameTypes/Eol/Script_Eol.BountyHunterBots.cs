@@ -377,7 +377,7 @@ namespace InfServer.Script.GameType_Eol
             if (spawn == null || team == null || _arena == null)
                 return null;
 
-            RoamingCaptain captain = _arena.newBot(
+            RoamingCaptain captain = !CanSpawnBotOnTeam(team) ? null : _arena.newBot(
                 typeof(RoamingCaptain), (ushort)BountyHunterCaptainVehId, team, null, spawn, this) as RoamingCaptain;
             if (captain == null)
                 return null;
@@ -435,7 +435,7 @@ namespace InfServer.Script.GameType_Eol
             if (_bots == null)
                 _bots = new List<Bot>();
 
-            RoamingAttacker grunt = _arena.newBot(
+            RoamingAttacker grunt = !CanSpawnBotOnTeam(team) ? null : _arena.newBot(
                 typeof(RoamingAttacker), (ushort)id, team, null, openPoint, this, null) as RoamingAttacker;
             if (grunt == null)
             {

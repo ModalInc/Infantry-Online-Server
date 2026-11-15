@@ -433,7 +433,8 @@ namespace InfServer.Script.GameType_Eol
             if (openPoint == null)
                 openPoint = new Helpers.ObjectState { positionX = ax, positionY = ay };
 
-            AlienHorde bot = _arena.newBot(typeof(AlienHorde), vid, alienTeam, null, openPoint, this, null) as AlienHorde;
+            AlienHorde bot = !CanSpawnBotOnTeam(alienTeam) ? null
+                : _arena.newBot(typeof(AlienHorde), vid, alienTeam, null, openPoint, this, null) as AlienHorde;
             if (bot != null)
             {
                 if (elitePack)

@@ -95,6 +95,33 @@ namespace InfServer.Script.GameType_Eol
 
         static readonly Func<Bots.Bot, int> _helmetDropFn = PirateHelmetFor;
 
+        /// <summary>(2026-11-16, owner: 26 bots on one team) hard caps for every spawn path.</summary>
+        public const int EolMaxBotsPerTeam = 10;
+        public const int EolMaxBotsTotal = 70;
+
+        /// <summary>
+        /// True when one more bot may join <paramref name="team"/>: under 10 live (or about-to-revive) bots on that
+        /// team and under 70 in the whole arena. The 2 assassin cells (bounty hunt) only obey the team cap.
+        /// </summary>
+        public bool CanSpawnBotOnTeam(Team team)
+        {
+            if (_arena == null || team == null)
+                return false;
+            int onTeam = 0, total = 0;
+            foreach (Bots.Bot b in _arena.ActiveBots)
+            {
+                if (b == null || b.bCondemned || (b.IsDead && !b.bDropshipRespawnPending))
+                    continue;
+                if (b._team == team)
+                    onTeam++;
+                if (!IsAssassinTeam(b._team))
+                    total++;
+            }
+            if (onTeam >= EolMaxBotsPerTeam)
+                return false;
+            return IsAssassinTeam(team) || total < EolMaxBotsTotal;
+        }
+
         /// <summary>Live (or about-to-revive) bots on every managed Eol team.</summary>
         int CountLiveRosterBots()
         {

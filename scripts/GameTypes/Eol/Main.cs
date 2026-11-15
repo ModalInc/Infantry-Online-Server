@@ -589,7 +589,7 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>Roaming grunts (RoamingAttacker) spawned this pirate raid; total cap <see cref="PirateRaidTotalSpawns"/>.</summary>
         public const int PirateRaidTotalSpawns = 60;
         /// <summary>Never more than this many pirate combat bots (captain + grunts) alive at once during a raid wave.</summary>
-        public const int PirateRaidMaxConcurrentAlive = 20;
+        public const int PirateRaidMaxConcurrentAlive = 10;   // (2026-11-16, owner) max 10 per team (was 20)
 
         /// <summary>Max concurrent defense combat bots per team (Captain + Engineer + BasicDefense).</summary>
         public const int EolMaxConcurrentBaseDefenseBots = 10;   // local 2026-11-13: 10 per base (was 20)
@@ -3432,7 +3432,8 @@ namespace InfServer.Script.GameType_Eol
             if (GetPirateRaidAliveGruntCount() >= PirateRaidMaxConcurrentAlive)
                 return;
 
-            RoamingAttacker dBot = _arena.newBot(typeof(RoamingAttacker), (ushort)id, botTeam4, null, openPoint, this, null) as RoamingAttacker;
+            RoamingAttacker dBot = !CanSpawnBotOnTeam(botTeam4) ? null
+                : _arena.newBot(typeof(RoamingAttacker), (ushort)id, botTeam4, null, openPoint, this, null) as RoamingAttacker;
             if (dBot == null)
             {
                 _tickNextPirateGruntSpawn = now + 900;
@@ -3831,7 +3832,8 @@ namespace InfServer.Script.GameType_Eol
                 return;
 
             Team team = botTeam4;
-            RoamingCaptain Flagger = _arena.newBot(typeof(RoamingCaptain), (ushort)142, team, null, openPoint, this) as RoamingCaptain;
+            RoamingCaptain Flagger = !CanSpawnBotOnTeam(team) ? null
+                : _arena.newBot(typeof(RoamingCaptain), (ushort)142, team, null, openPoint, this) as RoamingCaptain;
             if (Flagger == null)
                 return;
 
@@ -4295,7 +4297,8 @@ namespace InfServer.Script.GameType_Eol
             id = LimitGrenadiers(team, id, new[] { 144, 145, 146, 147, 157 });
             if (owner == null)
             {
-                RoamingAttacker dBot = _arena.newBot(typeof(RoamingAttacker), (ushort)id, team, null, openPoint, this, null) as RoamingAttacker;
+                RoamingAttacker dBot = !CanSpawnBotOnTeam(team) ? null
+                    : _arena.newBot(typeof(RoamingAttacker), (ushort)id, team, null, openPoint, this, null) as RoamingAttacker;
                 if (dBot == null)
                     return;
 
@@ -5275,7 +5278,7 @@ namespace InfServer.Script.GameType_Eol
         }
 
         /// <summary>
-        /// Player killed a bot: streak / team points / crown timer only. Counts on CFG Name10 (ZoneStat11), not Kills.
+        /// Player killed a bot: streak / team points / crown timer only. Counts on CFG Name10 (ZoneStat11) and Kills (high scores).
         /// </summary>
         private void OnPlayerKilledBot(InfServer.Game.Player killer, Bots.Bot dead)
         {
@@ -5283,6 +5286,8 @@ namespace InfServer.Script.GameType_Eol
                 return;
 
             killer.ZoneStat11++;
+            // (2026-11-16, owner) every bot kill counts on the high scores like a player kill
+            killer.Kills++;
             UpdateKiller(killer);
 
             if (_points != null)
@@ -5401,16 +5406,18 @@ namespace InfServer.Script.GameType_Eol
 
                     flagsPaying++;
 
-                    // Cash — negative LIO values are thousandths × players; accumulate then divide once.
-                    if (flagSettings.PeriodicCashReward < 0)
-                        cashUnits += Math.Abs(flagSettings.PeriodicCashReward) * playersIngame;
-                    else
-                        cashReward += Math.Abs(flagSettings.PeriodicCashReward);
-                    // Experience
-                    if (flagSettings.PeriodicExperienceReward < 0)
-                        expUnits += Math.Abs(flagSettings.PeriodicExperienceReward) * playersIngame;
-                    else
-                        expReward += Math.Abs(flagSettings.PeriodicExperienceReward);
+                    // Cash / experience — negative LIO values are thousandths × players.
+                    // (2026-11-16, owner) minimum per flag, as paid after the ×4 global multiplier (the hold bonus
+                    // for owning many flags still adds on top): fixed flags (resource points) 2k cash / 1k exp,
+                    // roamer flags 3k / 2k, roamer flags that need a command class (Elite Unit, Mercenaries) 5k / 3k.
+                    int flagCash = flagSettings.PeriodicCashReward < 0
+                        ? Math.Abs(flagSettings.PeriodicCashReward) * playersIngame / 1000 : flagSettings.PeriodicCashReward;
+                    int flagExp = flagSettings.PeriodicExperienceReward < 0
+                        ? Math.Abs(flagSettings.PeriodicExperienceReward) * playersIngame / 1000 : flagSettings.PeriodicExperienceReward;
+                    int minCash, minExp;
+                    EolFlagRewardMinimum(fs.flag, out minCash, out minExp);
+                    cashReward += Math.Max(flagCash, minCash / EolFlagRewardGlobalMult);
+                    expReward += Math.Max(flagExp, minExp / EolFlagRewardGlobalMult);
                     // Points
                     if (flagSettings.PeriodicPointsReward < 0)
                         pointUnits += Math.Abs(flagSettings.PeriodicPointsReward) * playersIngame;
@@ -5839,6 +5846,21 @@ namespace InfServer.Script.GameType_Eol
         }
 
         /// <summary>Hold-count multiplier on top of <see cref="EolFlagRewardGlobalMult"/> (1–2: ×1, 3–4: ×1.25, 5–7: ×1.5, 8+: ×2).</summary>
+        /// <summary>
+        /// Minimum periodic payout of one flag (after the ×4 global multiplier). Fixed flags (not carriable - the
+        /// resource points) 2k cash / 1k exp; roamer (carriable) flags 3k / 2k; roamer flags whose skill logic needs a
+        /// command class (Squad Leader 7 / Sergeant 9 / Captain 10 - Elite Unit, Mercenaries standards) 5k / 3k.
+        /// </summary>
+        static void EolFlagRewardMinimum(LioInfo.Flag flag, out int cash, out int exp)
+        {
+            if (flag == null || flag.FlagData.FlagCarriable == 0)
+            { cash = 2000; exp = 1000; return; }
+            string logic = flag.FlagData.SkillLogic ?? "";
+            if (System.Text.RegularExpressions.Regex.IsMatch(logic, @"(^|[^\d%@#-])(7|9|10)([^\d]|$)"))
+            { cash = 5000; exp = 3000; return; }
+            cash = 3000; exp = 2000;
+        }
+
         static double GetEolFlagHoldMultiplier(int flagsOwned)
         {
             if (flagsOwned >= 8)
@@ -6231,6 +6253,11 @@ namespace InfServer.Script.GameType_Eol
             int killerBountyIncrease = 0;
 
             BotSettings settings = victim.Settings();
+            // (2026-11-16, owner: bounty per kill too low) human-class bots (squads using the player classes) have no
+            // settings= in their class description, so they fell back to the zone's [Bot] reward (+10 bounty a kill).
+            // Same cash / exp / points as before, but the bounty of the original bot roamers: 100 (+50 a kill).
+            if (settings == null && (victim is RoamingAttacker || victim is RoamingCaptain))
+                settings = new BotSettings((int)cfg.bot.cashKillReward, (int)cfg.bot.expKillReward, (int)cfg.bot.pointsKillReward, 100);
             if (settings != null)
             {
                 killerBounty = Convert.ToInt32(((double)killer.Bounty / 100) * c_percentOfOwn);
@@ -6250,13 +6277,8 @@ namespace InfServer.Script.GameType_Eol
                 killerBountyIncrease = 0;
             }
 
-            // (2026-11-15, owner: roamer rewards were low) minimum reward per bot kind - see BotKillRewardFloor
-            int floorCash, floorExp;
-            if (BotKillRewardFloor(victim, out floorCash, out floorExp))
-            {
-                killerCash = Math.Max(killerCash, floorCash);
-                killerExp = Math.Max(killerExp, floorExp);
-            }
+            // (2026-11-16, owner) no minimum on bot kills any more - the 2k/1k and 3k/2k minimums were meant for the
+            // flags (see EolFlagRewardMinimum). Kill rewards are the original: bot reward + a share of the killer's bounty.
 
             //Update his stats
             int baseCash = killerCash;
