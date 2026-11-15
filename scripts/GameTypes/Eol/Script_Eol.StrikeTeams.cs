@@ -48,7 +48,7 @@ namespace InfServer.Script.GameType_Eol
         // items (Pioneer Station .itm)
         const int ItmSuperCharger = 14;
         const int ItmKamenevAPmk2 = 3003;
-        const int ItmTitanAR = 1097, ItmA2GL = 3075;
+        const int ItmTitanAR = 1097, ItmKuchlerCAW = 1004;
         static readonly int[] Grenades = { 1011, 1011, 1435, 1012 };   // frag (most common), incendiary, EMP
 
         // weapon pools - each class mixes from these so no two squads look the same
@@ -96,7 +96,71 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>Pirate roamers, the vehicle squad and the human squads share the roaming-squad brain.</summary>
         public bool IsRoamingSquadTeam(Team t)
         {
-            return IsEliteSquadTeam(t) || IsStrikeTeam(t);
+            return IsEliteSquadTeam(t) || IsStrikeTeam(t) || IsPirateRaidTeam(t);
+        }
+
+        /// <summary>(2026-11-16, owner) roaming squads are at most 5 - players and bots together.</summary>
+        public const int SquadMaxSize = 5;
+
+        /// <summary>Roaming squads players may join (pirate elite squad, vehicle squad, human squads).</summary>
+        public bool IsJoinableSquadTeam(Team t)
+        {
+            return t != null && IsRoamingSquadTeam(t) && !IsAssassinTeam(t) && !IsPirateRaidTeam(t);
+        }
+
+        /// <summary>Players on a squad right now (not spectating).</summary>
+        public int SquadHumans(Team t)
+        {
+            return t == null ? 0 : t.ActivePlayerCount;
+        }
+
+        /// <summary>Bots this squad may hold: 5 (or its roster size, if smaller) minus its players.</summary>
+        int SquadBotRoom(Team t, int rosterSize)
+        {
+            return Math.Max(0, Math.Min(rosterSize, SquadMaxSize) - SquadHumans(t));
+        }
+
+        /// <summary>
+        /// Kick bots out of a squad until bots + players (+ <paramref name="joining"/>) fit in 5. Never the
+        /// leader while another bot can go.
+        /// </summary>
+        public void TrimSquadForHumans(Team team, int joining)
+        {
+            if (!IsJoinableSquadTeam(team) || _arena == null)
+                return;
+            int room = Math.Max(0, SquadMaxSize - SquadHumans(team) - joining);
+            List<RoamingAttacker> members = EliteSquadMembers(team);
+            RoamingAttacker leader = EliteSquadLeader(team);
+            int safety = 10;
+            while (members.Count > room && safety-- > 0)
+            {
+                RoamingAttacker go = members.Find(m => m != leader) ?? members[0];
+                members.Remove(go);
+                EnqueueVehicleDespawn(go);
+                if (_bots != null)
+                    _bots.Remove(go);
+            }
+            if (roamBots != null)
+                roamBots[team] = EliteSquadMembers(team).Count;
+        }
+
+        /// <summary>The nearest live bot-base HQ that is not on <paramref name="self"/>'s team (null = none).</summary>
+        public Helpers.ObjectState NearestEnemyBaseHq(Bots.Bot self)
+        {
+            if (self == null || _arena == null || self._state == null)
+                return null;
+            Vehicle best = null;
+            double bestD = double.MaxValue;
+            foreach (Vehicle v in _arena.Vehicles)
+            {
+                if (v == null || v._type == null || v.IsDead || v.bCondemned || v._type.Id != _hqVehId)
+                    continue;
+                if (v._team == null || v._team == self._team || !IsDefenseBotTeam(v._team))
+                    continue;
+                double d = Helpers.distanceTo(self._state, v._state);
+                if (d < bestD) { bestD = d; best = v; }
+            }
+            return best == null ? null : new Helpers.ObjectState { positionX = best._state.positionX, positionY = best._state.positionY };
         }
 
         public static bool IsSquadLeaderVehicle(int vehId)
@@ -148,6 +212,9 @@ namespace InfServer.Script.GameType_Eol
                 return false;
 
             List<RoamingAttacker> members = EliteSquadMembers(team);
+            size = SquadBotRoom(team, size);   // 5 max, players take bot places
+            if (members.Count > size)
+                TrimSquadForHumans(team, 0);
             if (members.Count >= size)
             {
                 _strikeNextSpawnTick.Remove(team);
@@ -190,7 +257,8 @@ namespace InfServer.Script.GameType_Eol
             if (at == null)
                 return false;
 
-            RoamingAttacker bot = _arena.newBot(typeof(RoamingAttacker), (ushort)cls, team, null, at, this, null) as RoamingAttacker;
+            RoamingAttacker bot = !CanSpawnBotOnTeam(team) ? null
+                : _arena.newBot(typeof(RoamingAttacker), (ushort)cls, team, null, at, this, null) as RoamingAttacker;
             if (bot == null)
                 return false;
             string skill;
@@ -262,7 +330,9 @@ namespace InfServer.Script.GameType_Eol
             {
                 case ClsHeavy:
                     close = Pick(PoolHeavy);
-                    far = team != null && CountTeamSplashGunners(team) < MaxGrenadiersPerTeam && r.Next(2) == 0 ? ItmA2GL : Pick(PoolHeavy);
+                    // (2026-11-16, owner: one-shot from range) no A2 Grenade Launcher - its shell is the vehicle Harrier GL
+                    // round; heavies carry the close-range Kuchler A6 CAW instead
+                    far = r.Next(2) == 0 ? ItmKuchlerCAW : Pick(PoolHeavy);
                     break;
                 case ClsMPAC:
                     close = Pick(PoolHeavy);

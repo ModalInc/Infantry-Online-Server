@@ -99,10 +99,13 @@ namespace InfServer.Script.GameType_Eol
             return t != null && (t == botTeam7 || t == botTeamAlienElite1 || t == botTeamAlienElite2);
         }
 
+        /// <summary>The pirate raid: two separate elite squads of 5 (Alpha = botTeam4, Bravo = botTeamRaid2).</summary>
         public bool IsRoamBotTeam(Team t)
         {
-            return t != null && t == botTeam4;
+            return t != null && (t == botTeam4 || t == botTeamRaid2);
         }
+
+        public bool IsPirateRaidTeam(Team t) { return IsRoamBotTeam(t); }
 
         public bool IsDefenseBotTeam(Team t)
         {
@@ -138,6 +141,9 @@ namespace InfServer.Script.GameType_Eol
                 return false;
             // The three alien packs (main + 2 elite) are one swarm - never fight each other.
             if (IsAlienBotTeam(self) && IsAlienBotTeam(other))
+                return false;
+            // the two pirate raid squads are one raid - allies
+            if (IsPirateRaidTeam(self) && IsPirateRaidTeam(other))
                 return false;
             if (EolBotFreeForAll)
                 return true;
@@ -433,7 +439,8 @@ namespace InfServer.Script.GameType_Eol
             if (openPoint == null)
                 openPoint = new Helpers.ObjectState { positionX = ax, positionY = ay };
 
-            AlienHorde bot = _arena.newBot(typeof(AlienHorde), vid, alienTeam, null, openPoint, this, null) as AlienHorde;
+            AlienHorde bot = !CanSpawnBotOnTeam(alienTeam) ? null
+                : _arena.newBot(typeof(AlienHorde), vid, alienTeam, null, openPoint, this, null) as AlienHorde;
             if (bot != null)
             {
                 if (elitePack)

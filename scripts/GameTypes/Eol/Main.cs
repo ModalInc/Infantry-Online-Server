@@ -423,6 +423,8 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>Elite alien packs of 5 (local 2026-11-13) - allied with Bot - Aliens.</summary>
         public Team botTeamAlienElite1;
         public Team botTeamAlienElite2;
+        /// <summary>Second pirate raid squad (2026-11-16: the raid is 2 x 5 elites, Alpha on botTeam4).</summary>
+        public Team botTeamRaid2;
         /// <summary>Owns static radiation-border wall vehicles (not a player faction).</summary>
         Team _eolBorderWallTeam;
         List<Vehicle> _eolBorderWallVehicles;
@@ -587,9 +589,9 @@ namespace InfServer.Script.GameType_Eol
         public const int PirateRaidGruntSpawnIntervalMinMs = 3000;
         public const int PirateRaidGruntSpawnIntervalMaxMs = 7000;
         /// <summary>Roaming grunts (RoamingAttacker) spawned this pirate raid; total cap <see cref="PirateRaidTotalSpawns"/>.</summary>
-        public const int PirateRaidTotalSpawns = 60;
+        public const int PirateRaidTotalSpawns = 30;   // (2026-11-16) 2 squads of 5, reinforced up to 30 in all (was 60 in a horde)
         /// <summary>Never more than this many pirate combat bots (captain + grunts) alive at once during a raid wave.</summary>
-        public const int PirateRaidMaxConcurrentAlive = 20;
+        public const int PirateRaidMaxConcurrentAlive = 10;   // (2026-11-16, owner) max 10 per team (was 20)
 
         /// <summary>Max concurrent defense combat bots per team (Captain + Engineer + BasicDefense).</summary>
         public const int EolMaxConcurrentBaseDefenseBots = 10;   // local 2026-11-13: 10 per base (was 20)
@@ -795,6 +797,7 @@ namespace InfServer.Script.GameType_Eol
             botTeamAlienElite1 = CreateAndRegisterBotTeam("Skrall Ravagers Bots");
             botTeamAlienElite2 = CreateAndRegisterBotTeam("Skrall Brood Bots");
             CreateStrikeTeams();   // local 2026-11-14: three human-class strike teams
+            botTeamRaid2 = CreateAndRegisterBotTeam("Pirate Raiders Bravo Bots");
 
             _eolBorderWallTeam = new Team(_arena, _arena._server);
             _eolBorderWallTeam._name = "Eol Radiation Border";
@@ -3311,7 +3314,7 @@ namespace InfServer.Script.GameType_Eol
                 for (int i = 0; i < _bots.Count; i++)
                 {
                     Bot b = _bots[i];
-                    if (b == null || b._team != botTeam4)
+                    if (b == null || !IsPirateRaidTeam(b._team))
                         continue;
                     if (!(b is RoamingAttacker || b is RoamingCaptain))
                         continue;
@@ -3328,9 +3331,50 @@ namespace InfServer.Script.GameType_Eol
             {
                 if (!roamBots.ContainsKey(botTeam4))
                     roamBots.Add(botTeam4, 0);
-                roamBots[botTeam4] = grunts;
+                roamBots[botTeam4] = grunts;   // both squads - the raid ends when this reaches 0
             }
+            if (roamBots != null && botTeamRaid2 != null)
+                roamBots[botTeamRaid2] = CountLiveRoamCombatBotsForTeam(botTeamRaid2);
             return n;
+        }
+
+        /// <summary>Raid squad roles: command, medic, heavy weapons, 2 fighters (2026-11-16).</summary>
+        static readonly int[] RaidCommandClasses = { 123, 133, 138, 134 };   // Squad Leader, Sergeant, Lieutenant, Captain
+        const int RaidMedicClass = 15, RaidHeavyClass = 13;
+        static readonly int[] RaidFighterClasses = { 12, 10, 14, 111 };     // Infantry, Jump Trooper, Infiltrator, Conscript
+        public const int PirateRaidSquadSize = 5;
+
+        /// <summary>The raid squad that is short of a member and the class it is missing (false = both full).</summary>
+        bool PickPirateRaidSquadSlot(out Team team, out int cls)
+        {
+            team = null; cls = 0;
+            Team best = null; int bestN = int.MaxValue;
+            foreach (Team t in new[] { botTeam4, botTeamRaid2 })
+            {
+                if (t == null) continue;
+                int c = CountLiveRoamCombatBotsForTeam(t);
+                if (c < PirateRaidSquadSize && c < bestN) { bestN = c; best = t; }
+            }
+            if (best == null)
+                return false;
+            bool hasCmd = false, hasMedic = false, hasHeavy = false;
+            if (_bots != null)
+                foreach (Bot b in _bots)
+                {
+                    if (b == null || b._team != best || b._type == null || b.bCondemned || b.IsDead)
+                        continue;
+                    int v = b._type.Id;
+                    if (Array.IndexOf(RaidCommandClasses, v) >= 0) hasCmd = true;
+                    else if (v == RaidMedicClass) hasMedic = true;
+                    else if (v == RaidHeavyClass) hasHeavy = true;
+                }
+            Random r = _rand ?? (_rand = new Random(Environment.TickCount));
+            if (!hasCmd) cls = RaidCommandClasses[r.Next(RaidCommandClasses.Length)];
+            else if (!hasMedic) cls = RaidMedicClass;
+            else if (!hasHeavy) cls = RaidHeavyClass;
+            else cls = RaidFighterClasses[r.Next(RaidFighterClasses.Length)];
+            team = best;
+            return true;
         }
 
         /// <summary>Live roam combat bots on a team (RoamingCaptain + RoamingAttacker).</summary>
@@ -3402,6 +3446,19 @@ namespace InfServer.Script.GameType_Eol
                 ay = liveCap._state.positionY;
             }
 
+            // (2026-11-16, owner) the raid is two separate elite squads of 5 - command, medic, heavy weapons and
+            // 2 fighters each. The squad short of a member gets the next one, the class it is missing.
+            Team raidTeam;
+            int id;
+            if (!PickPirateRaidSquadSlot(out raidTeam, out id))
+                return;
+            RoamingAttacker sqLeader = EliteSquadLeader(raidTeam);
+            if (sqLeader != null && !sqLeader.InLiveCombat)
+            {
+                ax = sqLeader._state.positionX;
+                ay = sqLeader._state.positionY;
+            }
+
             Helpers.ObjectState openPoint = FindOpenRaiderSpawnWithPeerGap(ax, ay);
             if (openPoint == null)
             {
@@ -3413,18 +3470,6 @@ namespace InfServer.Script.GameType_Eol
                 }
             }
 
-            int id = 144;
-            Random roamtype = new Random();
-            int _randomroam = roamtype.Next(1, 6);
-            switch (_randomroam)
-            {
-                case 1: id = 144; break;
-                case 2: id = 145; break;
-                case 3: id = 146; break;
-                case 4: id = 147; break;
-                case 5: id = 157; break;
-            }
-
             if (_bots == null)
                 _bots = new List<Bots.Bot>();
 
@@ -3432,19 +3477,21 @@ namespace InfServer.Script.GameType_Eol
             if (GetPirateRaidAliveGruntCount() >= PirateRaidMaxConcurrentAlive)
                 return;
 
-            RoamingAttacker dBot = _arena.newBot(typeof(RoamingAttacker), (ushort)id, botTeam4, null, openPoint, this, null) as RoamingAttacker;
+            RoamingAttacker dBot = !CanSpawnBotOnTeam(raidTeam) ? null
+                : _arena.newBot(typeof(RoamingAttacker), (ushort)id, raidTeam, null, openPoint, this, null) as RoamingAttacker;
             if (dBot == null)
             {
                 _tickNextPirateGruntSpawn = now + 900;
                 return;
             }
 
-            EnableBotDropshipRespawn(dBot, BotMaxDeathsRaider);
-            if (!roamBots.ContainsKey(botTeam4))
-                roamBots.Add(botTeam4, 0);
+            dBot.SkillModeOverride = "ace";
+            ApplyHumanLoadout(dBot, id, raidTeam);
+            if (!roamBots.ContainsKey(raidTeam))
+                roamBots.Add(raidTeam, 0);
             if (!_bots.Contains(dBot))
                 _bots.Add(dBot);
-            roamBots[botTeam4] = CountLiveRoamCombatBotsForTeam(botTeam4);
+            GetPirateRaidAliveGruntCount();   // refreshes roamBots for both squads
 
             _pirateRaidGruntsSpawnedThisWave++;
             if ((_pirateRaidGruntsSpawnedThisWave == PirateRaidMaxConcurrentAlive || _pirateRaidGruntsSpawnedThisWave == PirateRaidMaxConcurrentAlive * 2)
@@ -3763,7 +3810,7 @@ namespace InfServer.Script.GameType_Eol
                 Log.write(TLog.Warning, "[Eol] Raider arm: no sector flags — using spawn anchor as objective.");
             }
 
-            _arena.sendArenaMessage("&Pirate raiders are pushing into Eol. Up to " + PirateRaidTotalSpawns + " hostiles in waves of " + PirateRaidMaxConcurrentAlive + ".");
+            _arena.sendArenaMessage("&Pirate raiders are pushing into Eol: 2 elite squads of " + PirateRaidSquadSize + ", " + PirateRaidTotalSpawns + " raiders in all.");
             _pirateRaidGruntsSpawnedThisWave = 0;
             _pirateRaidGruntsRemainingThisWave = PirateRaidTotalSpawns;
             _pirateRaidQuotaMet = false;
@@ -3793,6 +3840,9 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>Spawn the pirate captain at the raid anchor if under the roam-captain cap.</summary>
         void TrySpawnRaiderCaptainImmediate(int now)
         {
+            // (2026-11-16) no separate pirate captain any more: each raid squad has its own command-class leader
+            if (PirateRaidSquadSize > 0)
+                return;
             if (_arena == null || !PirateRaidHordeOperational)
                 return;
             if (_bots == null)
@@ -3831,7 +3881,8 @@ namespace InfServer.Script.GameType_Eol
                 return;
 
             Team team = botTeam4;
-            RoamingCaptain Flagger = _arena.newBot(typeof(RoamingCaptain), (ushort)142, team, null, openPoint, this) as RoamingCaptain;
+            RoamingCaptain Flagger = !CanSpawnBotOnTeam(team) ? null
+                : _arena.newBot(typeof(RoamingCaptain), (ushort)142, team, null, openPoint, this) as RoamingCaptain;
             if (Flagger == null)
                 return;
 
@@ -3870,7 +3921,7 @@ namespace InfServer.Script.GameType_Eol
                 for (int i = 0; i < _bots.Count; i++)
                 {
                     RoamingAttacker g = _bots[i] as RoamingAttacker;
-                    if (g == null || g._team != botTeam4)
+                    if (g == null || !IsPirateRaidTeam(g._team))
                         continue;
                     if (g.bCondemned && !g.bDropshipRespawnPending)
                         continue;
@@ -3937,7 +3988,7 @@ namespace InfServer.Script.GameType_Eol
             {
                 foreach (Bots.Bot b in _bots.ToList())
                 {
-                    if (b == null || b._team != botTeam4)
+                    if (b == null || !IsPirateRaidTeam(b._team))
                         continue;
                     if (b is RoamingCaptain || b is RoamingAttacker)
                         EnqueueVehicleDespawn(b);
@@ -3946,6 +3997,8 @@ namespace InfServer.Script.GameType_Eol
 
             if (roamBots != null && roamBots.ContainsKey(botTeam4))
                 roamBots[botTeam4] = 0;
+            if (roamBots != null && botTeamRaid2 != null && roamBots.ContainsKey(botTeamRaid2))
+                roamBots[botTeamRaid2] = 0;
 
             if (sendFinishedLine)
             {
@@ -4295,7 +4348,8 @@ namespace InfServer.Script.GameType_Eol
             id = LimitGrenadiers(team, id, new[] { 144, 145, 146, 147, 157 });
             if (owner == null)
             {
-                RoamingAttacker dBot = _arena.newBot(typeof(RoamingAttacker), (ushort)id, team, null, openPoint, this, null) as RoamingAttacker;
+                RoamingAttacker dBot = !CanSpawnBotOnTeam(team) ? null
+                    : _arena.newBot(typeof(RoamingAttacker), (ushort)id, team, null, openPoint, this, null) as RoamingAttacker;
                 if (dBot == null)
                     return;
 
@@ -5275,7 +5329,7 @@ namespace InfServer.Script.GameType_Eol
         }
 
         /// <summary>
-        /// Player killed a bot: streak / team points / crown timer only. Counts on CFG Name10 (ZoneStat11), not Kills.
+        /// Player killed a bot: streak / team points / crown timer only. Counts on CFG Name10 (ZoneStat11) and Kills (high scores).
         /// </summary>
         private void OnPlayerKilledBot(InfServer.Game.Player killer, Bots.Bot dead)
         {
@@ -5283,6 +5337,8 @@ namespace InfServer.Script.GameType_Eol
                 return;
 
             killer.ZoneStat11++;
+            // (2026-11-16, owner) every bot kill counts on the high scores like a player kill
+            killer.Kills++;
             UpdateKiller(killer);
 
             if (_points != null)
@@ -5401,16 +5457,18 @@ namespace InfServer.Script.GameType_Eol
 
                     flagsPaying++;
 
-                    // Cash — negative LIO values are thousandths × players; accumulate then divide once.
-                    if (flagSettings.PeriodicCashReward < 0)
-                        cashUnits += Math.Abs(flagSettings.PeriodicCashReward) * playersIngame;
-                    else
-                        cashReward += Math.Abs(flagSettings.PeriodicCashReward);
-                    // Experience
-                    if (flagSettings.PeriodicExperienceReward < 0)
-                        expUnits += Math.Abs(flagSettings.PeriodicExperienceReward) * playersIngame;
-                    else
-                        expReward += Math.Abs(flagSettings.PeriodicExperienceReward);
+                    // Cash / experience — negative LIO values are thousandths × players.
+                    // (2026-11-16, owner) minimum per flag, as paid after the ×4 global multiplier (the hold bonus
+                    // for owning many flags still adds on top): fixed flags (resource points) 2k cash / 1k exp,
+                    // roamer flags 3k / 2k, roamer flags that need a command class (Elite Unit, Mercenaries) 5k / 3k.
+                    int flagCash = flagSettings.PeriodicCashReward < 0
+                        ? Math.Abs(flagSettings.PeriodicCashReward) * playersIngame / 1000 : flagSettings.PeriodicCashReward;
+                    int flagExp = flagSettings.PeriodicExperienceReward < 0
+                        ? Math.Abs(flagSettings.PeriodicExperienceReward) * playersIngame / 1000 : flagSettings.PeriodicExperienceReward;
+                    int minCash, minExp;
+                    EolFlagRewardMinimum(fs.flag, out minCash, out minExp);
+                    cashReward += Math.Max(flagCash, minCash / EolFlagRewardGlobalMult);
+                    expReward += Math.Max(flagExp, minExp / EolFlagRewardGlobalMult);
                     // Points
                     if (flagSettings.PeriodicPointsReward < 0)
                         pointUnits += Math.Abs(flagSettings.PeriodicPointsReward) * playersIngame;
@@ -5839,6 +5897,21 @@ namespace InfServer.Script.GameType_Eol
         }
 
         /// <summary>Hold-count multiplier on top of <see cref="EolFlagRewardGlobalMult"/> (1–2: ×1, 3–4: ×1.25, 5–7: ×1.5, 8+: ×2).</summary>
+        /// <summary>
+        /// Minimum periodic payout of one flag (after the ×4 global multiplier). Fixed flags (not carriable - the
+        /// resource points) 2k cash / 1k exp; roamer (carriable) flags 3k / 2k; roamer flags whose skill logic needs a
+        /// command class (Squad Leader 7 / Sergeant 9 / Captain 10 - Elite Unit, Mercenaries standards) 5k / 3k.
+        /// </summary>
+        static void EolFlagRewardMinimum(LioInfo.Flag flag, out int cash, out int exp)
+        {
+            if (flag == null || flag.FlagData.FlagCarriable == 0)
+            { cash = 2000; exp = 1000; return; }
+            string logic = flag.FlagData.SkillLogic ?? "";
+            if (System.Text.RegularExpressions.Regex.IsMatch(logic, @"(^|[^\d%@#-])(7|9|10)([^\d]|$)"))
+            { cash = 5000; exp = 3000; return; }
+            cash = 3000; exp = 2000;
+        }
+
         static double GetEolFlagHoldMultiplier(int flagsOwned)
         {
             if (flagsOwned >= 8)
@@ -6231,6 +6304,11 @@ namespace InfServer.Script.GameType_Eol
             int killerBountyIncrease = 0;
 
             BotSettings settings = victim.Settings();
+            // (2026-11-16, owner: bounty per kill too low) human-class bots (squads using the player classes) have no
+            // settings= in their class description, so they fell back to the zone's [Bot] reward (+10 bounty a kill).
+            // Same cash / exp / points as before, but the bounty of the original bot roamers: 100 (+50 a kill).
+            if (settings == null && (victim is RoamingAttacker || victim is RoamingCaptain))
+                settings = new BotSettings((int)cfg.bot.cashKillReward, (int)cfg.bot.expKillReward, (int)cfg.bot.pointsKillReward, 100);
             if (settings != null)
             {
                 killerBounty = Convert.ToInt32(((double)killer.Bounty / 100) * c_percentOfOwn);
@@ -6250,13 +6328,8 @@ namespace InfServer.Script.GameType_Eol
                 killerBountyIncrease = 0;
             }
 
-            // (2026-11-15, owner: roamer rewards were low) minimum reward per bot kind - see BotKillRewardFloor
-            int floorCash, floorExp;
-            if (BotKillRewardFloor(victim, out floorCash, out floorExp))
-            {
-                killerCash = Math.Max(killerCash, floorCash);
-                killerExp = Math.Max(killerExp, floorExp);
-            }
+            // (2026-11-16, owner) no minimum on bot kills any more - the 2k/1k and 3k/2k minimums were meant for the
+            // flags (see EolFlagRewardMinimum). Kill rewards are the original: bot reward + a share of the killer's bounty.
 
             //Update his stats
             int baseCash = killerCash;
@@ -7546,6 +7619,24 @@ namespace InfServer.Script.GameType_Eol
         {
             if (team == null || string.IsNullOrEmpty(team._name))
                 return true;
+
+            // (2026-11-16, owner) the roaming squads (5 max) take players: a bot makes room, and with a player on the
+            // team the bots go attack bases with them. Full = 5 players.
+            if (IsJoinableSquadTeam(team))
+            {
+                if (player != null && player._team == team)
+                    return true;
+                if (team.ActivePlayerCount >= SquadMaxSize)
+                {
+                    if (player != null)
+                        player.sendMessage(-1, "That squad is full.");
+                    return false;
+                }
+                TrimSquadForHumans(team, 1);
+                if (player != null)
+                    player.sendMessage(0, "&You joined " + team._name + " - your squad is heading out to attack enemy bases.");
+                return true;
+            }
 
             // Players must not join managed bot frequencies (Base / Raiders / Aliens / BHB).
             if (Arena.IsManagedBotTeamName(team._name))

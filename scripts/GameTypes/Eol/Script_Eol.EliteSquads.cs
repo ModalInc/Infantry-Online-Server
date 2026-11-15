@@ -75,6 +75,9 @@ namespace InfServer.Script.GameType_Eol
                 roamBots.Add(team, 0);
 
             List<RoamingAttacker> members = EliteSquadMembers(team);
+            squadSize = SquadBotRoom(team, squadSize);   // 5 max, players take bot places
+            if (members.Count > squadSize)
+                TrimSquadForHumans(team, 0);
             if (members.Count >= squadSize)
             {
                 _eliteNextSpawnTick.Remove(team);
@@ -108,7 +111,8 @@ namespace InfServer.Script.GameType_Eol
             if (at == null)
                 return;
 
-            RoamingAttacker bot = _arena.newBot(typeof(RoamingAttacker), (ushort)vehId, team, null, at, this, null) as RoamingAttacker;
+            RoamingAttacker bot = !CanSpawnBotOnTeam(team) ? null
+                : _arena.newBot(typeof(RoamingAttacker), (ushort)vehId, team, null, at, this, null) as RoamingAttacker;
             if (bot == null)
                 return;
             bot.SkillModeOverride = "elite";   // pirate roamers: veteran..ace
