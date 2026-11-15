@@ -2184,7 +2184,7 @@ namespace InfServer.Game
                 //Holy fuck this is so much shorter!
                 try
                 {
-                    playerTotal = player._arena.Vehicles.Where(v => v != null && v._type.Id == item.vehicleID &&
+                    playerTotal = player._arena.Vehicles.Where(v => v != null && !v.IsDead && v._type.Id == item.vehicleID &&
                         v._creator != null && v._creator._alias == player._alias).Count();
                 }
                 catch (Exception e)
@@ -2199,7 +2199,7 @@ namespace InfServer.Game
                     foreach (Vehicle veh in vehs)
                     {
                         Computer comp = veh as Computer;
-                        if (comp != null)
+                        if (comp != null && !comp.IsDead)   // (2026-11-15) a dead / removed computer doesn't count
                         {   //If the computer is on the same team as the one the player is trying to add increment the counter
                             if (comp._team == player._team)
                             {
@@ -2215,7 +2215,7 @@ namespace InfServer.Game
                     foreach (Vehicle veh in vehicles)
                     {   //Iterate through the list checking for computers
                         Computer comp = veh as Computer;
-                        if (comp != null)
+                        if (comp != null && !comp.IsDead)
                         {   //If the computer is on the same team as the one the player is trying to add increment the counter
                             if (comp._team == player._team)
                             {
@@ -2929,7 +2929,10 @@ namespace InfServer.Game
                     return;
                 }
 
-                if (vehicle.DropItemId != 0)
+                // (2026-11-15, owner: "if bots kill spiders it shouldn't drop anything") a computer (spider hive,
+                // turret...) destroyed by a bot - no player killer - leaves no loot
+                bool killedByBot = killer == null && dead is Computer;
+                if (vehicle.DropItemId != 0 && !killedByBot)
                 {
                     ItemInfo item = _server._assets.getItemByID(vehicle.DropItemId);
                     if (item != null && vehicle.DropItemQuantity > 0)

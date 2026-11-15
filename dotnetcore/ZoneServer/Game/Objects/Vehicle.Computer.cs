@@ -24,6 +24,8 @@ namespace InfServer.Game
         public byte _fireAngle;							//The angle we're to fire at
         public bool _shouldFire;						//Should we fire?
         public bool _sendUpdate;						//Should we send an update?
+        public short _hpLastStreamed = -1;              //(2026-11-15) health stream (ArenaComputer): last health sent
+        public int _tickHpStreamed;                     //  and when
 
         protected int _tickLastUpdate;					//The last time at which we sent an update packet
         protected int _tickShotTime;					//The last time at which we fired a shot
@@ -671,6 +673,17 @@ namespace InfServer.Game
             if (_arena == null)
                 return true;
 
+            // (2026-11-15) A computer standing indoors (its own tile has vision - a roof): every tile of the building
+            // has vision too, so the vision rule below called everything "hidden" and indoor turrets / spider hives
+            // never fired at anyone, even in the same room. Indoors only real walls block its sight.
+            try
+            {
+                LvlInfo.Tile own = _arena.getTile(_state.positionX, _state.positionY);
+                if (own.Vision > 0)
+                    return !InfServer.Bots.BotCombat.SightLineClear(_arena, _state.positionX, _state.positionY, posX, posY);
+            }
+            catch { }
+
             //Pretty ugly way to get it done but it works perfectly. Vision tiles are all calculated seemingly fine. If you have a better way of doing it, by all means. - Super-man
             int tileSize = 8; //8 is nonexistant.
             int tileDistance = 0;
@@ -756,6 +769,33 @@ namespace InfServer.Game
             //Computer vehicles don't linger, so destroy it
             destroy(true);
         }
+
+        /// <summary>
+        /// (2026-11-15) Killed by server-side damage (a bot's shot - applyBotHit): the base Vehicle.kill only routed
+        /// the death, so the turret stayed on the map at 0 health - it never went away, and it still counted toward
+        /// the team's computer limits (players couldn't build any more). Now: a non-destroyable one stays up (1 hp);
+        /// otherwise the death goes to the script + clients (explosion, HQ-destroyed handling, drops) and the
+        /// computer is removed, like a turret a player destroys.
+        /// </summary>
+        public override void kill(Player killer, int weaponID)
+        {
+            if (bCondemned || _bKillHandled)
+                return;
+            if (_type.Destroyable == 0)
+            {
+                _state.health = 1;
+                _sendUpdate = true;
+                return;
+            }
+            _bKillHandled = true;
+            _state.health = 0;
+            _tickDead = Environment.TickCount;
+            try { _arena.handleVehicleDeath(this, killer, null); }
+            catch (Exception ex) { Log.write(TLog.Warning, "Computer death routing failed: " + ex.Message); }
+            _arena._turretGroups.Remove(this);
+            destroy(true);
+        }
+        bool _bKillHandled;
 
         /// <summary>
         /// Handles damage from explosions triggered nearby
