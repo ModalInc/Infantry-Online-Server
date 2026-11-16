@@ -272,12 +272,18 @@ namespace InfServer.Script.GameType_Eol
             int now = Environment.TickCount;
             InLiveCombat = false;
 
+            // (2026-11-16c) a swarm bug walking through the bug cave to its portal (Script_Eol.AlienSwarm.cs)
+            if (_baseScript != null && _baseScript.PollSwarmDeploying(this, now))
+                return base.poll();
+
             if (_tickLastVhqLookup == 0 || now - _tickLastVhqLookup >= AlienVhqRescanMs)
             {
                 _tickLastVhqLookup = now;
                 // own pack's ship first (elite packs land their own - local 2026-11-14), then the main one
                 _cachedCrashShip = null;
-                if (_arena != null && _baseScript != null)
+                if (_baseScript != null && _baseScript.IsSwarmTeam(_team))
+                    _cachedCrashShip = _baseScript.SwarmNest;   // the swarm defends its nest
+                else if (_arena != null && _baseScript != null)
                 {
                     List<Vehicle> ships = _arena.getVehiclesInRange(_state.positionX, _state.positionY, 16000,
                         delegate (Vehicle v)
@@ -328,7 +334,7 @@ namespace InfServer.Script.GameType_Eol
             }
 
             if (owner == null
-                && !_baseScript.IsAlienBotTeam(_team))
+                && !_baseScript.IsBugTeam(_team))
             {
                 if (_team.ActivePlayerCount > 0)
                     owner = _team.ActivePlayers.Last();
@@ -347,7 +353,7 @@ namespace InfServer.Script.GameType_Eol
                 }
             }
 
-            if (!_baseScript.IsAlienBotTeam(_team) && !_baseScript.TeamHasLiveHqVehicle(_team))
+            if (!_baseScript.IsBugTeam(_team) && !_baseScript.TeamHasLiveHqVehicle(_team))
             {
                 kill(null);
                 ReleasePollScratch();
@@ -459,7 +465,9 @@ namespace InfServer.Script.GameType_Eol
                 if (!stickyCombat)
                     ClearActivePlayerTarget();
                 _bStrafe = false;
-                patrolHQ(now);
+                // (2026-11-16e) the Alien Swarm guards its Queen from its own posts (no choke points, no piling up)
+                if (_baseScript == null || !_baseScript.SwarmGuard(this, now))
+                    patrolHQ(now);
             }
             else if (_bStrafe)
             {

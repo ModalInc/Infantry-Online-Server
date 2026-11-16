@@ -565,22 +565,8 @@ namespace InfServer.Script.GameType_Eol
                 };
             }
 
-            putVehicleAtSpawnLocation(grunt, near);
-            grunt.ClearActivePlayerTarget();
-            try
-            {
-                grunt.Navigation?.Clear();
-                grunt.HoldPosition();
-                grunt._targetPoint = null;
-            }
-            catch { /* ignore */ }
-
-            List<Player> audience = _arena.GetBotLifecycleAudience(near.positionX, near.positionY);
-            if (audience != null && audience.Count > 0)
-            {
-                Helpers.Object_Vehicles(audience, grunt);
-                grunt.MarkClientsAwareOfBot(audience);
-            }
+            // (2026-11-16d, invisible bots) a teleport through WarpBot: clients that saw it before get the body again
+            WarpBot(grunt, near);
             return true;
         }
 

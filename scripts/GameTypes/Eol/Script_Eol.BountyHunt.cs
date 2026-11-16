@@ -15,7 +15,7 @@ namespace InfServer.Script.GameType_Eol
     public partial class Script_Eol
     {
         public const int BountyHuntThreshold = 30000;
-        public const int BountyHuntPingIntervalMs = 2 * 60 * 1000;
+        public const int BountyHuntPingIntervalMs = 5 * 60 * 1000;   // (2026-11-16c, owner: was 2 min - spammy)
         public const int BountyHuntTrickleIntervalMs = 20 * 1000;
         public const int BountyHuntMinMarkMsForFullPayout = 90 * 1000;
         public const int BountyHuntPairCooldownMs = 30 * 60 * 1000;
@@ -289,8 +289,7 @@ namespace InfServer.Script.GameType_Eol
             }
             else if (_arena != null)
             {
-                _arena.sendArenaMessage("&HUNT queue empty — waiting for the next 30k bounty.",
-                    _config != null ? _config.flag.periodicBong : 1);
+                _arena.sendArenaMessage("&HUNT queue empty — waiting for the next 30k bounty.", 0);
             }
         }
 
@@ -497,15 +496,19 @@ namespace InfServer.Script.GameType_Eol
                 ? "DROPSHIP (survivor pot paused — assassin pot grows)"
                 : string.Format("{0} ({1},{2})", sector, x, y);
 
-            string prefix = first ? "&HUNT INTEL" : "&HUNT PING";
-            int waiting = Math.Max(0, _bountyHuntQueue.Count - 1);
-            int bong = _config != null ? _config.flag.victoryWarningBong : 5;
-            _arena.sendArenaMessage(string.Format(
-                "{0}: {1} | {2} | HP {3}% | EN {4}% | Survivor C={5} E={6} P={7} | Assassin C={8} E={9} P={10} | Next: {11} ({12} waiting)",
-                prefix, mark._alias, loc, hpPct, enPct,
-                _bountyHuntSurvivorPotCash, _bountyHuntSurvivorPotExp, _bountyHuntSurvivorPotPoints,
-                _bountyHuntAssassinPotCash, _bountyHuntAssassinPotExp, _bountyHuntAssassinPotPoints,
-                FormatBountyHuntQueuePreview(1), waiting), bong);
+            // (2026-11-16c, owner: "ping less, it was spammy") the first intel keeps its sound and the full line;
+            // the repeat pings are silent, short (who, where, the assassin pot) and every 5 min instead of 2
+            if (first)
+            {
+                int waiting = Math.Max(0, _bountyHuntQueue.Count - 1);
+                int bong = 0;   // (the hunt-start line just before already sounded)
+                _arena.sendArenaMessage(string.Format(
+                    "&HUNT: {0} | {1} | HP {2}% | Survivor ${3} | Assassin ${4} | {5} waiting",
+                    mark._alias, loc, hpPct, _bountyHuntSurvivorPotCash, _bountyHuntAssassinPotCash, waiting), bong);
+            }
+            else
+                _arena.sendArenaMessage(string.Format("&HUNT: {0} at {1} | Assassin pot ${2}",
+                    mark._alias, loc, _bountyHuntAssassinPotCash), 0);
         }
 
         bool IsBountyHuntInDropship(InfServer.Game.Player p)

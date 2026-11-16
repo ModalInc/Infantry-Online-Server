@@ -61,14 +61,18 @@ namespace InfServer.Script.GameType_Eol
             _forceLiveBotDespawnUntil = Environment.TickCount + 250;
         }
 
-        public void EnqueueVehicleDespawn(Vehicle v)
+        /// <param name="force">
+        /// (2026-11-16b) remove it even though it's a live bot in the play area - a squad bot making room for a
+        /// player who joins (the guard below had silently kept those, so the squad never shrank).
+        /// </param>
+        public void EnqueueVehicleDespawn(Vehicle v, bool force = false)
         {
             if (v == null || v.IsDead)
                 return;
             // Already gone / being torn down by the engine.
             if (v.bCondemned)
                 return;
-            if (v is Bots.Bot liveBot && _arena != null && _arena._bGameRunning && !_bbetweengames
+            if (!force && v is Bots.Bot liveBot && _arena != null && _arena._bGameRunning && !_bbetweengames
                 && Environment.TickCount - _forceLiveBotDespawnUntil > 0
                 && liveBot._state != null && InPlayArea(liveBot._state.positionX, liveBot._state.positionY, 0))
                 return;   // it fights on until it dies

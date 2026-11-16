@@ -11,23 +11,23 @@ namespace InfServer.Script.GameType_Eol
     internal static class EolBasePatrolUtil
     {
         /// <summary>Maximum distance (raw map units) a defender may roam from HQ.</summary>
-        public const int LeashRaw = 2800;
+        public const int LeashRaw = 1400;   // (2026-11-16e, owner: stay semi close to the HQ - was 2800)
 
         /// <summary>Preferred ring radius for the shared HQ loop (outside typical base walls).</summary>
-        public const int LoopRadiusRaw = 1700;
+        public const int LoopRadiusRaw = 800;
 
         /// <summary>Target number of waypoints around the HQ.</summary>
         public const int LoopPointCount = 24;
 
         /// <summary>New patrol legs should be at least this far from the bot's current tile.</summary>
-        public const int MinPatrolLegSpacingRaw = 900;
+        public const int MinPatrolLegSpacingRaw = 350;
 
         /// <summary>Scatter patrol annulus used by Captain / BasicDefense / aliens (real sector runs).</summary>
-        public const int DefenseScatterMinRadiusRaw = 1200;
-        public const int DefenseScatterMaxRadiusRaw = 2500;
+        public const int DefenseScatterMinRadiusRaw = 450;
+        public const int DefenseScatterMaxRadiusRaw = 1000;
 
         /// <summary>Hard peer push radius (raw) so patrol bots do not stack / bob.</summary>
-        public const int PeerSeparationRaw = 520;
+        public const int PeerSeparationRaw = 220;
 
         /// <summary>Minimum forward thrust while patrolling — prevents rotate-only when facing the wrong way.</summary>
         public const float PatrolMinForward = 0.68f;
@@ -55,8 +55,8 @@ namespace InfServer.Script.GameType_Eol
         public const float PatrolSeparationWorld = 6.5f;
 
         /// <summary>Legacy aliases used by retreat / radius helpers.</summary>
-        public const int MinPatrolRadiusRaw = 1000;
-        public const int MaxPatrolRadiusRaw = 2500;
+        public const int MinPatrolRadiusRaw = 450;
+        public const int MaxPatrolRadiusRaw = 1000;
 
         struct LoopCacheKey
         {

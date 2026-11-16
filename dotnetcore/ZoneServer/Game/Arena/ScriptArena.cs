@@ -1918,19 +1918,39 @@ namespace InfServer.Game
                             return;
 
                         //Find the player in question
+                        // (2026-11-16) or a bot teammate: bots are on the team list with player ids, so a Unit
+                        // charge can be aimed at one - players on a bot squad warp to their bots like to a player
                         Player target = _playersIngame.getObjByID(targetPlayerID);
-                        if (target == null)
-                            return;
+                        Helpers.ObjectState targetState;
+                        Team targetTeam;
+                        bool targetDead;
+                        if (target != null)
+                        {
+                            targetState = target._state;
+                            targetTeam = target._team;
+                            targetDead = target.IsDead;
+                        }
+                        else
+                        {
+                            Bot targetBot = null;
+                            foreach (Bot b in _bots)
+                                if (b != null && b._id == targetPlayerID && !b.bCondemned) { targetBot = b; break; }
+                            if (targetBot == null || targetBot._state == null)
+                                return;
+                            targetState = targetBot._state;
+                            targetTeam = targetBot._team;
+                            targetDead = targetBot.IsDead;
+                        }
 
                         //Can't warp to dead people
-                        if (target.IsDead)
+                        if (targetDead)
                         {
                             player.sendMessage(0xFF, "The player you are trying to warp to is dead.");
                             return;
                         }
 
                         //Is he on the correct team?
-                        if (target._team != player._team)
+                        if (targetTeam != player._team)
                             return;
 
                         //Forward to our script
@@ -1942,16 +1962,16 @@ namespace InfServer.Game
                             foreach (Player p in getPlayersInRange(posX, posY, item.areaEffectRadius))
                             {
                                 //Is he dead, on the correct team, warpable, or ignoring summons?
-                                if (!p.IsDead 
-                                    && target._team == p._team 
-                                    && p.ActiveVehicle._type.IsWarpable 
-                                    && !p._summonIgnore.Contains(player._alias) 
+                                if (!p.IsDead
+                                    && targetTeam == p._team
+                                    && p.ActiveVehicle._type.IsWarpable
+                                    && !p._summonIgnore.Contains(player._alias)
                                     && !p._summonIgnore.Contains("*"))
-                                    p.warp(Helpers.ResetFlags.ResetNone, target._state, (short)item.accuracyRadius, -1, 0);
+                                    p.warp(Helpers.ResetFlags.ResetNone, targetState, (short)item.accuracyRadius, -1, 0);
                             }
                         }
                         else
-                            player.warp(Helpers.ResetFlags.ResetNone, target._state, (short)item.accuracyRadius, -1, 0);
+                            player.warp(Helpers.ResetFlags.ResetNone, targetState, (short)item.accuracyRadius, -1, 0);
 
                         //Set the id for abuse checking later
                         player._lastWarpItemUseID = item.id;

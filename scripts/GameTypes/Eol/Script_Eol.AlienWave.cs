@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -116,7 +116,7 @@ namespace InfServer.Script.GameType_Eol
 
         bool IsManagedEolBotFactionTeam(Team t)
         {
-            return IsDefenseBotTeam(t) || IsRoamBotTeam(t) || IsAlienBotTeam(t) || IsAssassinTeam(t) || IsEliteSquadTeam(t) || IsStrikeTeam(t);
+            return IsDefenseBotTeam(t) || IsRoamBotTeam(t) || IsAlienBotTeam(t) || IsAssassinTeam(t) || IsEliteSquadTeam(t) || IsStrikeTeam(t) || IsSwarmTeam(t);
         }
 
         /// <summary>The two always-on elite roaming squads (local 2026-11-13).</summary>
@@ -139,8 +139,8 @@ namespace InfServer.Script.GameType_Eol
                 return false;
             if (!IsManagedEolBotFactionTeam(self) || !IsManagedEolBotFactionTeam(other))
                 return false;
-            // The three alien packs (main + 2 elite) are one swarm - never fight each other.
-            if (IsAlienBotTeam(self) && IsAlienBotTeam(other))
+            // The alien packs and the Alien Swarm are all bugs - never fight each other.
+            if (IsBugTeam(self) && IsBugTeam(other))
                 return false;
             // the two pirate raid squads are one raid - allies
             if (IsPirateRaidTeam(self) && IsPirateRaidTeam(other))

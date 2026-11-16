@@ -61,13 +61,14 @@ namespace InfServer.Script.GameType_Eol
     internal static class EolHqPatrol
     {
         // Outbound = real sector runs; return = mid ring (not the HQ/crash pad).
-        public const int OutboundMinRadiusRaw = 1100;
-        public const int OutboundMaxRadiusRaw = 2600;
-        public const int NearHqMinRadiusRaw = 550;
-        public const int NearHqMaxRadiusRaw = 1050;
-        public const int MinOutboundLegRaw = 750;
-        public const int MinNearHqLegRaw = 420;
-        public const int MinPeerDestRaw = 520;
+        // (2026-11-16e, owner: "base bots stay around their HQs - roam a little but semi close") was 1100-2600 / 550-1050
+        public const int OutboundMinRadiusRaw = 450;
+        public const int OutboundMaxRadiusRaw = 950;
+        public const int NearHqMinRadiusRaw = 160;
+        public const int NearHqMaxRadiusRaw = 450;
+        public const int MinOutboundLegRaw = 300;
+        public const int MinNearHqLegRaw = 160;
+        public const int MinPeerDestRaw = 200;   // (was 520 - too wide for the tighter ring)
         public const int ArriveRaw = 160;
         /// <summary>Return legs finish farther out — wall pockets near HQ block the exact Dest.</summary>
         public const int ReturnArriveRaw = 280;

@@ -77,10 +77,20 @@ namespace InfServer.Script.GameType_Eol
             {
                 if (IsBountyHunterBotTeam(bot._team))
                     return BountyHunterSquadOperational;
-                return IsRoamBotTeam(bot._team) && PirateRaidHordeOperational;
+                if (IsRoamBotTeam(bot._team))
+                    return PirateRaidHordeOperational;
+                // (2026-11-16d, owner: "no speccing - spawn, leave spawn, die, back to spawn") squad bots come back
+                // through the dropship - unless the squad has filled up with players meanwhile (that place is theirs)
+                if (IsRoamingSquadTeam(bot._team))
+                    return SquadStrength(bot._team, countPending: false) < SquadBotRoom(bot._team, SquadTargetSize(bot._team));
+                return false;
             }
             if (bot is AlienHorde)
+            {
+                if (IsSwarmTeam(bot._team))
+                    return _swarmActive && _swarmNest != null && !_swarmNest.IsDead;   // back through the bug cave
                 return IsAlienBotTeam(bot._team) && _alienWaveActive && AlienCrashShipAlive();
+            }
             return false;
         }
 
@@ -200,6 +210,13 @@ namespace InfServer.Script.GameType_Eol
                     return sector;
                 return null;
             }
+
+            // (2026-11-16d) squads and pirate raiders revive in the dropship (then walk out through the portal);
+            // the Alien Swarm in its bug cave
+            if ((bot is RoamingAttacker || bot is RoamingCaptain) && (IsRoamingSquadTeam(bot._team) || IsRoamBotTeam(bot._team)))
+                return PickDropshipSpawn() ?? PickEliteSpawnPoint();
+            if (bot is AlienHorde && IsSwarmTeam(bot._team))
+                return PickSwarmCaveSpot();
 
             short anchorX;
             short anchorY;
@@ -455,6 +472,14 @@ namespace InfServer.Script.GameType_Eol
 
             putVehicleAtSpawnLocation(bot, spawn);
             bot.update(false);
+            bot.DamageImmuneUntilTick = NonZeroTick(Environment.TickCount + BotSpawnProtectMs);   // (2026-11-16) spawn protection
+            // (2026-11-16d) back at its spawn: the walk out starts again (dropship -> portal, cave -> portal)
+            if (bot.ExtraArmorIgnore > 0 && bot._state.health < HumanBotHealth)
+                bot._state.health = HumanBotHealth;   // (human-class bots' 100 HP, as at spawn)
+            if (_eol != null && _eol.IsInPioneerDropshipSafeZone(spawn.positionX, spawn.positionY))
+                BeginDeploy(bot, Environment.TickCount);
+            else if (bot is AlienHorde && IsSwarmTeam(bot._team))
+                BeginSwarmDeploy(bot, Environment.TickCount);
 
             // Re-list if death dropped them while the team was under max.
             _arena.EnsureBotOnNamelist(bot);
