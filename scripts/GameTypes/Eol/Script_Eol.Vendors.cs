@@ -267,6 +267,56 @@ namespace InfServer.Script.GameType_Eol
             player.sendMessage(0, list.Length == 0 ? head : head + ": " + list);
         }
 
+        // ---------- the supply vendor ----------
+
+        /// <summary>
+        /// A Supply Vendor product (2026-11-16, "lag out on vendor purchase"). Sold here instead of by the engine,
+        /// which took the cash without ever sending the new cash total to the client, and took the full price
+        /// even when the stack was nearly at its cap. Now: only what fits is sold, at the per-round price, and the
+        /// client gets ONE inventory and ONE state update. The products are the shop's own ammo (Ammo - Rifle 216,
+        /// Ammo - Pistol 215 - what every shop rifle and pistol fires) and Recall Tokens.
+        /// </summary>
+        void HandleSupplyVendor(InfServer.Game.Player player, Computer computer, VehInfo.Computer.ComputerProduct product)
+        {
+            if (player == null || product == null || player.IsDead || player.IsSpectator || product.ProductToCreate <= 0 || product.Quantity <= 0)
+                return;
+            if (!InfServer.Logic.Logic_Assets.SkillCheck(player, product.SkillLogic))
+                return;
+            ItemInfo item = _arena._server._assets.getItemByID(product.ProductToCreate);
+            if (item == null)
+                return;
+
+            int have = player.getInventoryAmount(item.id);
+            int cap = item.maxAllowed < 0 ? -item.maxAllowed : (item.maxAllowed > 0 ? item.maxAllowed : int.MaxValue);
+            int qty = Math.Min(product.Quantity, Math.Max(0, cap - have));
+            if (qty <= 0)
+            {
+                player.sendMessage(-1, String.Format("You can't carry more {0} (max {1}).", item.name, cap));
+                return;
+            }
+            // price per unit from the product (e.g. 200 rounds for $800 = $4 a round), rounded up
+            int cost = qty == product.Quantity ? product.Cost : (int)Math.Ceiling(product.Cost * (double)qty / product.Quantity);
+            if (player.Cash < cost)
+            {
+                player.sendMessage(-1, String.Format("You need ${0} for {1} x{2} (you have ${3}).", cost, item.name, qty, player.Cash));
+                return;
+            }
+            if (!player.inventoryModify(false, item, qty))
+            {
+                player.sendMessage(-1, "Unable to add " + item.name + " to your inventory.");
+                return;
+            }
+            int got = player.getInventoryAmount(item.id) - have;
+            if (got <= 0)
+                return;
+            if (got < qty)   // (a category limit took some): charge only for what arrived
+                cost = (int)Math.Ceiling(product.Cost * (double)got / product.Quantity);
+            player.Cash -= cost;
+            player.syncInventory();
+            player.syncState();
+            player.sendMessage(0, String.Format("&Bought {0} x{1} for ${2}.", item.name, got, cost));
+        }
+
         /// <summary>Longest chat line sent to a client (theirs crash on very long lines).</summary>
         const int MaxChatLine = 180;
     }

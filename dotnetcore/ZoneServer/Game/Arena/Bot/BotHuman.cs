@@ -50,6 +50,28 @@ namespace InfServer.Bots
 
         Random HumanRng => _humanRng ??= new Random(unchecked(_id * 31337 + Environment.TickCount));
 
+        /// <summary>
+        /// (2026-11-16) Script hook: how sharp this bot is against the target it aims at (1 = its own tier; 1.25 =
+        /// a quarter quicker and steadier, 0.8 = gentler). Divides reaction + settle time and every aim error.
+        /// Null = 1. (Eol: per-player adaptive skill - sharper against a player farming bots, gentler on a newcomer.)
+        /// </summary>
+        public static Func<Bot, Helpers.ObjectState, double> SkillVsTarget;
+
+        double SkillFactorFor(Helpers.ObjectState target)
+        {
+            Func<Bot, Helpers.ObjectState, double> f = SkillVsTarget;
+            if (f == null || target == null)
+                return 1.0;
+            try
+            {
+                double v = f(this, target);
+                return double.IsNaN(v) ? 1.0 : Math.Max(0.5, Math.Min(2.0, v));
+            }
+            catch { return 1.0; }
+        }
+
+        double _aimSkillFactor = 1.0;
+
         #region Aim
 
         Helpers.ObjectState _aimTarget;
@@ -93,6 +115,7 @@ namespace InfServer.Bots
                 bool backToPrev = ReferenceEquals(target, _aimPrevTarget) && now - _aimPrevLastTick <= AimEngagementKeepMs;
                 Helpers.ObjectState old = _aimTarget;
                 int oldTick = _aimLastTick;
+                _aimSkillFactor = SkillFactorFor(target);
                 if (!backToPrev)
                     BeginAimEngagement(sk, now, straight);
                 _aimPrevTarget = old;
@@ -116,14 +139,15 @@ namespace InfServer.Bots
             }
 
             double leadPart = Helpers.calculateDifferenceInAngles(straight, leadYaw);
-            double yaw = straight + leadPart * (1.0 + _aimLeadBias) + _aimBias + _aimShotNoise;
+            double k = 1.0 / _aimSkillFactor;   // (adaptive skill: errors shrink against a strong player)
+            double yaw = straight + leadPart * (1.0 + _aimLeadBias * k) + (_aimBias + _aimShotNoise) * k;
             return (int)Math.Round(BotWallAvoidance.WrapYaw(yaw)) % 240;
         }
 
         void BeginAimEngagement(BotSkillProfile sk, int now, double straightYaw)
         {
             double turnDeg = Math.Abs(Helpers.calculateDifferenceInAngles(_state.yaw, straightYaw)) * 1.5;
-            int wait = sk.ReactionMs(HumanRng, turnDeg) + sk.SettleMs(HumanRng);
+            int wait = (int)((sk.ReactionMs(HumanRng, turnDeg) + sk.SettleMs(HumanRng)) / _aimSkillFactor);
             _aimFirstShotAt = (now + wait) | 1;
             _aimBias = BotSkillProfile.Gauss(HumanRng, 0.0, sk.AimSd * 1.4);
             _aimBiasAt = now + 700 + HumanRng.Next(600);

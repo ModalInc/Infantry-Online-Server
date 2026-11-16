@@ -60,10 +60,28 @@ namespace InfServer.Script.GameType_Eol
         /// Fight anything in sight; otherwise the leader hunts across the map and the others move in a loose
         /// formation on the leader (spread out, not stacked).
         /// </summary>
+        /// <summary>Walking through the dropship to the map portal (Script_Eol.Deploy.cs): no fighting, just go.</summary>
+        public void DeployWalk(Helpers.ObjectState portal, int now)
+        {
+            _target = null;
+            InLiveCombat = false;
+            bool force = now - _tickEliteNav > 2500;
+            if (force) _tickEliteNav = now;
+            ApplyNavigationApproach(portal, EolHqPatrol.MakeLineClearPendingSeek(this, () => portal), new BotNavigateOptions
+            {
+                RequeueMinMs = 1200,
+                PathStartIndex = 0,
+                ForceRequeue = force,
+                Priority = PathPriority.Idle,
+            });
+        }
+
         bool EliteSquadPoll()
         {
             int now = Environment.TickCount;
             InLiveCombat = false;
+            if (_baseScript.PollDeploying(this, now))
+                return base.poll();
             IdleWatch(now);
 
             bool hostile = BotShouldEngageInsteadOfIdle(now) || (_target != null && !_target.IsDead);
@@ -78,7 +96,52 @@ namespace InfServer.Script.GameType_Eol
             if (EolBotBrain.TryEngageTurret(this, _baseScript, now))
                 return base.poll();
 
+            // (2026-11-16b) a squad medic out of a fight goes to whoever is hurt, or stays behind its player
+            Helpers.ObjectState med = _baseScript.MedicMoveTarget(this);
+            if (med != null)
+            {
+                bool forceMed = now - _tickEliteNav > 1500;
+                if (forceMed) _tickEliteNav = now;
+                ApplyNavigationApproach(med, EolHqPatrol.MakeLineClearPendingSeek(this, () => med), new BotNavigateOptions
+                {
+                    RequeueMinMs = 900,
+                    PathStartIndex = 0,
+                    ForceRequeue = forceMed,
+                    Priority = PathPriority.Combat,
+                });
+                return base.poll();
+            }
+
             RoamingAttacker leader = _baseScript.EliteSquadLeader(_team);
+
+            // (2026-11-16b) a squad cut down to under half waits for its reinforcements (from the dropship)
+            // instead of feeding in one by one - the leader holds round its spot, the others close up on it
+            if ((leader == null || leader == this) && _baseScript.SquadShouldRegroup(this, now))
+            {
+                DriftAround(_state.positionX, _state.positionY, now);
+                return base.poll();
+            }
+
+            // (2026-11-16d, owner: "@ home") told to defend a spot: every bot stays round it and fights what comes
+            Helpers.ObjectState hold = _baseScript.SquadDefendPoint(_team, now);
+            if (hold != null)
+            {
+                if (Helpers.distanceTo(_state, hold) > 350)
+                {
+                    bool forceHold = now - _tickEliteNav > 2500;
+                    if (forceHold) _tickEliteNav = now;
+                    ApplyNavigationApproach(hold, EolHqPatrol.MakeLineClearPendingSeek(this, () => hold), new BotNavigateOptions
+                    {
+                        RequeueMinMs = 1500,
+                        PathStartIndex = 0,
+                        ForceRequeue = forceHold,
+                        Priority = PathPriority.Combat,
+                    });
+                }
+                else
+                    DriftAround(hold.positionX, hold.positionY, now);
+                return base.poll();
+            }
 
             // (2026-11-16, owner) a player joined this squad: the bots' mission is to attack enemy bases with them -
             // the leader marches on the nearest bot base, fights round it once there, the others follow in formation
@@ -160,39 +223,57 @@ namespace InfServer.Script.GameType_Eol
                 });
             }
             else
-            {
-                // At its slot: never stand still - drift round the slot like a player waiting on the group,
-                // a new spot every 1.5-3 s (open ground only)
-                if (_drift == null || now - _driftPickTick > 1500 + (Math.Abs(_id) % 1500)
-                    || Helpers.distanceTo(_state, _drift) < 30)
-                {
-                    _driftPickTick = now;
-                    _drift = null;
-                    for (int tries = 0; tries < 8 && _drift == null; tries++)
-                    {
-                        double a = _rand.NextDouble() * Math.PI * 2, r = 60 + _rand.Next(90);
-                        short px = (short)Math.Max(16, Math.Min(short.MaxValue - 16, sx + Math.Cos(a) * r));
-                        short py = (short)Math.Max(16, Math.Min(short.MaxValue - 16, sy + Math.Sin(a) * r));
-                        if (EolHqPatrol.IsOpenForBot(this, px, py)
-                            && EolHqPatrol.TileLineClear(_arena, _state.positionX, _state.positionY, px, py, _type))
-                            _drift = new Helpers.ObjectState { positionX = px, positionY = py };
-                    }
-                }
-                if (_drift != null)
-                {
-                    Helpers.ObjectState d = _drift;
-                    ApplyNavigationApproach(d, EolHqPatrol.MakeLineClearPendingSeek(this, () => d), new BotNavigateOptions
-                    {
-                        RequeueMinMs = 1200,
-                        PathStartIndex = 0,
-                        Priority = PathPriority.Idle,
-                    });
-                }
-                else
-                    HoldPosition();
-            }
+                DriftAround(sx, sy, now, followCentre: true);   // (round the slot, as before: it moves with the leader)
 
             return base.poll();
+        }
+
+        short _driftCx, _driftCy;
+
+        /// <summary>
+        /// Never stand still: drift round a spot like a player waiting on the group, a new point 60-150 px out
+        /// every 1.5-3 s (open ground only).
+        /// </summary>
+        void DriftAround(short sx, short sy, int now, bool followCentre = false)
+        {
+            if (followCentre)
+            {
+                _driftCx = sx;
+                _driftCy = sy;
+            }
+            else if (Math.Abs(sx - _driftCx) > 200 || Math.Abs(sy - _driftCy) > 200)
+            {   // (a new centre: don't keep drifting round the old one)
+                _driftCx = sx;
+                _driftCy = sy;
+                _drift = null;
+            }
+            if (_drift == null || now - _driftPickTick > 1500 + (Math.Abs(_id) % 1500)
+                || Helpers.distanceTo(_state, _drift) < 30)
+            {
+                _driftPickTick = now;
+                _drift = null;
+                for (int tries = 0; tries < 8 && _drift == null; tries++)
+                {
+                    double a = _rand.NextDouble() * Math.PI * 2, r = 60 + _rand.Next(90);
+                    short px = (short)Math.Max(16, Math.Min(short.MaxValue - 16, _driftCx + Math.Cos(a) * r));
+                    short py = (short)Math.Max(16, Math.Min(short.MaxValue - 16, _driftCy + Math.Sin(a) * r));
+                    if (EolHqPatrol.IsOpenForBot(this, px, py)
+                        && EolHqPatrol.TileLineClear(_arena, _state.positionX, _state.positionY, px, py, _type))
+                        _drift = new Helpers.ObjectState { positionX = px, positionY = py };
+                }
+            }
+            if (_drift != null)
+            {
+                Helpers.ObjectState d = _drift;
+                ApplyNavigationApproach(d, EolHqPatrol.MakeLineClearPendingSeek(this, () => d), new BotNavigateOptions
+                {
+                    RequeueMinMs = 1200,
+                    PathStartIndex = 0,
+                    Priority = PathPriority.Idle,
+                });
+            }
+            else
+                HoldPosition();
         }
     }
 }

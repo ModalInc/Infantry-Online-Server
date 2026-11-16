@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 using InfServer.Bots;
@@ -48,21 +48,30 @@ namespace InfServer.Script.GameType_Eol
             if (team == null || _arena == null)
                 return list;
             foreach (Bots.Bot b in _arena.ActiveBots)
-                if (b is RoamingAttacker ra && b._team == team && !b.IsDead && !b.bCondemned)
+                if (b is RoamingAttacker ra && b._team == team && !b.IsDead && !b.bCondemned && !IsVehicleDespawnQueued(b))
                     list.Add(ra);
             return list;
         }
 
-        /// <summary>Squad leader: the commander if alive, otherwise the longest-serving member.</summary>
+        /// <summary>
+        /// Squad leader: the commander if alive, otherwise the longest-serving member - of the bots already in the
+        /// field (one still walking through the dropship only leads when nobody is out yet).
+        /// </summary>
         public RoamingAttacker EliteSquadLeader(Team team)
         {
             RoamingAttacker best = null;
+            bool bestOut = false;
             foreach (RoamingAttacker ra in EliteSquadMembers(team))
             {
                 bool cmd = ra._type != null && IsSquadLeaderVehicle(ra._type.Id);
                 bool bestCmd = best != null && best._type != null && IsSquadLeaderVehicle(best._type.Id);
-                if (best == null || (cmd && !bestCmd) || (cmd == bestCmd && ra._id < best._id))
+                bool isOut = !IsDeploying(ra);
+                if (best == null || (isOut && !bestOut)
+                    || (isOut == bestOut && ((cmd && !bestCmd) || (cmd == bestCmd && ra._id < best._id))))
+                {
                     best = ra;
+                    bestOut = isOut;
+                }
             }
             return best;
         }
@@ -75,10 +84,11 @@ namespace InfServer.Script.GameType_Eol
                 roamBots.Add(team, 0);
 
             List<RoamingAttacker> members = EliteSquadMembers(team);
-            squadSize = SquadBotRoom(team, squadSize);   // 5 max, players take bot places
+            squadSize = SquadBotRoom(team, squadSize);   // 6 max, players take bot places
             if (members.Count > squadSize)
                 TrimSquadForHumans(team, 0);
-            if (members.Count >= squadSize)
+            int strength = SquadStrength(team, countPending: true);   // (2026-11-16d) dead ones coming back count
+            if (strength >= squadSize)
             {
                 _eliteNextSpawnTick.Remove(team);
                 return;
@@ -88,7 +98,7 @@ namespace InfServer.Script.GameType_Eol
             int due;
             if (!_eliteNextSpawnTick.TryGetValue(team, out due))
             {
-                due = members.Count == 0 ? now : now + EliteRespawnDelayMs;
+                due = strength == 0 ? now : now + EliteRespawnDelayMs;
                 _eliteNextSpawnTick[team] = due;
             }
             if (now - due < 0)
@@ -99,15 +109,23 @@ namespace InfServer.Script.GameType_Eol
                 ? LimitGrenadiers(team, EliteMemberVehIds[_arena._rand.Next(EliteMemberVehIds.Length)], EliteMemberVehIds)
                 : EliteCommanderVehId;
 
-            // spawn beside the squad if it's out of combat and away from players; otherwise somewhere quiet
-            Helpers.ObjectState at = null;
-            RoamingAttacker leader = EliteSquadLeader(team);
-            if (leader != null && !leader.InLiveCombat && InPlayArea(leader._state.positionX, leader._state.positionY) && !PlayerNear(leader._state.positionX, leader._state.positionY, EliteSpawnAwayFromPlayersRaw))
-                at = findOpenWarpBot(_arena, leader._state.positionX, leader._state.positionY, 200);
-                if (at != null && (!InPlayArea(at.positionX, at.positionY, 120) || !IsOpenConnectedGround(at.positionX, at.positionY)))
-                    at = null;
-            if (at == null)
-                at = PickEliteSpawnPoint();
+            // (2026-11-16) in the dropship, then through the portal (Script_Eol.Deploy.cs); if the dropship has no
+            // room: beside the squad if it's out of combat and away from players, otherwise somewhere quiet
+            if (DropshipBusy)
+                return;   // (2026-11-16e) a few walking through already - wait a moment
+            bool viaDropship;
+            Helpers.ObjectState at = SquadSpawnPoint(() =>
+            {
+                Helpers.ObjectState f = null;
+                RoamingAttacker leader = EliteSquadLeader(team);
+                if (leader != null && !leader.InLiveCombat && InPlayArea(leader._state.positionX, leader._state.positionY) && !PlayerNear(leader._state.positionX, leader._state.positionY, EliteSpawnAwayFromPlayersRaw))
+                {
+                    f = findOpenWarpBot(_arena, leader._state.positionX, leader._state.positionY, 200);
+                    if (f != null && (!InPlayArea(f.positionX, f.positionY, 120) || !IsOpenConnectedGround(f.positionX, f.positionY)))
+                        f = null;
+                }
+                return f ?? PickEliteSpawnPoint();
+            }, out viaDropship);
             if (at == null)
                 return;
 
@@ -116,12 +134,15 @@ namespace InfServer.Script.GameType_Eol
             if (bot == null)
                 return;
             bot.SkillModeOverride = "elite";   // pirate roamers: veteran..ace
+            if (viaDropship)
+                BeginDeploy(bot, now);
+            EnableBotDropshipRespawn(bot, 0);   // (2026-11-16d) dies -> corpse -> back through the dropship, same bot
             if (_bots == null)
                 _bots = new List<Bots.Bot>();
             _bots.Add(bot);
             roamBots[team]++;
             // once a refill is due, the missing members come in quick succession
-            if (members.Count + 1 >= squadSize)
+            if (strength + 1 >= squadSize)
                 _eliteNextSpawnTick.Remove(team);
             else
                 _eliteNextSpawnTick[team] = now + 600;

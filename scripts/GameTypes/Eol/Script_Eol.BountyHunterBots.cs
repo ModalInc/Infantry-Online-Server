@@ -246,10 +246,41 @@ namespace InfServer.Script.GameType_Eol
                 spawn = null;
                 return false;
             }
+            // (2026-11-16, owner: assassins spawn and die straight away) never right on top of the mark's team -
+            // they were coming in inside the 30ker's group. Out of their sight first, then they move in.
+            if (MarkTeamNear(spawn.positionX, spawn.positionY, AssassinSpawnClearOfMarkRaw))
+            {
+                Helpers.ObjectState away = null;
+                for (int i = 0; i < 6 && away == null; i++)
+                {
+                    Helpers.ObjectState p = PickEliteSpawnPoint();
+                    if (p != null && !MarkTeamNear(p.positionX, p.positionY, AssassinSpawnClearOfMarkRaw))
+                        away = p;
+                }
+                if (away == null)
+                {
+                    spawn = null;
+                    return false;   // try again next poll
+                }
+                spawn = away;
+            }
             _bountyHunterSectorSpawnX = spawn.positionX;
             _bountyHunterSectorSpawnY = spawn.positionY;
             _bountyHunterSectorSpawnValid = true;
             return true;
+        }
+
+        /// <summary>Assassins come in at least this far from the mark and the mark's team (a screen and a half).</summary>
+        const int AssassinSpawnClearOfMarkRaw = 700;
+
+        bool MarkTeamNear(short x, short y, int range)
+        {
+            if (_arena == null)
+                return false;
+            foreach (InfServer.Game.Player p in _arena.getPlayersInRange(x, y, range))
+                if (p != null && !p.IsDead && !p.IsSpectator && IsBountyHunterEngageTarget(p))
+                    return true;
+            return false;
         }
 
         public bool TryGetBountyHunterLastKnown(out short x, out short y)
@@ -354,7 +385,7 @@ namespace InfServer.Script.GameType_Eol
                 ? "the contract is on " + mark._alias
                 : "waiting for " + mark._alias + " to leave the dropship";
             _arena.sendArenaMessage(string.Format(
-                "&Assassins deployed: {0} cells of {1} — {2}.", deployed, BountyHunterSquadSize, wait), bong);
+                "&Assassins deployed: {0} cells of {1} — {2}.", deployed, BountyHunterSquadSize, wait), 0);   // (silent: the hunt start sounded)
 
             Log.write(TLog.Normal, "[Eol] Assassins armed for {0} (alive={1}).", mark._alias, GetBountyHunterAliveCount());
             InvalidateEolHudTickerCache();
@@ -387,15 +418,26 @@ namespace InfServer.Script.GameType_Eol
         {
             try
             {
-                EquipCloseFar(b, Pick(AssassinClose), Pick(AssassinFar));
+                // the best guns the operative's class may carry (2026-11-16: class-legal only)
+                int close = Pick(AssassinClose), far = Pick(AssassinFar);
+                HashSet<int> legal = b._type != null ? ClassLegalWeapons(b._type.Id) : null;
+                if (legal != null && legal.Count > 0)
+                {
+                    int c = PickLegal(AssassinClose, legal), f = PickLegal(AssassinFar, legal);
+                    close = c != 0 ? c : close;
+                    far = f != 0 ? f : far;
+                    EnforceClassWeapons(b._type.Id, ref close, ref far, mix: false);
+                }
+                EquipCloseFar(b, close, far);
                 WeaponController grenade = null, opener = null;
-                ItemInfo g = Itm(Grenades[_arena._rand.Next(Grenades.Length)]);
+                int gid = PickClassGrenade(b);
+                ItemInfo g = gid != 0 ? Itm(gid) : null;
                 if (g != null)
                 {
                     grenade = new WeaponController(b._state, new WeaponController.WeaponSettings());
                     if (grenade.equip(g)) grenade.Owner = b; else grenade = null;
                 }
-                ItemInfo k = Itm(ItmKamenevAPmk2);
+                ItemInfo k = ClassMayCarry(b, ItmKamenevAPmk2) ? Itm(ItmKamenevAPmk2) : null;
                 if (k != null)
                 {
                     opener = new WeaponController(b._state, new WeaponController.WeaponSettings());
@@ -455,7 +497,8 @@ namespace InfServer.Script.GameType_Eol
                 ? nearCaptain
                 : FindLiveBountyHunterCaptain(team);
             if (liveCap != null && !liveCap.IsDead
-                && (_eol == null || !_eol.IsInPioneerDropshipSafeZone(liveCap._state.positionX, liveCap._state.positionY)))
+                && (_eol == null || !_eol.IsInPioneerDropshipSafeZone(liveCap._state.positionX, liveCap._state.positionY))
+                && !MarkTeamNear(liveCap._state.positionX, liveCap._state.positionY, AssassinSpawnClearOfMarkRaw))   // (not into the fight)
             {
                 openPoint = FindOpenRaiderSpawnWithPeerGap(liveCap._state.positionX, liveCap._state.positionY);
             }

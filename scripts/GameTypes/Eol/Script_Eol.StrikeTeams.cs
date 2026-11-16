@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 using InfServer.Bots;
@@ -76,10 +76,27 @@ namespace InfServer.Script.GameType_Eol
 
         void CreateStrikeTeams()
         {
-            botTeamStrike1 = CreateAndRegisterBotTeam("Storm Rangers Bots");
+            botTeamStrike1 = SquadTeam("Storm Rangers Bots");
             _mixedTeams.Clear();
             for (int i = 0; i < RosterMixedTeamCount && i < MixedTeamNames.Length; i++)
-                _mixedTeams.Add(CreateAndRegisterBotTeam(MixedTeamNames[i]));
+                _mixedTeams.Add(SquadTeam(MixedTeamNames[i]));
+        }
+
+        /// <summary>
+        /// (2026-11-16e, owner: "join without pressing enter") a joinable squad uses the zone .cfg's own team of that
+        /// name (TeamInfo8-13 renamed to the squads): the client treats .cfg teams as public and joins them with one
+        /// click, while a team the script makes up is "private" to it and asks for a password first. Not in the
+        /// .cfg (old zone files): made up as before.
+        /// </summary>
+        Team SquadTeam(string name)
+        {
+            Team t = _arena.getTeamByName(name);
+            if (t == null)
+                return CreateAndRegisterBotTeam(name);
+            t._isPrivate = false;
+            t._password = "";
+            t._owner = null;
+            return t;
         }
 
         public bool IsStrikeTeam(Team t)
@@ -99,8 +116,52 @@ namespace InfServer.Script.GameType_Eol
             return IsEliteSquadTeam(t) || IsStrikeTeam(t) || IsPirateRaidTeam(t);
         }
 
-        /// <summary>(2026-11-16, owner) roaming squads are at most 5 - players and bots together.</summary>
-        public const int SquadMaxSize = 5;
+        /// <summary>(2026-11-16b, owner) roaming squads are 6-8 - players and bots together (was 5).</summary>
+        public const int SquadMaxSize = 6;   // (2026-11-16c, owner: 5-6 man teams)
+
+        /// <summary>
+        /// (2026-11-16b, owner: "a real team") every human squad fields these first, in this order - a commander
+        /// (one of the officer classes), medic, heavy weapons, marine, infantry, engineer - then fighters of any
+        /// other class for the 7th / 8th place.
+        /// </summary>
+        static readonly int[] SquadCoreRoles = { -1, ClsMedic, ClsHeavy, ClsMarine, ClsInfantry, ClsEngineer };
+
+        bool MemberHasRole(Bots.Bot b, int role)
+        {
+            if (b == null || b._type == null)
+                return false;
+            return role == -1 ? IsSquadLeaderVehicle(b._type.Id) : b._type.Id == role;
+        }
+
+        /// <summary>The class the squad needs next: the first core role nobody has, else an extra fighter.</summary>
+        int NextSquadClass(List<RoamingAttacker> members)
+        {
+            foreach (int role in SquadCoreRoles)
+                if (!members.Exists(m => MemberHasRole(m, role)))
+                    return role == -1 ? PickLeastFieldedClass(StrikeOfficerClasses) : role;
+            return PickLeastFieldedClass(StrikeMemberClasses);
+        }
+
+        /// <summary>
+        /// (2026-11-16f, owner) who stays when players take the places: the medic stays longest, then the commander,
+        /// then the engineer; the fighting classes go first (extras, infantry, marine, heavy).
+        /// </summary>
+        int SquadKeepRank(Bots.Bot b)
+        {
+            if (b == null || b._type == null)
+                return 0;
+            int id = b._type.Id;
+            if (id == ClsMedic || id == ClsFieldSurgeon) return 100;
+            if (IsSquadLeaderVehicle(id)) return 90;
+            if (id == ClsEngineer || id == ClsChiefEngineer) return 80;
+            if (id == ClsHeavy) return 30;
+            if (id == ClsMarine) return 20;
+            if (id == ClsInfantry) return 10;
+            return 0;   // the other fighters
+        }
+
+        /// <summary>(2026-11-16f, owner) a squad with players on it is 5 at most - players and bots together.</summary>
+        public const int SquadMaxWithPlayers = 5;
 
         /// <summary>Roaming squads players may join (pirate elite squad, vehicle squad, human squads).</summary>
         public bool IsJoinableSquadTeam(Team t)
@@ -114,29 +175,71 @@ namespace InfServer.Script.GameType_Eol
             return t == null ? 0 : t.ActivePlayerCount;
         }
 
-        /// <summary>Bots this squad may hold: 5 (or its roster size, if smaller) minus its players.</summary>
+        /// <summary>Bots this squad may hold: its roster size (8 at most) minus its players.</summary>
         int SquadBotRoom(Team t, int rosterSize)
         {
-            return Math.Max(0, Math.Min(rosterSize, SquadMaxSize) - SquadHumans(t));
+            int humans = SquadHumans(t);
+            int cap = Math.Min(rosterSize, SquadMaxSize);
+            if (humans > 0)
+                cap = Math.Min(cap, SquadMaxWithPlayers);   // (players on it: 5 in all)
+            return Math.Max(0, cap - humans);
         }
 
         /// <summary>
-        /// Kick bots out of a squad until bots + players (+ <paramref name="joining"/>) fit in 5. Never the
-        /// leader while another bot can go.
+        /// Bots on a squad: out in the field (or walking in through the dropship), plus - with
+        /// <paramref name="countPending"/> - dead ones waiting to come back through the dropship.
+        /// </summary>
+        public int SquadStrength(Team t, bool countPending)
+        {
+            int n = EliteSquadMembers(t).Count;
+            if (countPending && _arena != null)
+                foreach (Bots.Bot b in _arena.ActiveBots)
+                    if (b != null && b._team == t && b.IsDead && b.bDropshipRespawnPending && !b.bCondemned)
+                        n++;
+            return n;
+        }
+
+        /// <summary>The squad's full strength (players + bots): its roster size, 6 at most.</summary>
+        int SquadTargetSize(Team t)
+        {
+            int size;
+            if (t != null && _strikeTargetSize.TryGetValue(t, out size) && size > 0)
+                size = Math.Min(size, SquadMaxSize);
+            else if (t != null && t == botTeam6)
+                size = Math.Min(RosterPirateRoamers, SquadMaxSize);
+            else
+                size = SquadMaxSize;
+            // players on it: 5 in all
+            if (SquadHumans(t) > 0)
+                size = Math.Min(size, SquadMaxWithPlayers);
+            return size;
+        }
+
+        /// <summary>
+        /// Kick bots out of a squad until bots + players (+ <paramref name="joining"/>) fit in its full strength
+        /// (2026-11-16b: was always the cap, so a squad of 6 plus a player stayed at 7). Never the leader while
+        /// another bot can go.
         /// </summary>
         public void TrimSquadForHumans(Team team, int joining)
         {
             if (!IsJoinableSquadTeam(team) || _arena == null)
                 return;
-            int room = Math.Max(0, SquadMaxSize - SquadHumans(team) - joining);
+            int humans = SquadHumans(team) + joining;
+            int full = SquadTargetSize(team);
+            if (humans > 0)
+                full = Math.Min(full, SquadMaxWithPlayers);   // (the joining player counts already)
+            int room = Math.Max(0, full - humans);
             List<RoamingAttacker> members = EliteSquadMembers(team);
-            RoamingAttacker leader = EliteSquadLeader(team);
             int safety = 10;
             while (members.Count > room && safety-- > 0)
             {
-                RoamingAttacker go = members.Find(m => m != leader) ?? members[0];
+                // the least needed member goes: fighters first, then the engineer, the commander - the medic last
+                RoamingAttacker go = null;
+                foreach (RoamingAttacker m in members)
+                    if (go == null || SquadKeepRank(m) < SquadKeepRank(go))
+                        go = m;
                 members.Remove(go);
-                EnqueueVehicleDespawn(go);
+                EnqueueVehicleDespawn(go, force: true);
                 if (_bots != null)
                     _bots.Remove(go);
             }
@@ -212,10 +315,12 @@ namespace InfServer.Script.GameType_Eol
                 return false;
 
             List<RoamingAttacker> members = EliteSquadMembers(team);
-            size = SquadBotRoom(team, size);   // 5 max, players take bot places
+            size = SquadBotRoom(team, size);   // 6 max, players take bot places
             if (members.Count > size)
                 TrimSquadForHumans(team, 0);
-            if (members.Count >= size)
+            // (2026-11-16d) dead bots coming back through the dropship still hold their place: no extra bot
+            int strength = SquadStrength(team, countPending: true);
+            if (strength >= size)
             {
                 _strikeNextSpawnTick.Remove(team);
                 return false;
@@ -223,7 +328,7 @@ namespace InfServer.Script.GameType_Eol
             int due;
             if (!_strikeNextSpawnTick.TryGetValue(team, out due))
             {
-                due = members.Count == 0 ? now : now + StrikeRespawnDelayMs;
+                due = strength == 0 ? now : now + StrikeRespawnDelayMs;
                 _strikeNextSpawnTick[team] = due;
             }
             if (now - due < 0)
@@ -239,21 +344,24 @@ namespace InfServer.Script.GameType_Eol
                     if (!members.Exists(b => b._type != null && b._type.Id == v)) { cls = v; break; }
             }
             else
-            {
-                bool hasLeader = members.Exists(b => b._type != null && IsSquadLeaderVehicle(b._type.Id));
-                cls = hasLeader ? PickLeastFieldedClass(StrikeMemberClasses) : PickLeastFieldedClass(StrikeOfficerClasses);
-            }
+                cls = NextSquadClass(members);   // commander, medic, heavy, marine, infantry, engineer, extras
 
-            Helpers.ObjectState at = null;
-            RoamingAttacker leader = EliteSquadLeader(team);
-            if (leader != null && !leader.InLiveCombat && InPlayArea(leader._state.positionX, leader._state.positionY) && !PlayerNear(leader._state.positionX, leader._state.positionY, EliteSpawnAwayFromPlayersRaw))
+            // (2026-11-16) in the dropship, then through the portal (Script_Eol.Deploy.cs); fallback: the field
+            if (DropshipBusy)
+                return false;   // (2026-11-16e) a few walking through already - wait a moment (no crowd, no choppiness)
+            bool viaDropship;
+            Helpers.ObjectState at = SquadSpawnPoint(() =>
             {
-                at = findOpenWarpBot(_arena, leader._state.positionX, leader._state.positionY, 200);
-                if (at != null && (!InPlayArea(at.positionX, at.positionY, 120) || !IsOpenConnectedGround(at.positionX, at.positionY)))
-                    at = null;
-            }
-            if (at == null)
-                at = PickEliteSpawnPoint();
+                Helpers.ObjectState f = null;
+                RoamingAttacker leader = EliteSquadLeader(team);
+                if (leader != null && !leader.InLiveCombat && InPlayArea(leader._state.positionX, leader._state.positionY) && !PlayerNear(leader._state.positionX, leader._state.positionY, EliteSpawnAwayFromPlayersRaw))
+                {
+                    f = findOpenWarpBot(_arena, leader._state.positionX, leader._state.positionY, 200);
+                    if (f != null && (!InPlayArea(f.positionX, f.positionY, 120) || !IsOpenConnectedGround(f.positionX, f.positionY)))
+                        f = null;
+                }
+                return f ?? PickEliteSpawnPoint();
+            }, out viaDropship);
             if (at == null)
                 return false;
 
@@ -268,12 +376,15 @@ namespace InfServer.Script.GameType_Eol
                 ApplyVehicleSquadLoadout(bot, cls);
             else
                 ApplyHumanLoadout(bot, cls, team);
+            if (viaDropship)
+                BeginDeploy(bot, now);
+            EnableBotDropshipRespawn(bot, 0);   // (2026-11-16d) dies -> corpse -> back through the dropship, same bot
             if (_bots == null)
                 _bots = new List<Bots.Bot>();
             _bots.Add(bot);
             roamBots[team]++;
 
-            if (members.Count + 1 >= size)
+            if (strength + 1 >= size)
                 _strikeNextSpawnTick.Remove(team);
             else
                 _strikeNextSpawnTick[team] = now + 600;
@@ -393,6 +504,8 @@ namespace InfServer.Script.GameType_Eol
                     far = Pick(PoolRifle);
                     break;
             }
+            // (2026-11-16, owner) only guns the class may really use, and a pistol / SMG in the mix
+            EnforceClassWeapons(cls, ref close, ref far);
         }
 
         /// <summary>Equip close + far; falls back to the Titan AR if a pool item is missing or not a gun.</summary>
@@ -488,9 +601,10 @@ namespace InfServer.Script.GameType_Eol
                 // ~35 % carry 2-3 grenades; ~40 % of riflemen open with a clip of the Kamenev AP mk2
                 WeaponController grenade = null, opener = null;
                 int grenades = 0;
-                if (r.NextDouble() < 0.35)
+                int gid = r.NextDouble() < 0.35 ? PickClassGrenade(bot) : 0;   // (class-legal grenades only)
+                if (gid != 0)
                 {
-                    ItemInfo g = Itm(Grenades[r.Next(Grenades.Length)]);
+                    ItemInfo g = Itm(gid);
                     if (g != null)
                     {
                         grenade = new WeaponController(bot._state, new WeaponController.WeaponSettings());
@@ -500,7 +614,7 @@ namespace InfServer.Script.GameType_Eol
                 }
                 bool rifleman = cls == ClsInfantry || cls == ClsMarine || cls == ClsConscript || cls == ClsJumpTrooper
                     || cls == ClsPartisan || cls == ClsBlackOps || SquadLeaderVehIds.Contains(cls);
-                if (rifleman && r.NextDouble() < 0.4)
+                if (rifleman && r.NextDouble() < 0.4 && ClassMayCarry(bot, ItmKamenevAPmk2))
                 {
                     ItemInfo k = Itm(ItmKamenevAPmk2);
                     if (k != null)

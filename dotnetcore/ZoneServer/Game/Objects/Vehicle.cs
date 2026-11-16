@@ -414,6 +414,8 @@ namespace InfServer.Game
         /// </summary>		
         public void applyExplosionDamage(bool bImpliedExplosion, Player attacker, int dmgX, int dmgY, ItemInfo.Projectile wep)
         {	//Quick check to make sure that the weapon is even damaging before we do math
+            if (IsDamageImmune)
+                return;
             int maxRadius = Helpers.getMaxBlastRadius(wep);
             if (maxRadius == 0)
                 return;
@@ -517,6 +519,7 @@ namespace InfServer.Game
             //Apply the damage
             if (netDamage > 0)
             {
+                netDamage = netDamage * DamageTakenPercent / 100.0;
                 _state.health -= (short)Math.Round((netDamage / 1000));
                 if (attacker != null)
                     if (!_attackers.Contains(attacker))
@@ -541,7 +544,7 @@ namespace InfServer.Game
         /// </summary>
         public void applyBotHit(ItemInfo.Projectile wep)
         {
-            if (wep == null || IsDead || _type == null)
+            if (wep == null || IsDead || _type == null || IsDamageImmune)
                 return;
             // Real bullet damage (local fix 2026-11-14 - bots were one-shotting each other): a direct-fire round
             // (damage radius 0) does its listed damage; a splash round lands somewhere in its blast, not always
@@ -556,7 +559,7 @@ namespace InfServer.Game
             net += BotHitChannel(wep.bypassDamageInner, wep.bypassDamageOuter, wep.bypassDamageRadius, f, 4);
 
             if (net > 0)
-                _state.health -= (short)Math.Max(1, Math.Round(net / 1000));
+                _state.health -= (short)Math.Max(1, Math.Round(net * DamageTakenPercent / 100.0 / 1000));
             if (_state.health <= 0)
             {
                 kill(null, wep.id);
@@ -565,6 +568,23 @@ namespace InfServer.Game
         }
 
         static readonly Random _botHitRng = new Random();
+
+        /// <summary>
+        /// (2026-11-16) Share of the armour-reduced damage this vehicle really takes, in percent (100 = all of it).
+        /// Eol bots use 67 = 50 % more armour.
+        /// </summary>
+        public int DamageTakenPercent = 100;
+
+        /// <summary>
+        /// (2026-11-16) Takes no damage at all until this tick (0 = off): spawn protection, and bots walking through
+        /// the safe dropship to the portal.
+        /// </summary>
+        public int DamageImmuneUntilTick;
+
+        public bool IsDamageImmune
+        {
+            get { return DamageImmuneUntilTick != 0 && Environment.TickCount - DamageImmuneUntilTick < 0; }
+        }
 
         double BotHitChannel(int inner, int outer, int radius, double f, int channel)
         {

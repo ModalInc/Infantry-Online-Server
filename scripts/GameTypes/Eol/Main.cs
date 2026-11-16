@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Collections.Generic;
 using System.Reflection;
@@ -30,7 +30,7 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>When false, KOTH auto-lobby, crown rounds, and ticker KOTH line are off; mod *startkoth still works.</summary>
         public static bool EolKothSystemEnabled = true;
         /// <summary>When false, alien waves and *startaliens are off; use *enablealiens to turn back on.</summary>
-        public static bool EolAlienWavesEnabled = true;
+        public static bool EolAlienWavesEnabled = false;   // (2026-11-16c, owner) off - the Alien Swarm (bug cave + nest) replaces the crash-ship waves (mods: *enablealiens)
         /// <summary>When false, pirate raid auto-arm and *startraiders are off; use *enableraiders to turn back on.</summary>
         public static bool EolPirateRaidsEnabled = false;   // local 2026-11-13: off - the roaming force is the 2 elite squads of 5 (mods: *enableraiders)
         /// <summary>When false, defense captains and BasicDefense grunts are not spawned; use *enablebasebots to turn back on.</summary>
@@ -41,7 +41,7 @@ namespace InfServer.Script.GameType_Eol
         static Script_Eol()
         {
             EolKothSystemEnabled = true;
-            EolAlienWavesEnabled = true;
+            EolAlienWavesEnabled = false;
             EolPirateRaidsEnabled = false;
             EolBaseBotsEnabled = true;
             EolBaseSetupEnabled = true;
@@ -63,6 +63,8 @@ namespace InfServer.Script.GameType_Eol
         static readonly int[] EolHappyHourStartHoursEt = { 9, 11, 18 };
         static readonly int[] EolHappyHourEndHoursEt = { 10, 13, 19 };
         public const double EolHappyHourRewardMult = 2.0;
+        /// <summary>(2026-11-16c, owner) happy hour is off.</summary>
+        public const bool EolHappyHourEnabled = false;
 
         static TimeZoneInfo _eolUsEasternTz;
         bool _eolHappyHourActive;
@@ -798,6 +800,7 @@ namespace InfServer.Script.GameType_Eol
             botTeamAlienElite2 = CreateAndRegisterBotTeam("Skrall Brood Bots");
             CreateStrikeTeams();   // local 2026-11-14: three human-class strike teams
             botTeamRaid2 = CreateAndRegisterBotTeam("Pirate Raiders Bravo Bots");
+            CreateSwarmTeam();   // (2026-11-16c) the Alien Swarm (Script_Eol.AlienSwarm.cs)
 
             _eolBorderWallTeam = new Team(_arena, _arena._server);
             _eolBorderWallTeam._name = "Eol Radiation Border";
@@ -1967,6 +1970,11 @@ namespace InfServer.Script.GameType_Eol
             EolBotBrain.PlayArea = _playAreaFn;   // bots stay out of the toxic zones (re-set: survives script reloads)
             WireTerritoryHooks();                 // NW territories + the new player buffer (Script_Eol.Territories.cs)
             Bots.Bot.DeathDropResolver = _helmetDropFn;   // pirate / class helmets on death
+            PrepareNewBots(now);    // 50 % more armour + spawn protection (Script_Eol.Deploy.cs)
+            PollSquadCommands(now); // squad team-chat orders S / X / @ (Script_Eol.SquadCommands.cs)
+            WireTacticsHooks();     // per-player adaptive skill (Script_Eol.Tactics.cs)
+            PollMedics(now);        // squad medics heal bots and players
+            PollAlienSwarm(now);    // the Alien Swarm nest (Script_Eol.AlienSwarm.cs)
             PollEliteSquads(now);   // local: two elite roaming squads
             PollStrikeTeams(now);   // local: three human-class strike teams
             PollBotDropshipRespawns(now);
@@ -3459,15 +3467,14 @@ namespace InfServer.Script.GameType_Eol
                 ay = sqLeader._state.positionY;
             }
 
-            Helpers.ObjectState openPoint = FindOpenRaiderSpawnWithPeerGap(ax, ay);
+            // (2026-11-16, owner) raiders come out of the dropship and through the portal like players
+            bool viaDropship;
+            Helpers.ObjectState openPoint = SquadSpawnPoint(
+                () => FindOpenRaiderSpawnWithPeerGap(ax, ay) ?? findOpenWarpBot(_arena, ax, ay, 140), out viaDropship);
             if (openPoint == null)
             {
-                openPoint = findOpenWarpBot(_arena, ax, ay, 140);
-                if (openPoint == null)
-                {
-                    _tickNextPirateGruntSpawn = now + 900;
-                    return;
-                }
+                _tickNextPirateGruntSpawn = now + 900;
+                return;
             }
 
             if (_bots == null)
@@ -3487,6 +3494,8 @@ namespace InfServer.Script.GameType_Eol
 
             dBot.SkillModeOverride = "ace";
             ApplyHumanLoadout(dBot, id, raidTeam);
+            if (viaDropship)
+                BeginDeploy(dBot, now);
             if (!roamBots.ContainsKey(raidTeam))
                 roamBots.Add(raidTeam, 0);
             if (!_bots.Contains(dBot))
@@ -5337,6 +5346,7 @@ namespace InfServer.Script.GameType_Eol
                 return;
 
             killer.ZoneStat11++;
+            NoteFormBotKill(killer);   // adaptive skill (Script_Eol.Tactics.cs)
             // (2026-11-16, owner) every bot kill counts on the high scores like a player kill
             killer.Kills++;
             UpdateKiller(killer);
@@ -5816,6 +5826,8 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>True during any configured US Eastern happy-hour window.</summary>
         public static bool IsEolHappyHourNow()
         {
+            if (!EolHappyHourEnabled)
+                return false;   // (2026-11-16c, owner) happy hour removed: no 2x, no messages, no ticker line
             int h = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, GetEolUsEasternTimeZone()).Hour;
             return TryGetEolHappyHourWindowForHour(h, out _, out _);
         }
@@ -6330,6 +6342,9 @@ namespace InfServer.Script.GameType_Eol
 
             // (2026-11-16, owner) no minimum on bot kills any more - the 2k/1k and 3k/2k minimums were meant for the
             // flags (see EolFlagRewardMinimum). Kill rewards are the original: bot reward + a share of the killer's bounty.
+            // (2026-11-16b, owner: "leach bty as if they were killing real people") bounty grows like a player kill:
+            // the killer's own +5 % and the team's assist bounty below.
+            killerBountyIncrease = Convert.ToInt32(((double)killer.Bounty / 100) * c_percentOfOwnIncrease);
 
             //Update his stats
             int baseCash = killerCash;
@@ -6342,7 +6357,7 @@ namespace InfServer.Script.GameType_Eol
             killerCash = addCash(killer, killerCash);
             killer.Experience += killerExp;
             killer.KillPoints += killerPoints;
-            killer.Bounty += (killerBountyIncrease + victimBounty) / 2;
+            killer.Bounty += killerBountyIncrease + victimBounty / 2;
 
             //Inform the killer..
             string victimName = BotNameModule.GetDisplayName(victim);
@@ -6372,6 +6387,21 @@ namespace InfServer.Script.GameType_Eol
                     String.Format("Assist: {0} (Cash={1} Exp={2} Points={3})",
                     victimName, shareCash, shareExp, sharePoints));
                 p.syncState();
+            }
+
+            // (2026-11-16b, owner) assist ("leach") bounty for teammates near a bot kill, exactly like a player kill:
+            // everyone on the killer's team inside the point share radius gets the zone's PercentToAssistBounty of
+            // the kill's points (calculatePlayerKillRewards does the same for human kills).
+            int btyShare = (int)(basePoints * (((float)cfg.bounty.percentToAssistBounty) / 1000));
+            if (btyShare > 0)
+            {
+                foreach (InfServer.Game.Player p in victim._arena.getPlayersInRange(victim._state.positionX, victim._state.positionY, cfg.point.shareRadius))
+                {
+                    if (p == null || p == killer || p._team != killer._team || p.IsDead || p.IsSpectator)
+                        continue;
+                    p.Bounty += btyShare;
+                    p.syncState();
+                }
             }
         }
 
@@ -6565,6 +6595,17 @@ namespace InfServer.Script.GameType_Eol
         public bool playerModCommand(InfServer.Game.Player player, InfServer.Game.Player recipient, string command, string payload)
         {
             string cmd = command.ToLowerInvariant();
+            if (cmd.Equals("swarm"))
+            {   // (2026-11-16c) bring the Alien Swarm nest up now
+                if (!IsEolModerator(player))
+                {
+                    player.sendMessage(-1, "Moderators only.");
+                    return true;
+                }
+                string err = TryModStartSwarm();
+                player.sendMessage(0, err == null ? "&The Alien swarm is coming (next poll)." : ("&" + err));
+                return true;
+            }
             if (cmd.Equals("startaliens"))
             {
                 if (!IsEolModerator(player))
@@ -7162,6 +7203,8 @@ namespace InfServer.Script.GameType_Eol
         [Scripts.Event("Vehicle.Death")]
         public bool vehicleDeath(Vehicle dead, InfServer.Game.Player killer)
         {
+            if (OnSwarmNestDeath(dead, killer))
+                return true;   // the Alien Swarm's nest (Script_Eol.AlienSwarm.cs)
 
             //Did they just kill an HQ?!
             if (dead._type.Id == _hqVehId)
@@ -7258,6 +7301,8 @@ namespace InfServer.Script.GameType_Eol
             // Death resets the bounty: saved copy wiped now, live bounty on the next poll (after the engine has paid
             // the killer's kill rewards, which read the victim's bounty), and no restore for a minute.
             MarkBountyDeath(victim);
+            if (killType != Helpers.KillType.Player)
+                NoteFormBotDeath(victim);   // adaptive skill: died to the bots / their turrets
             ClearCombatCallsForPlayer(victim);
             _pendingBotDeathUpdate = update;
 
@@ -7522,6 +7567,14 @@ namespace InfServer.Script.GameType_Eol
                 HandleHelmetTrader(player, product);
                 return false;
             }
+            if (IsSwarmNest(computer))
+                return false;   // (the Alien swarm's nest is not a factory)
+            // Supply Vendor: sold here (2026-11-16, "lag out on vendor purchase")
+            if (computer != null && computer._type != null && computer._type.Id == SupplyVendorVehId)
+            {
+                HandleSupplyVendor(player, computer, product);
+                return false;
+            }
 
             int alloy = AlloyCostFromTitle(product);
             // (a product that also needs team items can be queued without being made - left to the engine as it was;
@@ -7620,13 +7673,13 @@ namespace InfServer.Script.GameType_Eol
             if (team == null || string.IsNullOrEmpty(team._name))
                 return true;
 
-            // (2026-11-16, owner) the roaming squads (5 max) take players: a bot makes room, and with a player on the
-            // team the bots go attack bases with them. Full = 5 players.
+            // (2026-11-16, owner) the roaming squads (8 max, 2026-11-16b) take players: a bot makes room, and with a player on the
+            // team the bots go attack bases with them. Full = 8 players.
             if (IsJoinableSquadTeam(team))
             {
                 if (player != null && player._team == team)
                     return true;
-                if (team.ActivePlayerCount >= SquadMaxSize)
+                if (team.ActivePlayerCount >= SquadTargetSize(team))
                 {
                     if (player != null)
                         player.sendMessage(-1, "That squad is full.");
@@ -7634,7 +7687,10 @@ namespace InfServer.Script.GameType_Eol
                 }
                 TrimSquadForHumans(team, 1);
                 if (player != null)
+                {
                     player.sendMessage(0, "&You joined " + team._name + " - your squad is heading out to attack enemy bases.");
+                    QueueSquadGreeting(team, Environment.TickCount);   // (2026-11-16f) the bots tell them the calls, in team chat
+                }
                 return true;
             }
 

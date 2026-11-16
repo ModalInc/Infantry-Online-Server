@@ -8,21 +8,23 @@ namespace InfServer.Script.GameType_Eol
 {
     /// <summary>
     /// Fixed bot roster (local change 2026-11-14; 80 -> 60 on 2026-11-15, the two bases unchanged) - always 60
-    /// bots in the field:
-    ///   2 pirate bases x 10, pirate roamers 4-6, human roamers 4-6, alien elite pack 4-6, alien pack 8,
-    ///   an elite vehicle squad of 3 (Deathboard / Shimmerboard / Drop Pack), and 3 mixed human roaming teams
-    ///   (3-8 each, skill from ace down to a normal mix) that make up the rest (11-17).
-    /// Sizes are rolled once per server run so the total stays at 60; the 2 assassin cells of 3 come on top
-    /// while a 30k hunt is on (max 66).
+    /// bots in the field (2026-11-16b: squads of 6-8):
+    ///   2 pirate bases x 10, pirate roamers 6, alien elite pack 4, alien pack 8, an elite vehicle squad of 3
+    ///   (Deathboard / Shimmerboard / Drop Pack), and 3 joinable human squads of 6-8 (Storm Rangers = a normal
+    ///   mix, plus an ace and a veteran team) - commander, medic, heavy, marine, infantry, engineer + extras.
+    /// The pirate raid (2 x 5) and the 2 assassin cells of 3 come on top while they run (70 cap, assassins aside).
     /// </summary>
     public partial class Script_Eol
     {
-        public const int EolBotTotalTarget = 60;
+        public const int EolBotTotalTarget = 70;   // (2026-11-16c, owner: "around 70")
         public const int RosterBaseTeams = 2;
         public const int RosterBaseSize = EolMaxConcurrentBaseDefenseBots;   // 10
         public const int RosterAlienMainSize = 8;
         public const int RosterVehicleSquadSize = 3;
-        public const int RosterMixedTeamCount = 3;
+        /// <summary>(2026-11-16c) Storm Rangers + 5 mixed teams = 6 joinable human squads of 5-6.</summary>
+        public const int RosterMixedTeamCount = 5;
+        /// <summary>(2026-11-16c, owner) a joinable squad is 5 to 6 strong, players + bots.</summary>
+        public const int SquadMinSize = 5;
 
         bool _rosterReady;
         int _rosterPirateRoamers, _rosterHumanRoamers, _rosterAlienElite;
@@ -39,27 +41,37 @@ namespace InfServer.Script.GameType_Eol
                 return;
             _rosterReady = true;
             Random r = new Random(Environment.TickCount);
-            // (2026-11-16, owner) roaming squads are 5 max
-            _rosterPirateRoamers = r.Next(4, 6);
-            _rosterHumanRoamers = r.Next(4, 6);
-            _rosterAlienElite = r.Next(4, 7);
-
-            int rest = EolBotTotalTarget - (RosterBaseTeams * RosterBaseSize + _rosterPirateRoamers + _rosterHumanRoamers
-                + _rosterAlienElite + RosterAlienMainSize + RosterVehicleSquadSize);   // 11..17 (3 teams of 3-8 hold 9..24)
+            // (2026-11-16c, owner) 2 bases of 10, the bug base of 10, and roaming squads of 5-6: pirate roamers 5, the six
+            // human squads (Storm Rangers + 5 mixed) 5 each, the spare places spread out (6 at most) - 70 in all
+            _rosterPirateRoamers = SquadMinSize;
+            // (2026-11-16c) the crash-ship alien packs are gone: their places are the Alien Swarm's 10 bugs
+            _rosterAlienElite = EolAlienWavesEnabled ? 4 : 0;
+            int aliens = EolAlienWavesEnabled ? _rosterAlienElite + RosterAlienMainSize : SwarmDefenders;
+            _rosterHumanRoamers = SquadMinSize;
             for (int i = 0; i < RosterMixedTeamCount; i++)
-                _rosterMixedSize[i] = 3;
-            rest -= 3 * RosterMixedTeamCount;
+                _rosterMixedSize[i] = SquadMinSize;
+            int rest = EolBotTotalTarget - (RosterBaseTeams * RosterBaseSize + _rosterPirateRoamers + _rosterHumanRoamers
+                + aliens + RosterVehicleSquadSize + RosterMixedTeamCount * SquadMinSize);   // 2
             for (int guard = 0; rest > 0 && guard < 1000; guard++)
             {
-                int i = r.Next(RosterMixedTeamCount);
-                if (_rosterMixedSize[i] >= SquadMaxSize)
-                    continue;
-                _rosterMixedSize[i]++;
+                int i = r.Next(RosterMixedTeamCount + 1);
+                if (i == RosterMixedTeamCount)
+                {
+                    if (_rosterHumanRoamers >= SquadMaxSize)
+                        continue;
+                    _rosterHumanRoamers++;
+                }
+                else
+                {
+                    if (_rosterMixedSize[i] >= SquadMaxSize)
+                        continue;
+                    _rosterMixedSize[i]++;
+                }
                 rest--;
             }
 
             // from elite level down to a normal mixed bag
-            string[] skills = { "ace", "veteran", null };   // (3 teams now: one ace, one veteran, one normal mix)
+            string[] skills = { "ace", "ace", "veteran", "veteran", null };   // (5 mixed teams; Storm Rangers = the normal mix)
             for (int i = skills.Length - 1; i > 0; i--)
             {
                 int j = r.Next(i + 1);
@@ -98,7 +110,7 @@ namespace InfServer.Script.GameType_Eol
 
         /// <summary>(2026-11-16, owner: 26 bots on one team) hard caps for every spawn path.</summary>
         public const int EolMaxBotsPerTeam = 10;
-        public const int EolMaxBotsTotal = 70;
+        public const int EolMaxBotsTotal = 74;   // (roster 70 + a little room for bots changing over)
 
         /// <summary>
         /// True when one more bot may join <paramref name="team"/>: under 10 live (or about-to-revive) bots on that
