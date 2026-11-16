@@ -306,6 +306,17 @@ namespace InfServer.Script.GameType_Eol
                 st.HelperBotIds.Remove(remove[i]);
         }
 
+        /// <summary>Any bot in the arena with this id (tracked by the script or not).</summary>
+        Bots.Bot FindArenaBotById(int botId)
+        {
+            if (_arena == null)
+                return null;
+            foreach (Bots.Bot b in _arena.ActiveBots)
+                if (b != null && b._id == botId)
+                    return b;
+            return null;
+        }
+
         Bots.Bot FindTrackedBotById(int botId)
         {
             if (_bots == null)

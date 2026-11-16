@@ -41,15 +41,25 @@ namespace InfServer.Protocol
 
 		public const ushort TypeID = (ushort)Helpers.PacketIDs.S2C.PlayerTeamUpdate;
 
-		public void CaptureBotPose(Vehicle v)
+		public void CaptureBotPose(Vehicle v, bool teamHealth = false)
 		{
 			if (v?._state == null)
 				return;
 			bPoseSnapshot = true;
 			snapHealth = v._state.health;
-			// bot HP is never shown (local 2026-11-14): a living bot reports full health
-			if (v is InfServer.Bots.Bot && v._state.health > 0 && v._type != null && v._type.Hitpoints > 0)
-				snapHealth = (short)Math.Min(short.MaxValue, v._type.Hitpoints);
+			if (v is InfServer.Bots.Bot hb && v._state.health > 0 && v._type != null && v._type.Hitpoints > 0)
+			{
+				if (v._state.health > hb._peakHealth)
+					hb._peakHealth = v._state.health;
+				if (teamHealth)
+				{   // (2026-11-17, owner: "updates for the team so others can see what health the bots are on") the real
+					// bar, scaled to the vehicle type's hitpoints (the client's full bar) - bots can carry more HP
+					int full = Math.Max(v._type.Hitpoints, (int)hb._peakHealth);
+					snapHealth = (short)Math.Max(1, Math.Min(v._type.Hitpoints, (long)v._state.health * v._type.Hitpoints / full));
+				}
+				else   // enemies: bot HP is never shown (local 2026-11-14) - a living bot reports full health
+					snapHealth = (short)Math.Min(short.MaxValue, v._type.Hitpoints);
+			}
 			snapVelX = v._state.velocityX;
 			snapVelY = v._state.velocityY;
 			snapVelZ = v._state.velocityZ;

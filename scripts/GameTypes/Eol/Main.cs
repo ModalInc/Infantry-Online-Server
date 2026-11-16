@@ -2104,8 +2104,8 @@ namespace InfServer.Script.GameType_Eol
                 short py = kv.Value.getY();
                 if (_eol != null && !_eol.IsInAnyActiveSector(px, py))
                     continue;
-                if (!HqSlotAllowed(px, py))
-                    continue;   // NW: the bot base corner only (Script_Eol.Territories.cs)
+                if (!HqSlotAllowed(px, py) || SwarmHoldsA6(px, py))
+                    continue;   // NW: the bot base corner only (Script_Eol.Territories.cs); (2026-11-17) not in A6 while the Queen is there
                 // Never stack a new HQ on top of a live one (stale exists flag / same coords).
                 if (IsLiveHqNearAnchor(px, py))
                     continue;
@@ -2125,7 +2125,7 @@ namespace InfServer.Script.GameType_Eol
                     short py = kv.Value.getY();
                     if (_eol != null && !_eol.IsInAnyActiveSector(px, py))
                         continue;
-                    if (!HqSlotAllowed(px, py))
+                    if (!HqSlotAllowed(px, py) || SwarmHoldsA6(px, py))
                         continue;
                     if (IsLiveHqNearAnchor(px, py))
                         continue;

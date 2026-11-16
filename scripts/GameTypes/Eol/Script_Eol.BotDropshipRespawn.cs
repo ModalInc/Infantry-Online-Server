@@ -14,7 +14,7 @@ namespace InfServer.Script.GameType_Eol
     public partial class Script_Eol
     {
         /// <summary>Corpse linger at the death site before revive at the spawn anchor.</summary>
-        public const int BotCorpseLingerMs = 10000;
+        public const int BotCorpseLingerMs = 6000;   // (2026-11-17, owner: "go to their spawn points like normal": was 10 s)
         /// <summary>Legacy alias — same as <see cref="BotCorpseLingerMs"/>.</summary>
         public const int BotDropshipRespawnDelayMs = BotCorpseLingerMs;
         /// <summary>
@@ -143,8 +143,24 @@ namespace InfServer.Script.GameType_Eol
                     continue;
 
                 Bots.Bot bot = FindTrackedBotById(botId);
+                if (bot == null)
+                {   // (2026-11-17, owner: "bodies on the floor not disappearing") a bot the script stopped tracking while
+                    // it lay waiting (squad trim, roster sync...) kept its "respawn pending" flag - and a pending corpse
+                    // is never removed. Find it in the arena and finish it off properly (body goes, slot frees).
+                    Bots.Bot lost = FindArenaBotById(botId);
+                    if (lost != null && lost.bDropshipRespawnPending)
+                    {
+                        FinalizeBotDropshipRespawnCancelled(lost);
+                        if (remove == null)
+                            remove = new List<int>();
+                        remove.Add(botId);
+                        continue;
+                    }
+                }
                 if (bot == null || bot.bCondemned || !bot.bDropshipRespawnPending)
                 {
+                    if (bot != null && bot.bCondemned && bot.bDropshipRespawnPending)
+                        bot.bDropshipRespawnPending = false;   // (condemned: the engine removes the body)
                     // Orphan dict entry — free alien slot if this was an alien linger.
                     if (bot == null && st.IsAlien)
                         FreeAlienWaveSlot();

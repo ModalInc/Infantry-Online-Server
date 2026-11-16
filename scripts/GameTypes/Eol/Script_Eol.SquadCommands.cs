@@ -12,11 +12,69 @@ namespace InfServer.Script.GameType_Eol
     ///   S / SSS   summon me home: you are suit-teleported to your squad (beside its leader);
     ///   X / XXX   summon me to the enemy: you go to the squad bot nearest the fight (or nearest an enemy base);
     ///   @ (or "@ me")  the squad's bots suit-teleport to you, one after the other.
+    ///   H         the squad's medics come to you and heal you (far ones suit-teleport).
+    ///   follow    the squad loosely follows you (a good angle on a base); "stop" = back to attacking bases.
     /// Heard from team chat only (like CTF:X), 10 s apart per player, never into a closed sector.
+    /// (2026-11-17, owner) S / X summon you after 3 s; @ brings the bots after 2 s and only every 30 s.
     /// </summary>
     public partial class Script_Eol
     {
         const int SquadOrderCooldownMs = 10000;
+        const int SquadSummonDelayMs = 3000;      // S / X: you go after 3 s
+        const int SquadToMeDelayMs = 2000;        // @: the first bot arrives after 2 s
+        const int SquadToMeCooldownMs = 30000;    // @ / @ home: once every 30 s
+        const int SquadHealCallMs = 20000;        // H: the medics stay on you this long (or until you're full)
+        const int SquadHealWarpBeyond = 900;      // H: a medic further away than this suit-teleports to you
+        const int SquadFollowMs = 10 * 60 * 1000; // follow: up to 10 min
+
+        readonly Dictionary<InfServer.Game.Player, int> _squadToMeNext = new Dictionary<InfServer.Game.Player, int>();
+
+        struct PendingSummon
+        {
+            public InfServer.Game.Player Player;
+            public int Order;
+            public int Due;
+        }
+        readonly List<PendingSummon> _pendingSummons = new List<PendingSummon>();
+
+        class SquadCall { public InfServer.Game.Player Player; public int Until; }
+        readonly Dictionary<Team, SquadCall> _squadHealCall = new Dictionary<Team, SquadCall>();
+        readonly Dictionary<Team, SquadCall> _squadFollow = new Dictionary<Team, SquadCall>();
+
+        /// <summary>The player this squad's medics were called to with H (null = none, or done).</summary>
+        public InfServer.Game.Player SquadHealCaller(Team t, int now)
+        {
+            SquadCall c;
+            if (t == null || !_squadHealCall.TryGetValue(t, out c))
+                return null;
+            InfServer.Game.Player p = c.Player;
+            if (now - c.Until >= 0 || p == null || p.IsDead || p.IsSpectator || p._team != t || p._state == null
+                || p._state.health >= PlayerMaxHealth(p))
+            {
+                _squadHealCall.Remove(t);
+                return null;
+            }
+            return p;
+        }
+
+        /// <summary>The player this squad follows ("follow"), or null.</summary>
+        public InfServer.Game.Player SquadFollowTarget(Team t, int now)
+        {
+            SquadCall c;
+            if (t == null || !_squadFollow.TryGetValue(t, out c))
+                return null;
+            InfServer.Game.Player p = c.Player;
+            if (now - c.Until >= 0 || p == null || p._team != t || p.IsSpectator)
+            {
+                _squadFollow.Remove(t);
+                return null;
+            }
+            // (dead or back in the dropship: the bots carry on round where they are until the player is out again)
+            if (p.IsDead || p._state == null || !InPlayArea(p._state.positionX, p._state.positionY, 0)
+                || _eol != null && _eol.IsInPioneerDropshipSafeZone(p._state.positionX, p._state.positionY))
+                return null;
+            return p;
+        }
         static Script_Eol _chatScript;
         static bool _chatHooked;
 
@@ -62,7 +120,7 @@ namespace InfServer.Script.GameType_Eol
             catch (Exception) { }
         }
 
-        const int OrderHome = 1, OrderEnemy = 2, OrderToMe = 3, OrderDefendHere = 4;
+        const int OrderHome = 1, OrderEnemy = 2, OrderToMe = 3, OrderDefendHere = 4, OrderHeal = 5, OrderFollow = 6, OrderStop = 7;
         /// <summary>"@ home": the squad holds the spot it was called to this long (then back to attacking bases).</summary>
         const int SquadDefendMs = 5 * 60 * 1000;
         const int SquadDefendRadius = 350;
@@ -101,6 +159,12 @@ namespace InfServer.Script.GameType_Eol
                 return OrderHome;
             if (OnlyLetter(t, 'x') || t == "sum nme" || t == "summon nme" || t == "sum to nme" || t == "x me")
                 return OrderEnemy;
+            if (OnlyLetter(t, 'h') || t == "heal" || t == "heal me" || t == "h me" || t == "h pls" || t == "medic")
+                return OrderHeal;
+            if (t == "follow" || t == "follow me" || t == "fm" || t == "f me")
+                return OrderFollow;
+            if (t == "stop" || t == "unfollow" || t == "stop follow" || t == "stop following")
+                return OrderStop;
             return 0;
         }
 
@@ -127,19 +191,74 @@ namespace InfServer.Script.GameType_Eol
                 return;
             int now = Environment.TickCount;
             int next;
+
+            // stop / follow need no cooldown (they cost nothing)
+            if (order == OrderStop)
+            {
+                bool was = _squadFollow.Remove(team) | _squadDefend.Remove(team);
+                player.sendMessage(0, was ? "&Squad: back to attacking enemy bases." : "&Squad: we're already on the attack.");
+                return;
+            }
+            if (order == OrderFollow)
+            {
+                if (EliteSquadMembers(team).Count == 0)
+                {
+                    player.sendMessage(-1, "Squad: nobody left to follow you.");
+                    return;
+                }
+                _squadFollow[team] = new SquadCall { Player = player, Until = now + SquadFollowMs };
+                _squadDefend.Remove(team);
+                player.sendMessage(0, "&Squad: following you (10 min). Say stop to send us back on the attack.");
+                RoamingAttacker l = EliteSquadLeader(team);
+                if (l != null)
+                    SquadSay(l, Pick3("on you", "right behind you", "lead the way"));
+                return;
+            }
+
             if (_squadOrderNext.TryGetValue(player, out next) && now - next < 0)
             {
                 player.sendMessage(-1, String.Format("Squad: wait {0} s.", (next - now + 999) / 1000));
                 return;
             }
 
-            List<RoamingAttacker> squad = EliteSquadMembers(team).FindAll(b => !IsDeploying(b) && InPlayArea(b._state.positionX, b._state.positionY, 0));
-            if (order == OrderToMe || order == OrderDefendHere)
+            bool inField = !(_eol != null && _eol.IsInPioneerDropshipSafeZone(player._state.positionX, player._state.positionY))
+                && InPlayArea(player._state.positionX, player._state.positionY, 0);
+
+            if (order == OrderHeal)
             {
-                if (_eol != null && _eol.IsInPioneerDropshipSafeZone(player._state.positionX, player._state.positionY)
-                    || !InPlayArea(player._state.positionX, player._state.positionY, 0))
+                if (!inField)
                 {
                     player.sendMessage(-1, "Squad: get out into the field first.");
+                    return;
+                }
+                List<RoamingAttacker> medics = EliteSquadMembers(team).FindAll(b => IsSquadMedic(b) && !b.IsDead);
+                if (medics.Count == 0)
+                {
+                    player.sendMessage(-1, "Squad: no medic in the squad right now.");
+                    return;
+                }
+                _squadHealCall[team] = new SquadCall { Player = player, Until = now + SquadHealCallMs };
+                int warped = 0;
+                foreach (RoamingAttacker m in medics)
+                    if (IsDeploying(m) || Helpers.distanceTo(m._state, player._state) > SquadHealWarpBeyond)
+                        _pendingSuitWarps.Add(new PendingSuitWarp { Bot = m, To = player, Due = now + SquadToMeDelayMs + warped++ * 450 });
+                _squadOrderNext[player] = now + SquadOrderCooldownMs;
+                player.sendMessage(0, String.Format("&Squad: {0} on the way to heal you.", medics.Count == 1 ? "medic" : medics.Count + " medics"));
+                SquadSay(medics[0], Pick3("medic coming", "hold on, healing you", "omw, stay alive"));
+                return;
+            }
+
+            if (order == OrderToMe || order == OrderDefendHere)
+            {
+                if (!inField)
+                {
+                    player.sendMessage(-1, "Squad: get out into the field first.");
+                    return;
+                }
+                int tnext;
+                if (_squadToMeNext.TryGetValue(player, out tnext) && now - tnext < 0)
+                {
+                    player.sendMessage(-1, String.Format("Squad: we can come to you again in {0} s.", (tnext - now + 999) / 1000));
                     return;
                 }
                 List<RoamingAttacker> all = EliteSquadMembers(team);
@@ -153,25 +272,44 @@ namespace InfServer.Script.GameType_Eol
                 {
                     if (Helpers.distanceTo(b._state, player._state) < 300)
                         continue;   // already with you
-                    _pendingSuitWarps.Add(new PendingSuitWarp { Bot = b, To = player, Due = now + 400 + i * 450 + _arena._rand.Next(300) });
+                    // (2026-11-17, owner: "2 second delay for bots to teleport to you")
+                    _pendingSuitWarps.Add(new PendingSuitWarp { Bot = b, To = player, Due = now + SquadToMeDelayMs + i * 450 + _arena._rand.Next(300) });
                     i++;
                 }
                 _squadOrderNext[player] = now + SquadOrderCooldownMs;
+                _squadToMeNext[player] = now + SquadToMeCooldownMs;   // (owner: "only every 30 seconds to avoid spam")
+                _squadFollow.Remove(team);
                 if (order == OrderDefendHere)
                 {   // hold this spot: fight round it instead of marching on enemy bases
                     _squadDefend[team] = new SquadDefend { X = player._state.positionX, Y = player._state.positionY, Until = now + SquadDefendMs };
                     player.sendMessage(0, i == 0 ? "&Squad: we're with you - defending this spot for 5 min."
-                        : String.Format("&Squad: {0} suit-teleporting to you - defending this spot for 5 min.", i));
+                        : String.Format("&Squad: {0} suit-teleporting to you in 2 s - defending this spot for 5 min.", i));
                     SquadSay(all[0], Pick3("holding here", "we got the base", "defending, nothing gets through"));
                     return;
                 }
                 _squadDefend.Remove(team);   // (a plain @: back on the move with you)
-                player.sendMessage(0, i == 0 ? "&Squad: we're already with you." : String.Format("&Squad: {0} suit-teleporting to you.", i));
+                player.sendMessage(0, i == 0 ? "&Squad: we're with you - attacking with you." : String.Format("&Squad: {0} suit-teleporting to you in 2 s - attacking with you.", i));
                 if (i > 0)
                     SquadSay(all[0], Pick3("omw", "coming to you", "on you in a sec"));
                 return;
             }
 
+            // S / X: (2026-11-17, owner: "a 3 second delay for someone to get summoned by a bot, not instant")
+            if (SummonTarget(team, order) == null)
+            {
+                player.sendMessage(-1, "Squad: nobody out in the field to summon you.");
+                return;
+            }
+            _pendingSummons.RemoveAll(s => s.Player == player);
+            _pendingSummons.Add(new PendingSummon { Player = player, Order = order, Due = now + SquadSummonDelayMs });
+            _squadOrderNext[player] = now + SquadOrderCooldownMs;
+            player.sendMessage(0, "&Squad: summoning you in 3 s...");
+        }
+
+        /// <summary>Who an S (the leader) or X (the bot nearest the fight / an enemy base) summons you to.</summary>
+        RoamingAttacker SummonTarget(Team team, int order)
+        {
+            List<RoamingAttacker> squad = EliteSquadMembers(team).FindAll(b => !b.IsDead && !IsDeploying(b) && InPlayArea(b._state.positionX, b._state.positionY, 0));
             RoamingAttacker to = null;
             if (order == OrderHome)
             {
@@ -195,21 +333,39 @@ namespace InfServer.Script.GameType_Eol
                     if (score < best) { best = score; to = b; }
                 }
             }
-            if (to == null)
+            return to;
+        }
+
+        /// <summary>The S / X summons whose 3 s are up: to wherever that bot is NOW.</summary>
+        void PollPendingSummons(int now)
+        {
+            for (int i = _pendingSummons.Count - 1; i >= 0; i--)
             {
-                player.sendMessage(-1, "Squad: nobody out in the field to summon you.");
-                return;
+                PendingSummon s = _pendingSummons[i];
+                if (now - s.Due < 0)
+                    continue;
+                _pendingSummons.RemoveAt(i);
+                InfServer.Game.Player player = s.Player;
+                if (player == null || player.IsDead || player.IsSpectator || player._arena != _arena || !IsJoinableSquadTeam(player._team))
+                    continue;
+                RoamingAttacker to = SummonTarget(player._team, s.Order);
+                if (to == null)
+                {
+                    player.sendMessage(-1, "Squad: nobody out in the field to summon you.");
+                    _squadOrderNext.Remove(player);
+                    continue;
+                }
+                Helpers.ObjectState at = OpenSpotNear(to._state.positionX, to._state.positionY, 140);
+                if (at == null)
+                {
+                    player.sendMessage(-1, "Squad: no room there right now - try again.");
+                    _squadOrderNext.Remove(player);
+                    continue;
+                }
+                warp(player, at);
+                SquadSay(to, s.Order == OrderHome ? Pick3("sum'd", "got you, regroup on me", "here") : Pick3("sum'd, they're right here", "in the fight, careful", "go go"));
+                player.sendMessage(0, String.Format("&Squad: summoned to {0}.", InfServer.Game.Modules.BotNameModule.GetDisplayName(to)));
             }
-            Helpers.ObjectState at = OpenSpotNear(to._state.positionX, to._state.positionY, 140);
-            if (at == null)
-            {
-                player.sendMessage(-1, "Squad: no room there right now - try again.");
-                return;
-            }
-            warp(player, at);
-            _squadOrderNext[player] = now + SquadOrderCooldownMs;
-            SquadSay(to, order == OrderHome ? Pick3("sum'd", "got you, regroup on me", "here") : Pick3("sum'd, they're right here", "in the fight, careful", "go go"));
-            player.sendMessage(0, String.Format("&Squad: summoned to {0}.", InfServer.Game.Modules.BotNameModule.GetDisplayName(to)));
         }
 
         // ---------- greeting (2026-11-16f, owner) ----------
@@ -245,7 +401,8 @@ namespace InfServer.Script.GameType_Eol
                         if (b != null && b._team == t && !b.IsDead && !b.bCondemned) { from = b; break; }
                 string name = from != null ? from._alias : t._name;
                 Helpers.Player_RouteChatRaw(t, name, "S for S", 0, Helpers.Chat_Type.Team);
-                Helpers.Player_RouteChatRaw(t, name, "Support ready! Say @ nme or @ home", 0, Helpers.Chat_Type.Team);
+                Helpers.Player_RouteChatRaw(t, name, "Support ready! @ nme = we come attack with you, @ home = we come defend with you, S / X = summon you", 0, Helpers.Chat_Type.Team);
+                Helpers.Player_RouteChatRaw(t, name, "H = medic heals you, follow = we follow you, stop = back on the attack", 0, Helpers.Chat_Type.Team);
             }
         }
 
@@ -254,6 +411,7 @@ namespace InfServer.Script.GameType_Eol
         {
             EnsureSquadChatHook();
             PollSquadGreetings(now);
+            PollPendingSummons(now);
             if (_pendingSuitWarps.Count == 0)
                 return;
             for (int i = _pendingSuitWarps.Count - 1; i >= 0; i--)

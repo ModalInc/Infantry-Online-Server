@@ -161,9 +161,17 @@ namespace InfServer.Game
                 _botPollScratch.Capacity = botCount;
             _botPollScratch.AddRange(_bots);
 
+            int healthNow = Environment.TickCount;
             foreach (Bot bot in _botPollScratch)
             {	//Does it need to send an update?
-                if (bot.poll())
+                bool send = bot.poll();
+                // (2026-11-17, owner: "if team member bots are getting hit, their hp does not update ... constant
+                // streamline updates") a living bot whose health changed goes out at once, and at least once a second
+                // regardless - its team sees the real health bar (Update_RouteBot / CaptureBotPose: team only)
+                if (!send && !bot.bCondemned && !bot.IsDead && bot._state != null
+                    && (bot._state.health != bot._lastRoutedHealth || healthNow - bot._tickLastPlayerRoute > BotHealthStreamMs))
+                    send = true;
+                if (send)
                 {	//Prepare and send an update packet for the vehicle
                     bot._state.updateNumber++;
 
@@ -1097,6 +1105,8 @@ namespace InfServer.Game
         public const int BotNamelistLeaveDelayMs = 4000;
         /// <summary>How long a dead, condemned bot's body stays in the world before removal (death animation).</summary>
         public const int BotCorpseHoldMs = 4500;
+        /// <summary>A living bot is routed at least this often (its team's health bar stays current).</summary>
+        public const int BotHealthStreamMs = 1000;
         readonly List<KeyValuePair<Bot, int>> _pendingNamelistLeaves = new List<KeyValuePair<Bot, int>>();
 
         public void RemoveBotFromNamelistAfterDeath(Bot bot)

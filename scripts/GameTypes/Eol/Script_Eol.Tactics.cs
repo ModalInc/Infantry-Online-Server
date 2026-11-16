@@ -83,6 +83,28 @@ namespace InfServer.Script.GameType_Eol
             if (_skillVsFn == null)
                 _skillVsFn = SkillFactorAgainst;
             Bot.SkillVsTarget = _skillVsFn;   // (re-set every poll: survives script reloads)
+            // (2026-11-17, owner: "no unknowns") a death with no known killer still gets a name in the killfeed
+            if (_killerNameBot == null)
+            {
+                _killerNameBot = b => b != null && b._state != null ? NoKillerName(b._state.positionX, b._state.positionY) : null;
+                _killerNamePlayer = p => p != null && p._state != null ? NoKillerName(p._state.positionX, p._state.positionY) : null;
+            }
+            Arena.KillerNameFallback = _killerNameBot;
+            Arena.KillerNameFallbackPlayer = _killerNamePlayer;
+        }
+
+        Func<Bot, string> _killerNameBot;
+        Func<InfServer.Game.Player, string> _killerNamePlayer;
+
+        /// <summary>What most likely killed someone at (x,y) when nobody is on record: the Alien Queen close by,
+        /// radiation outside the open sectors; null = the engine's own fallback.</summary>
+        string NoKillerName(short x, short y)
+        {
+            if (_swarmNest != null && !_swarmNest.IsDead && _swarmNest._state != null && Helpers.distanceTo(_swarmNest._state, new Helpers.ObjectState { positionX = x, positionY = y }) < 700)
+                return "Alien Queen";
+            if (_eol != null && !_eol.IsInAnyActiveSector(x, y))
+                return "Radiation";
+            return null;
         }
 
         // ---------- medics ----------
@@ -143,11 +165,14 @@ namespace InfServer.Script.GameType_Eol
                 // players on the squad: their client heals them, as from a player medic
                 if (heal != null && m._team != null)
                 {
+                    InfServer.Game.Player caller = SquadHealCaller(m._team, now);
                     foreach (InfServer.Game.Player p in m._team.ActivePlayers)
                     {
                         if (p == null || p.IsDead || p._state == null || p._client == null)
                             continue;
-                        if (p._state.health >= PlayerMaxHealth(p) * MedicHurtBelow || Helpers.distanceTo(p._state, m._state) > MedicHealRadius)
+                        // (2026-11-17) whoever called H is healed right up to full, everyone else under 80 %
+                        double below = p == caller ? 1.0 : MedicHurtBelow;
+                        if (p._state.health >= PlayerMaxHealth(p) * below || Helpers.distanceTo(p._state, m._state) > MedicHealRadius)
                             continue;
                         SC_ItemUsed used = new SC_ItemUsed();
                         used.userPlayer = m._id;
@@ -183,6 +208,11 @@ namespace InfServer.Script.GameType_Eol
         {
             if (!IsSquadMedic(m) || IsDeploying(m) || m._team == null)
                 return null;
+            // (2026-11-17, owner: "H should get healers to heal the person") a player who called H comes first
+            InfServer.Game.Player caller = SquadHealCaller(m._team, Environment.TickCount);
+            if (caller != null)
+                return Helpers.distanceTo(caller._state, m._state) > 50
+                    ? new Helpers.ObjectState { positionX = caller._state.positionX, positionY = caller._state.positionY } : null;
             Helpers.ObjectState best = null;
             double bestNeed = 0;
             foreach (Bot b in _arena.ActiveBots)

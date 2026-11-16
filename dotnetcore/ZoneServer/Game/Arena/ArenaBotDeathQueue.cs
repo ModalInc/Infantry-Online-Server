@@ -155,12 +155,38 @@ namespace InfServer.Game
         {
             if (killer != null || killerBot != null)
                 return BotNameModule.GetKillerName(killer, killerBot);
-            if (dead?.LastHurtBy is Bot hb)
+            // (2026-11-17, owner: "killed by unknown ... please fix that so there is no unknowns") whoever hurt it last -
+            // a player, a bot, or a vehicle / turret / the Alien Queen by its name - however long ago
+            object h = dead?.LastHurtBy;
+            if (h is Player hp && !string.IsNullOrEmpty(hp._alias))
+                return hp._alias;
+            if (h is Bot hb)
                 return BotNameModule.GetKillfeedName(hb);
-            if (dead?.LastHurtBy is Vehicle hv && hv._type != null && !string.IsNullOrEmpty(hv._type.Name)
-                && Environment.TickCount - dead.LastHurtTick < 10000)
+            if (h is Vehicle hv && hv._type != null && !string.IsNullOrEmpty(hv._type.Name))
                 return hv._type.Name;
-            return BotNameModule.GetKillerName(killer, killerBot);
+            if (KillerNameFallback != null && dead != null)
+            {
+                try
+                {
+                    string s = KillerNameFallback(dead);
+                    if (!string.IsNullOrEmpty(s))
+                        return s;
+                }
+                catch { }
+            }
+            return "the environment";
+        }
+
+        /// <summary>A zone script's name for a bot death with no known killer (e.g. "Radiation", "Alien Queen").</summary>
+        public static Func<Bot, string> KillerNameFallback;
+        /// <summary>Same for a player killed by something that is no longer there.</summary>
+        public static Func<Player, string> KillerNameFallbackPlayer;
+
+        /// <summary>The name of whatever vehicle has this id (a killer that is not a player or a bot), or null.</summary>
+        string VehicleNameById(uint id)
+        {
+            Vehicle v = id <= ushort.MaxValue ? _vehicles.getObjByID((ushort)id) : null;
+            return v?._type != null && !string.IsNullOrEmpty(v._type.Name) ? v._type.Name : null;
         }
 
         /// <summary>Ranged reliable death graphic — not arena-wide.</summary>
@@ -192,12 +218,14 @@ namespace InfServer.Game
         }
 
         /// <summary>Immediate killfeed when a bot kills a player.</summary>
-        public void BroadcastPlayerKilledByBot(Player victim, Bot bot)
+        public void BroadcastPlayerKilledByBot(Player victim, Bot bot, uint killerId = 0)
         {
             if (victim == null)
                 return;
 
-            string botName = BotNameModule.GetKillfeedName(bot);
+            // (2026-11-17) a killer that is gone or isn't a bot (the Alien Queen, a dead bug's acid): its name, never "Bot"
+            string botName = bot != null ? BotNameModule.GetKillfeedName(bot)
+                : VehicleNameById(killerId) ?? (KillerNameFallbackPlayer?.Invoke(victim)) ?? "the environment";
             foreach (Player p in Players)
             {
                 if (p == null)

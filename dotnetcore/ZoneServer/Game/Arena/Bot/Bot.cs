@@ -368,6 +368,12 @@ namespace InfServer.Bots
         public bool HasExhaustedDeaths => MaxDeaths > 0 && _deaths >= MaxDeaths;
         /// <summary>Script-owned anchor revive in progress — corpse stays at death site until revived or cancelled.</summary>
         public bool bDropshipRespawnPending;
+        /// <summary>A corpse waiting for a script respawn longer than this is removed (the script lost it).</summary>
+        public const int BotPendingCorpseMaxMs = 45000;
+        /// <summary>Health in the last routed update (a change routes the bot at once - team health bars).</summary>
+        public short _lastRoutedHealth = -1;
+        /// <summary>The most health this bot has had (its full bar - bots can have more HP than their vehicle type).</summary>
+        public short _peakHealth;
         private int[] _utilityArmorIgnore = new int[6];
         private int[] _utilityArmorPercent = new int[6];
         private BotUtilityMovementModifiers _utilityMovementMods;
@@ -1236,6 +1242,13 @@ namespace InfServer.Bots
                 // player classes have no remove timer at all (players respawn) - their bot corpses never went
                 // away, so 6 s for those
                 int corpseMs = _type.RemoveDeadTimer != 0 ? Math.Max(4500, _type.RemoveDeadTimer * 1000) : 6000;
+                // (2026-11-17, owner: "bodies on the floor not disappearing") a script respawn revives the bot within
+                // ~20 s; a corpse still "pending" after 45 s was forgotten by the script - let it go like any other
+                if (bDropshipRespawnPending && _tickDead != 0 && tickCount - _tickDead > BotPendingCorpseMaxMs)
+                {
+                    bDropshipRespawnPending = false;
+                    Log.write(TLog.Warning, "[bot] {0} ({1}) corpse pending respawn for 45 s - removed.", _id, _alias);
+                }
                 if (!bDropshipRespawnPending && _tickDead != 0 && tickCount - _tickDead > corpseMs)
                     destroy(true);
                 else
