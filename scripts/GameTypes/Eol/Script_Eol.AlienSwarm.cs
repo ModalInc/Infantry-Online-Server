@@ -45,6 +45,38 @@ namespace InfServer.Script.GameType_Eol
         const int SwarmCaveSpawnRadius = 160;
         /// <summary>Where the nest comes up, in tiles, in turn (the owner's spots: A3, then the south-west).</summary>
         static readonly short[][] SwarmSitesTiles = { new short[] { 76, 178 }, new short[] { 55, 419 } };
+        /// <summary>(2026-11-17, owner) the A3 site (index 0) is one of these, picked at random each time.</summary>
+        static readonly short[][] SwarmA3SpotsTiles = { new short[] { 96, 175 }, new short[] { 54, 156 }, new short[] { 17, 131 }, new short[] { 33, 213 } };
+        /// <summary>(2026-11-17, owner) the A6 site (index 1) is one of these, picked at random each time.</summary>
+        static readonly short[][] SwarmA6SpotsTiles = { new short[] { 21, 389 }, new short[] { 54, 375 }, new short[] { 52, 414 }, new short[] { 95, 416 } };
+        /// <summary>The A6 area (tiles) the swarm and the bases share: x 0-119, y 355-440 (round the four A6 spots).</summary>
+        const short SwarmA6MinTX = 0, SwarmA6MaxTX = 119, SwarmA6MinTY = 355, SwarmA6MaxTY = 440;
+
+        static bool InSwarmA6(int rawX, int rawY)
+        {
+            int tx = rawX / 16, ty = rawY / 16;
+            return tx >= SwarmA6MinTX && tx <= SwarmA6MaxTX && ty >= SwarmA6MinTY && ty <= SwarmA6MaxTY;
+        }
+
+        /// <summary>A live HQ (bot or player base) in the A6 area: the Queen can't come up there while it stands.</summary>
+        bool LiveHqInSwarmA6()
+        {
+            if (_arena == null)
+                return false;
+            foreach (Vehicle v in _arena.Vehicles)
+                if (v != null && v._type != null && v._type.Id == _hqVehId && !v.IsDead && !v.bCondemned && v._state != null
+                    && InSwarmA6(v._state.positionX, v._state.positionY))
+                    return true;
+            return false;
+        }
+
+        /// <summary>(2026-11-17, owner: "no human bases spawn in a6 if bugs are there") true = this spot is in A6 and the
+        /// Queen is up in A6 - no base may go up there.</summary>
+        public bool SwarmHoldsA6(short x, short y)
+        {
+            return _swarmActive && _swarmNest != null && !_swarmNest.IsDead && _swarmNest._state != null
+                && InSwarmA6(_swarmNest._state.positionX, _swarmNest._state.positionY) && InSwarmA6(x, y);
+        }
         /// <summary>Bug mix: Arachnomorph, Electromorph, Predator, Warrior, Brute - and one Alien Chief.</summary>
         static readonly ushort[] SwarmBugPool = { 149, 153, 154, 155, 155, 433 };
         const ushort SwarmChiefVehId = 200;
@@ -142,7 +174,12 @@ namespace InfServer.Script.GameType_Eol
             for (int i = 0; i < SwarmSitesTiles.Length && site == null; i++)
             {
                 int idx = (_swarmSiteIndex + i) % SwarmSitesTiles.Length;
-                short x = TileRaw(SwarmSitesTiles[idx][0]), y = TileRaw(SwarmSitesTiles[idx][1]);
+                // (owner: "if a base is there the bugs can only spawn on the A3 site, until that base is destroyed")
+                if (idx == 1 && LiveHqInSwarmA6())
+                    continue;
+                short[] tile = idx == 0 ? SwarmA3SpotsTiles[_arena._rand.Next(SwarmA3SpotsTiles.Length)]
+                    : idx == 1 ? SwarmA6SpotsTiles[_arena._rand.Next(SwarmA6SpotsTiles.Length)] : SwarmSitesTiles[idx];
+                short x = TileRaw(tile[0]), y = TileRaw(tile[1]);
                 if (!_eol.IsInAnyActiveSector(x, y))
                     continue;
                 site = findOpenWarpBot(_arena, x, y, 120) ?? new Helpers.ObjectState { positionX = x, positionY = y };
@@ -237,6 +274,11 @@ namespace InfServer.Script.GameType_Eol
                 EnqueueVehicleDespawn(_swarmNest, force: true);
             _swarmNest = null;
             _swarmDeploying.Clear();
+            _swarmReturning.Clear();
+            _swarmStuck.Clear();
+            _swarmChaseUntil.Clear();
+            _swarmLoiterAt.Clear();
+            _swarmLoiterNext.Clear();
             _swarmNextTick = NonZeroTick(now + SwarmReturnMs);
             Log.write(TLog.Normal, "[Eol] Alien swarm over ({0}); back in 5 min.", winners != null ? winners._name : "no winner");
         }
@@ -298,7 +340,10 @@ namespace InfServer.Script.GameType_Eol
             short px = TileRaw(SwarmCavePortalTileX), py = TileRaw(SwarmCavePortalTileY);
             if (Helpers.distanceTo(b._state.positionX, b._state.positionY, px, py) <= 72 || now - t0 > SwarmDeployTimeoutMs)
             {
-                Helpers.ObjectState land = findOpenWarpBot(_arena, _swarmNest._state.positionX, _swarmNest._state.positionY, 220, 28);
+                // (2026-11-17, owner: "bugs spawn in A6 and get stuck in a choke between green physics") come out at a
+                // free guard post - open ground with a clear run to the Queen - never in a pocket next to her
+                Helpers.ObjectState land = FreeSwarmPostSpot(b)
+                    ?? findOpenWarpBot(_arena, _swarmNest._state.positionX, _swarmNest._state.positionY, 220, 28);
                 if (land == null)
                 {
                     b.HoldPosition();
@@ -321,8 +366,9 @@ namespace InfServer.Script.GameType_Eol
         readonly Dictionary<Bots.Bot, int> _swarmPostUntil = new Dictionary<Bots.Bot, int>();
 
         /// <summary>
-        /// Posts round the Queen: 16 directions x 3 rings (150 / 260 / 380 px), each on open ground with a body-wide
-        /// straight line to her - so no post sits behind a choke or a green-physics gap.
+        /// Posts round the Queen: 16 directions x 4 rings (150 / 280 / 420 / 560 px), each on open ground with a
+        /// body-wide straight line to her - so no post sits behind a choke or a green-physics gap.
+        /// (2026-11-17, owner: "make the aliens roam out a bit more so its real") the outer ring went 380 -> 560.
         /// </summary>
         List<Helpers.ObjectState> SwarmPosts()
         {
@@ -334,10 +380,10 @@ namespace InfServer.Script.GameType_Eol
             _swarmPosts = new List<Helpers.ObjectState>();
             _swarmPostOf.Clear();
             short nx = _swarmNest._state.positionX, ny = _swarmNest._state.positionY;
-            foreach (int r in new[] { 150, 260, 380 })
+            foreach (int r in new[] { 150, 280, 420, 560 })
                 for (int k = 0; k < 16; k++)
                 {
-                    double a = k * Math.PI / 8 + (r == 260 ? Math.PI / 16 : 0);
+                    double a = k * Math.PI / 8 + (r == 280 || r == 560 ? Math.PI / 16 : 0);
                     short x = (short)(nx + Math.Cos(a) * r), y = (short)(ny + Math.Sin(a) * r);
                     bool open = true;
                     for (int oy = -16; oy <= 16 && open; oy += 16)
@@ -352,9 +398,10 @@ namespace InfServer.Script.GameType_Eol
         }
 
         /// <summary>
-        /// A swarm bug with nothing to fight: go to its own post (one bug a post) and hang round it; every 25-45 s a
-        /// different free post - roaming a little round the Queen, never piling into one spot. False = no posts
-        /// (the old patrol takes over).
+        /// A swarm bug with nothing to fight PATROLS round the Queen (2026-11-17, owner: "have them do patrol like moves,
+        /// so its not all just stuck in one place"): it walks to a free post, sniffs round it for 3-9 s, then moves on to
+        /// a free post nearby (120-380 px on) - a winding beat over all four rings, never two bugs on one post.
+        /// False = no posts (the old patrol takes over).
         /// </summary>
         public bool SwarmGuard(Bots.Bot b, int now)
         {
@@ -364,22 +411,29 @@ namespace InfServer.Script.GameType_Eol
             if (posts == null || posts.Count == 0)
                 return false;
             int idx, until;
-            if (!_swarmPostOf.TryGetValue(b, out idx) || idx >= posts.Count
-                || !_swarmPostUntil.TryGetValue(b, out until) || now - until >= 0)
+            if (!_swarmPostOf.TryGetValue(b, out idx) || idx >= posts.Count)
             {
-                HashSet<int> taken = new HashSet<int>();
-                foreach (KeyValuePair<Bots.Bot, int> kv in _swarmPostOf)
-                    if (kv.Key != b && kv.Key != null && !kv.Key.IsDead && !kv.Key.bCondemned)
-                        taken.Add(kv.Value);
-                List<int> free = new List<int>();
-                for (int i = 0; i < posts.Count; i++)
-                    if (!taken.Contains(i))
-                        free.Add(i);
-                idx = free.Count > 0 ? free[_arena._rand.Next(free.Count)] : _arena._rand.Next(posts.Count);
+                idx = PickSwarmPost(b, posts, -1);
                 _swarmPostOf[b] = idx;
-                _swarmPostUntil[b] = now + 25000 + _arena._rand.Next(20000);
+                _swarmPostUntil.Remove(b);
             }
             Helpers.ObjectState post = posts[idx];
+            if (Helpers.distanceTo(b._state, post) <= 56)
+            {   // at the post: look round a few seconds, then on to the next one
+                if (!_swarmPostUntil.TryGetValue(b, out until))
+                    _swarmPostUntil[b] = until = now + 3000 + _arena._rand.Next(6000);
+                if (now - until < 0)
+                {
+                    SwarmLoiter(b, post, now);
+                    return true;
+                }
+                idx = PickSwarmPost(b, posts, idx);
+                _swarmPostOf[b] = idx;
+                _swarmPostUntil.Remove(b);
+                post = posts[idx];
+            }
+            if (SwarmRescueIfStuck(b, post, now))
+                return true;
             if (Helpers.distanceTo(b._state, post) > 48)
             {
                 if (WideLineClear(b._state.positionX, b._state.positionY, post.positionX, post.positionY))
@@ -395,6 +449,209 @@ namespace InfServer.Script.GameType_Eol
             else
                 b.HoldPosition();   // (the natural idle shuffle - like a player waiting)
             return true;
+        }
+
+        /// <summary>
+        /// The next post on a bug's beat: a free one 120-380 px from the one it is at (so it walks on, not across the
+        /// map); none free nearby = any free post; none free at all = any post.
+        /// </summary>
+        int PickSwarmPost(Bots.Bot b, List<Helpers.ObjectState> posts, int from)
+        {
+            HashSet<int> taken = new HashSet<int>();
+            foreach (KeyValuePair<Bots.Bot, int> kv in _swarmPostOf)
+                if (kv.Key != b && kv.Key != null && !kv.Key.IsDead && !kv.Key.bCondemned)
+                    taken.Add(kv.Value);
+            List<int> near = new List<int>(), free = new List<int>();
+            for (int i = 0; i < posts.Count; i++)
+            {
+                if (taken.Contains(i) || i == from)
+                    continue;
+                free.Add(i);
+                if (from >= 0)
+                {
+                    double d = Helpers.distanceTo(posts[i], posts[from]);
+                    if (d >= 120 && d <= 380)
+                        near.Add(i);
+                }
+            }
+            if (near.Count > 0)
+                return near[_arena._rand.Next(near.Count)];
+            if (free.Count > 0)
+                return free[_arena._rand.Next(free.Count)];
+            return _arena._rand.Next(posts.Count);
+        }
+
+        readonly Dictionary<Bots.Bot, Helpers.ObjectState> _swarmLoiterAt = new Dictionary<Bots.Bot, Helpers.ObjectState>();
+        readonly Dictionary<Bots.Bot, int> _swarmLoiterNext = new Dictionary<Bots.Bot, int>();
+
+        /// <summary>At a post: small moves round it (a new spot 25-70 px out every 1.2-2.7 s), like an animal sniffing round.</summary>
+        void SwarmLoiter(Bots.Bot b, Helpers.ObjectState post, int now)
+        {
+            Helpers.ObjectState at;
+            int next;
+            if (!_swarmLoiterAt.TryGetValue(b, out at) || !_swarmLoiterNext.TryGetValue(b, out next) || now - next >= 0
+                || Helpers.distanceTo(at, post) > 90)
+            {
+                at = null;
+                for (int tries = 0; tries < 6 && at == null; tries++)
+                {
+                    double a = _arena._rand.NextDouble() * Math.PI * 2, r = 25 + _arena._rand.Next(45);
+                    short x = (short)(post.positionX + Math.Cos(a) * r), y = (short)(post.positionY + Math.Sin(a) * r);
+                    if (!_arena.getTile(x, y).Blocked && WideLineClear(b._state.positionX, b._state.positionY, x, y))
+                        at = new Helpers.ObjectState { positionX = x, positionY = y };
+                }
+                _swarmLoiterAt[b] = at ?? post;
+                _swarmLoiterNext[b] = now + 1200 + _arena._rand.Next(1500);
+                at = _swarmLoiterAt[b];
+            }
+            if (Helpers.distanceTo(b._state, at) > 14)
+                SteerStraight(b, at.positionX, at.positionY);
+            else
+                b.HoldPosition();
+        }
+
+        /// <summary>Whoever last hurt this bot, as a position (player, bot or machine), or null.</summary>
+        static Helpers.ObjectState HurtByState(Bots.Bot b)
+        {
+            object h = b?.LastHurtBy;
+            if (h is InfServer.Game.Player p)
+                return p.IsDead || p.IsSpectator ? null : p._state;
+            if (h is Vehicle v)
+                return v.IsDead || v.bCondemned ? null : v._state;
+            return null;
+        }
+
+        // ---------- leash + stuck rescue (2026-11-17, owner: "make sure they do not get stuck here and they go back to
+        // defending their queen properly. have a radius they stick around to defend") ----------
+
+        /// <summary>Swarm bugs fight anything inside this radius round the Queen; past it they break off and go back.</summary>
+        public const int SwarmLeashRadius = 750;
+        /// <summary>Once sent back, a bug keeps walking home until it is this close to the Queen.</summary>
+        const int SwarmLeashHomeRadius = 450;
+        /// <summary>
+        /// (2026-11-17, owner: "if they are attacked they do go out of the radius to attack the person and then they come
+        /// back") a bug hurt in the last 5 s goes after its attacker out to this far from the Queen, for up to 15 s after
+        /// the last hit - then it gives up and walks home.
+        /// </summary>
+        const int SwarmChaseRadius = 1500, SwarmChaseMs = 15000, SwarmHurtWindowMs = 5000;
+        readonly Dictionary<Bots.Bot, int> _swarmChaseUntil = new Dictionary<Bots.Bot, int>();
+        /// <summary>The choke the owner reported (tiles, A6): a bug found in it is moved straight back to a post.</summary>
+        static readonly short[][] SwarmChokeTiles = { new short[] { 145, 410 } };
+        const int SwarmChokeRadius = 10 * 16;
+
+        readonly HashSet<Bots.Bot> _swarmReturning = new HashSet<Bots.Bot>();
+        class StuckSample { public short X, Y; public int Since; }
+        readonly Dictionary<Bots.Bot, StuckSample> _swarmStuck = new Dictionary<Bots.Bot, StuckSample>();
+
+        /// <summary>
+        /// First in a swarm bug's poll after its deploy: true = it is out past the leash (or in the choke), so it was
+        /// sent back to its guard post this poll and must not chase anything.
+        /// </summary>
+        public bool SwarmLeash(Bots.Bot b, int now)
+        {
+            if (b == null || !IsSwarmTeam(b._team) || _swarmNest == null || _swarmNest.IsDead || b.IsDead)
+                return false;
+            short bx = b._state.positionX, by = b._state.positionY;
+            foreach (short[] c in SwarmChokeTiles)
+                if (Helpers.distanceTo(bx, by, TileRaw(c[0]), TileRaw(c[1])) <= SwarmChokeRadius)
+                {
+                    Helpers.ObjectState spot = FreeSwarmPostSpot(b);
+                    if (spot != null)
+                    {
+                        WarpBot(b, spot);
+                        _swarmReturning.Remove(b);
+                        _swarmStuck.Remove(b);
+                        return true;
+                    }
+                }
+            double d = Helpers.distanceTo(b._state, _swarmNest._state);
+            // attacked: go after the attacker (outside the leash too), within the chase radius and time
+            if (b.LastHurtBy != null && now - b.LastHurtTick < SwarmHurtWindowMs)
+            {
+                Helpers.ObjectState att = HurtByState(b);
+                if (att != null && Helpers.distanceTo(att, _swarmNest._state) <= SwarmChaseRadius)
+                    _swarmChaseUntil[b] = now + SwarmChaseMs;
+            }
+            int chaseUntil;
+            if (_swarmChaseUntil.TryGetValue(b, out chaseUntil))
+            {
+                if (now - chaseUntil < 0 && d <= SwarmChaseRadius)
+                {
+                    _swarmReturning.Remove(b);
+                    return false;   // (fight: its own combat code takes it to the attacker)
+                }
+                _swarmChaseUntil.Remove(b);
+                if (d > SwarmLeashHomeRadius)
+                    _swarmReturning.Add(b);   // chase over: all the way home
+            }
+            if (d > SwarmLeashRadius)
+                _swarmReturning.Add(b);
+            else if (d <= SwarmLeashHomeRadius)
+                _swarmReturning.Remove(b);
+            if (!_swarmReturning.Contains(b))
+                return false;
+            if (!SwarmGuard(b, now))
+            {   // (no posts: straight for the Queen)
+                Helpers.ObjectState q = new Helpers.ObjectState { positionX = _swarmNest._state.positionX, positionY = _swarmNest._state.positionY };
+                b.ApplyNavigationApproach(q, EolHqPatrol.MakeLineClearPendingSeek(b, () => q), new BotNavigateOptions
+                {
+                    RequeueMinMs = 1500,
+                    PathStartIndex = 0,
+                    Priority = PathPriority.Combat,
+                });
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// A bug on its way to its post that hasn't made 32 px of progress in 8 s is stuck (a choke, a green-physics
+        /// gap): it is moved to a free post. True = moved this poll.
+        /// </summary>
+        bool SwarmRescueIfStuck(Bots.Bot b, Helpers.ObjectState post, int now)
+        {
+            if (Helpers.distanceTo(b._state, post) <= 48)
+            {
+                _swarmStuck.Remove(b);
+                return false;
+            }
+            StuckSample s;
+            if (!_swarmStuck.TryGetValue(b, out s)
+                || Helpers.distanceTo(b._state.positionX, b._state.positionY, s.X, s.Y) >= 32)
+            {
+                _swarmStuck[b] = new StuckSample { X = b._state.positionX, Y = b._state.positionY, Since = now };
+                return false;
+            }
+            if (now - s.Since < 8000)
+                return false;
+            _swarmStuck.Remove(b);
+            Helpers.ObjectState spot = FreeSwarmPostSpot(b);
+            if (spot == null)
+                return false;
+            WarpBot(b, spot);
+            try { b.Navigation?.Clear(); } catch { }
+            Log.write(TLog.Normal, "[Eol] swarm bug {0} stuck at {1},{2} - back to a guard post.", b._id, s.X / 16, s.Y / 16);
+            return true;
+        }
+
+        /// <summary>An open spot at a guard post no other bug holds (the bug takes it as its post).</summary>
+        Helpers.ObjectState FreeSwarmPostSpot(Bots.Bot b)
+        {
+            List<Helpers.ObjectState> posts = SwarmPosts();
+            if (posts == null || posts.Count == 0)
+                return null;
+            HashSet<int> taken = new HashSet<int>();
+            foreach (KeyValuePair<Bots.Bot, int> kv in _swarmPostOf)
+                if (kv.Key != b && kv.Key != null && !kv.Key.IsDead && !kv.Key.bCondemned)
+                    taken.Add(kv.Value);
+            List<int> free = new List<int>();
+            for (int i = 0; i < posts.Count; i++)
+                if (!taken.Contains(i))
+                    free.Add(i);
+            int idx = free.Count > 0 ? free[_arena._rand.Next(free.Count)] : _arena._rand.Next(posts.Count);
+            _swarmPostOf[b] = idx;
+            _swarmPostUntil.Remove(b);   // (its look-round time starts when it is there)
+            Helpers.ObjectState p = posts[idx];
+            return findOpenWarpBot(_arena, p.positionX, p.positionY, 40, 20) ?? new Helpers.ObjectState { positionX = p.positionX, positionY = p.positionY };
         }
 
         /// <summary>The nest is not a machine: nobody can use it or take it over.</summary>

@@ -1595,7 +1595,7 @@ namespace InfServer.Game
                     //Forward to our script — returning false means the script owns kill routing/killfeed.
                     if (!exists("Player.BotKill") || (bool)callsync("Player.BotKill", false, from, bot))
                     {
-                        BroadcastPlayerKilledByBot(from, bot);
+                        BroadcastPlayerKilledByBot(from, bot, update.killerPlayerID);
 
                         //Spoof first then route only. Bots dont need rewards
                         update.type = Helpers.KillType.Computer;
@@ -1611,10 +1611,17 @@ namespace InfServer.Game
             {	//If he was killed by a computer vehicle..
                 if (update.type == Helpers.KillType.Computer)
                 {	//Get the related vehicle
-                    Computer cvehicle = _vehicles.getObjByID((ushort)update.killerPlayerID) as Computer;
+                    Vehicle kv = _vehicles.getObjByID((ushort)update.killerPlayerID);
+                    Computer cvehicle = kv as Computer;
                     if (cvehicle == null)
-                    {
-                        Log.write(TLog.Warning, "Player {0} was killed by unidentifiable computer vehicle.", from);
+                    {   // (2026-11-17, owner: "killed by unknown") a bot in a computer-type body (Alien Brute / Chief):
+                        // a bot kill like any other, with its name in the killfeed
+                        Bots.Bot cbot = kv as Bots.Bot;
+                        if (!exists("Player.BotKill") || (bool)callsync("Player.BotKill", false, from, cbot))
+                        {
+                            BroadcastPlayerKilledByBot(from, cbot, update.killerPlayerID);
+                            Helpers.Player_RouteKill(Players, update, from, 0, 0, 0, 0);
+                        }
                         return;
                     }
 

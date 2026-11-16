@@ -250,6 +250,7 @@ namespace InfServer.Protocol
 			update._lastPlayerRoutePosY = update._state.positionY;
 			update._hasPlayerRoutePos = true;
 			update._tickLastPlayerRoute = Environment.TickCount;
+			update._lastRoutedHealth = update._state.health;
 			update._wireVelOverride = false;
 		}
 
@@ -326,7 +327,8 @@ namespace InfServer.Protocol
 						bBot = false,
 						wirePlayerId = update._id
 					};
-					tu.CaptureBotPose(update);
+					// (2026-11-17, owner) the bot's own team sees its real health; enemies and spectators still a full bar
+					tu.CaptureBotPose(update, teamHealth: !player.IsSpectator && player._team == update._team);
 					player._client.send(tu);
 				}
 				else

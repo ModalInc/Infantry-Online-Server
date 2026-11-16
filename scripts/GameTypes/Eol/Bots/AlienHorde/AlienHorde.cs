@@ -367,6 +367,16 @@ namespace InfServer.Script.GameType_Eol
                 return false;
             }
 
+            // (2026-11-17, owner) the Alien Swarm stays round its Queen: past the leash a bug drops its chase and goes
+            // back to its guard post (and one caught in a choke is moved back) - Script_Eol.AlienSwarm.cs
+            if (_baseScript != null && _baseScript.SwarmLeash(this, now))
+            {
+                ClearActivePlayerTarget();
+                _target = null;
+                _bStrafe = false;
+                InLiveCombat = false;
+                return base.poll();
+            }
 
             if (EolBotPhysicsUtil.HandleBotUnstickPoll(
                     this, _state, now, _arena, _baseScript, steering, _movement.bCollision,

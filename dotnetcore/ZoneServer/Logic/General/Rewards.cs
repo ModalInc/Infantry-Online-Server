@@ -22,7 +22,14 @@ namespace InfServer.Logic
         {	//Does it have a valid owner?
             Player owner = comp._creator;
             if (owner == null)
+            {   // (2026-11-17, owner: "killed by unknown") an ownerless machine - a bot base turret, the Alien Queen:
+                // everyone sees what killed them, by name
+                string name = comp._type != null && !string.IsNullOrEmpty(comp._type.Name) ? comp._type.Name : "a turret";
+                foreach (Player p in victim._arena.Players)
+                    if (p != null)
+                        p.triggerMessage((byte)(victim._team == p._team ? 4 : 0), 500, String.Format("{0} killed by {1}", victim._alias, name));
                 return;
+            }
 
             //Calculate kill reward for the turret owner
             CfgInfo cfg = victim._server._zoneConfig;

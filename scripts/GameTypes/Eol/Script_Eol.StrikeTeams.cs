@@ -551,6 +551,8 @@ namespace InfServer.Script.GameType_Eol
             bot.ExtraArmorPercentBypassEnergy = HumanBotBypassEnergyPercent;
             if (bot._state != null && bot._state.health > 0 && bot._state.health < HumanBotHealth)
                 bot._state.health = HumanBotHealth;   // 75 / 80 HP classes (Black Ops, Infiltrator...) up to 100
+            if (bot._peakHealth < HumanBotHealth)
+                bot._peakHealth = HumanBotHealth;   // (2026-11-17) its full bar for the team's health display
         }
 
         /// <summary>Boards slash (the Shimmerboard runs its shimmer field); the Drop Pack fires its plasma bolts.</summary>

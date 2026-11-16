@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 using InfServer.Bots;
@@ -84,6 +84,25 @@ namespace InfServer.Script.GameType_Eol
                 return base.poll();
             IdleWatch(now);
 
+            // (2026-11-17) a medic called with H runs to that player even mid-fight (heals pulse once in reach)
+            if (_baseScript.IsSquadMedic(this) && _baseScript.SquadHealCaller(_team, now) != null)
+            {
+                Helpers.ObjectState call = _baseScript.MedicMoveTarget(this);
+                if (call != null && Helpers.distanceTo(_state, call) > 80)
+                {
+                    bool forceCall = now - _tickEliteNav > 1200;
+                    if (forceCall) _tickEliteNav = now;
+                    ApplyNavigationApproach(call, EolHqPatrol.MakeLineClearPendingSeek(this, () => call), new BotNavigateOptions
+                    {
+                        RequeueMinMs = 800,
+                        PathStartIndex = 0,
+                        ForceRequeue = forceCall,
+                        Priority = PathPriority.Combat,
+                    });
+                    return base.poll();
+                }
+            }
+
             bool hostile = BotShouldEngageInsteadOfIdle(now) || (_target != null && !_target.IsDead);
             if (hostile)
             {
@@ -119,6 +138,41 @@ namespace InfServer.Script.GameType_Eol
             if ((leader == null || leader == this) && _baseScript.SquadShouldRegroup(this, now))
             {
                 DriftAround(_state.positionX, _state.positionY, now);
+                return base.poll();
+            }
+
+            // (2026-11-17, owner: "follow should get the bots to loosely follow them ... a good angle on a base") each bot
+            // keeps its own spot round the player - behind and to the sides, 140-280 px out - and fights what it sees
+            InfServer.Game.Player lead = _baseScript.SquadFollowTarget(_team, now);
+            if (lead != null)
+            {
+                int fslot = Math.Abs(_id) % 6;
+                double pyaw = lead._state.yaw * 1.5 * Math.PI / 180.0;
+                double ang = pyaw + Math.PI + (fslot - 2.5) * 0.55;          // a fan behind the player
+                double dist = 140 + (fslot % 3) * 70;
+                short flx = (short)Math.Max(16, Math.Min(short.MaxValue - 16, lead._state.positionX + Math.Sin(ang) * dist));
+                short fly = (short)Math.Max(16, Math.Min(short.MaxValue - 16, lead._state.positionY - Math.Cos(ang) * dist));
+                if (BotWallAvoidance.IsImpassable(this, flx, fly))
+                {
+                    flx = lead._state.positionX;
+                    fly = lead._state.positionY;
+                }
+                double fdx = _state.positionX - flx, fdy = _state.positionY - fly;
+                if (fdx * fdx + fdy * fdy > 180.0 * 180.0)
+                {
+                    Helpers.ObjectState fdest = new Helpers.ObjectState { positionX = flx, positionY = fly };
+                    bool forceF = now - _tickEliteNav > 2000;
+                    if (forceF) _tickEliteNav = now;
+                    ApplyNavigationApproach(fdest, EolHqPatrol.MakeLineClearPendingSeek(this, () => fdest), new BotNavigateOptions
+                    {
+                        RequeueMinMs = 1200,
+                        PathStartIndex = 0,
+                        ForceRequeue = forceF,
+                        Priority = PathPriority.Combat,
+                    });
+                }
+                else
+                    DriftAround(flx, fly, now, followCentre: true);
                 return base.poll();
             }
 
