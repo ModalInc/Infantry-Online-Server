@@ -1992,6 +1992,7 @@ namespace InfServer.Script.GameType_Eol
             PollPackJumps(now);      // pack bots jump walls / jump away when hurt (Script_Eol.PackJumps.cs)
             PollMissingFlags(now);   // flags skipped while the zone was empty come up once players are in
             PollChokeRescue(now);    // bots wedged in a known choke (146,411) are moved out (Script_Eol.ChokeRescue.cs)
+            PollStuckRescue(now);    // (2026-11-17) any bot stuck anywhere: to a team mate / open ground (Script_Eol.StuckRescue.cs)
             PollAlienSwarm(now);    // the Alien Swarm nest (Script_Eol.AlienSwarm.cs)
             PollEliteSquads(now);   // local: two elite roaming squads
             PollStrikeTeams(now);   // local: three human-class strike teams

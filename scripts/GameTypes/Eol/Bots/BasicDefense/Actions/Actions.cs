@@ -82,7 +82,7 @@ namespace InfServer.Script.GameType_Eol
             if (EolBotBrain.TryEngageTurret(this, _baseScript, now))
                 return;
             // curious (not base guards): go and look where the fighting is
-            if (!EolHqPatrol.IsGuard(this) && EolBotBrain.TryInvestigate(this, _baseScript, now))
+            if (!EolHqPatrol.IsGuard(this) && EolBotBrain.TryInvestigate(this, _baseScript, now, vHq?._state, EolHqPatrol.HomeInvestigateRaw))
                 return;
             if (vHq == null)
                 return;

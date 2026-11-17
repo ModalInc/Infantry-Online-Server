@@ -183,8 +183,11 @@ namespace InfServer.Script.GameType_Eol
             EolBotBrain.Territory = _territoryFn;
             EolBotBrain.TerritoryPoint = _territoryPointFn;
             EolBotBrain.BufferEdge = _bufferEdgeFn;
+            if (_heldFn == null) _heldFn = b => ShipSummonHold(b) != null;
+            EolBotBrain.HeldBySummon = _heldFn;
         }
         Func<Bot, short, short, bool> _territoryFn;
+        Func<Bot, bool> _heldFn;
         Func<Bot, Random, Helpers.ObjectState> _territoryPointFn;
         static readonly Func<short, short, double> _bufferEdgeFn = (x, y) => BufferEdgeDistance(x, y);
     }

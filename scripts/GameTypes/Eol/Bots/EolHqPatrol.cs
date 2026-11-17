@@ -62,6 +62,25 @@ namespace InfServer.Script.GameType_Eol
     {
         // Outbound = real sector runs; return = mid ring (not the HQ/crash pad).
         // (2026-11-16e, owner: "base bots stay around their HQs - roam a little but semi close") was 1100-2600 / 550-1050
+        // (2026-11-17, owner: "the bot bases teams roam really far out. have them stay at their base but roam around in
+        // the same area. but then back to do patrols") a base-team bot further than HomeLeashRaw from its HQ breaks off
+        // and walks back (shooting on the way) until it's inside HomeBackRaw, then patrols again; it only goes to look
+        // at fighting within HomeInvestigateRaw of the HQ.
+        public const int HomeLeashRaw = 1100;
+        public const int HomeBackRaw = 700;
+        public const int HomeInvestigateRaw = 950;
+
+        /// <summary>Leash with hysteresis: true while the bot must head home (set past HomeLeashRaw, cleared inside HomeBackRaw).</summary>
+        public static bool UpdateHomeLeash(Bot bot, Vehicle hq, ref bool leashed)
+        {
+            if (bot?._state == null || hq?._state == null)
+                return leashed = false;
+            double d = Helpers.distanceTo(bot._state, hq._state);
+            if (d > HomeLeashRaw) leashed = true;
+            else if (d < HomeBackRaw) leashed = false;
+            return leashed;
+        }
+
         public const int OutboundMinRadiusRaw = 450;
         public const int OutboundMaxRadiusRaw = 950;
         public const int NearHqMinRadiusRaw = 160;
