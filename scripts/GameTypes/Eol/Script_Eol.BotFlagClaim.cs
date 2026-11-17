@@ -18,7 +18,10 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>Human player teams only — bot factions hold flags visually but never earn periodic payouts.</summary>
         bool TeamQualifiesForFlagRewards(Team team)
         {
-            return team != null && !IsManagedEolBotFactionTeam(team);
+            // (2026-11-18, owner: "if you are on a bot team and have flags, there is no rewards ... so the real human
+            // players get the rewards") a bot team with players on it is paid like any team - only its players get it
+            // (the payout loops over ActivePlayers); a bot team with nobody on it still gets nothing
+            return team != null && (!IsManagedEolBotFactionTeam(team) || team.ActivePlayerCount > 0);
         }
 
         /// <summary>
@@ -59,6 +62,47 @@ namespace InfServer.Script.GameType_Eol
         /// Active on-map flag belonging to <paramref name="team"/> — same rules as the client team list
         /// (bActive + team id), not only object reference.
         /// </summary>
+        /// <summary>
+        /// (2026-11-18, owner: "make sure the amount of flags they have is accurately captured in the team, yesterday i
+        /// saw ... 10 ... flags held, but it was not the case") a flag counts for its team only while it's in play: up and
+        /// lying in an open sector, or carried by a live player / bot that is in one. Flags left behind in a sector that
+        /// closed (radiation) kept their owner and were counted - and shown in the team list - forever.
+        /// </summary>
+        bool FlagInPlay(Arena.FlagState fs)
+        {
+            if (fs == null || !fs.bActive)
+                return false;
+            if (_eol == null)
+                return true;
+            if (fs.carrier != null)
+                return !fs.carrier.IsDead && fs.carrier._state != null && _eol.IsInAnyActiveSector(fs.carrier._state.positionX, fs.carrier._state.positionY);
+            return _eol.IsInAnyActiveSector(fs.posX, fs.posY);
+        }
+
+        int _tickOffSectorFlags;
+
+        /// <summary>Every 15 s: an owned flag lying outside the open sectors goes back to no owner, and every client is
+        /// told - so the team list's flag count (the client counts the flags' owners) is right too.</summary>
+        void PollOffSectorFlags(int now)
+        {
+            if (_arena == null || _arena._flags == null || _eol == null || now - _tickOffSectorFlags < 15000)
+                return;
+            _tickOffSectorFlags = now;
+            int cleared = 0;
+            foreach (Arena.FlagState fs in _arena._flags.Values)
+            {
+                if (fs == null || !fs.bActive || fs.team == null || fs.carrier != null)
+                    continue;
+                if (_eol.IsInAnyActiveSector(fs.posX, fs.posY))
+                    continue;
+                fs.team = null;
+                Helpers.Object_Flags(_arena.Players, fs);
+                cleared++;
+            }
+            if (cleared > 0)
+                Log.write(TLog.Normal, "[Eol] {0} flag(s) in closed sectors lost their owner (not in play).", cleared);
+        }
+
         static bool TeamOwnsArenaFlag(Team team, Arena.FlagState fs)
         {
             if (team == null || fs == null || !fs.bActive || fs.team == null)
