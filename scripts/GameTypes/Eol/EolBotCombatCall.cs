@@ -200,6 +200,26 @@ namespace InfServer.Script.GameType_Eol
             _combatCallsByTeam[team] = st;
         }
 
+        /// <summary>(2026-11-18) where the team's current fight is: the called target's position (or the call spot).</summary>
+        public bool TryGetCombatCallFightSpot(Team team, Bot helper, int now, out Helpers.ObjectState spot)
+        {
+            spot = null;
+            InfServer.Game.Player p; Vehicle v;
+            if (!TryGetCombatCallAssistTarget(team, helper, now, out p, out v, registerHelper: false))
+                return false;
+            if (p != null && p._state != null)
+                spot = new Helpers.ObjectState { positionX = p._state.positionX, positionY = p._state.positionY };
+            else if (v != null && v._state != null)
+                spot = new Helpers.ObjectState { positionX = v._state.positionX, positionY = v._state.positionY };
+            else
+            {
+                CombatCallState st;
+                if (!_combatCallsByTeam.TryGetValue(team, out st)) return false;
+                spot = new Helpers.ObjectState { positionX = st.FightX, positionY = st.FightY };
+            }
+            return true;
+        }
+
         public int GetCombatCallAssistRange(Bot bot)
         {
             return CombatCallAssistRange;
