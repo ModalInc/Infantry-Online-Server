@@ -122,7 +122,10 @@ namespace InfServer.Script.GameType_Eol
             if (follow != null && _target != null && (farBehind || Helpers.distanceTo(_target._state, follow._state) > FollowLeash))
                 ClearActivePlayerTarget();
 
-            bool hostile = !farBehind && (BotShouldEngageInsteadOfIdle(now) || (_target != null && !_target.IsDead));
+            // (2026-11-18, owner: "one bot ran in to fight and then bots just watched their team member get gunned down -
+            // make sure they all engage if one is engaging") a team mate's combat call pulls the whole squad in
+            bool assist = !farBehind && _baseScript.TryAcceptCombatCallAssist(_team, this, now);
+            bool hostile = !farBehind && (assist || BotShouldEngageInsteadOfIdle(now) || (_target != null && !_target.IsDead));
             if (hostile)
             {
                 seekAndDestroy(now);
@@ -131,6 +134,22 @@ namespace InfServer.Script.GameType_Eol
                 InLiveCombat = _target != null || InLiveCombat;
                 if (InLiveCombat)
                     return base.poll();
+                // (2026-11-18) helping but no shot yet (no line of sight): run at the fight until it can shoot
+                Helpers.ObjectState fight;
+                if (assist && _baseScript.TryGetCombatCallFightSpot(_team, this, now, out fight)
+                    && (follow == null || Helpers.distanceTo(fight, follow._state) <= FollowLeash))
+                {
+                    bool forceFight = now - _tickEliteNav > 1200;
+                    if (forceFight) _tickEliteNav = now;
+                    ApplyNavigationApproach(fight, EolHqPatrol.MakeLineClearPendingSeek(this, () => fight), new BotNavigateOptions
+                    {
+                        RequeueMinMs = 800,
+                        PathStartIndex = 0,
+                        ForceRequeue = forceFight,
+                        Priority = PathPriority.Combat,
+                    });
+                    return base.poll();
+                }
             }
 
             if (!farBehind && EolBotBrain.TryEngageTurret(this, _baseScript, now))
