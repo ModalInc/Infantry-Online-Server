@@ -30,7 +30,14 @@ namespace InfServer.Script.GameType_Eol
         /// (alien.blo AlienS, from the stationary Alien Chief 431) without its gun, 500 HP like an HQ, destroyable.
         /// </summary>
         const int SwarmNestVehId = 835;
+        /// <summary>(2026-11-17, owner: "if the alien queen can move around") the moving Queen: a bot on veh 836 (the
+        /// Predator's body, the Queen's HP / armour, BioBurst + Stomp; AS&D added as her misc gun) - Bots/AlienHorde/Queen.cs.
+        /// The standing 835 is only the fallback if she can't be spawned.</summary>
+        const ushort SwarmQueenBotVehId = 836;
+        const int SwarmQueenMiscItemId = 1397;   // AS&D: Alien Hot Spit + a Wasp Drone out each side
         public Vehicle SwarmNest { get { return _swarmNest; } }
+        /// <summary>Where the Queen came up - she wanders round it and never strays far.</summary>
+        public Helpers.ObjectState SwarmHome { get; private set; }
         public const int SwarmDefenders = 12;   // (2026-11-17, owner: "have the alien base team 12 instead"; was 10)
         public const int SwarmRewardCash = 31200, SwarmRewardExp = 6500,   /* (2026-11-17, owner; was 95k / 12k) */ SwarmRewardPoints = EolBotHqDestroyPointsPerPlayer;   // (2026-11-16f, owner: was 90k / 13k)
         const int SwarmReturnMs = 5 * 60 * 1000;
@@ -155,8 +162,8 @@ namespace InfServer.Script.GameType_Eol
             // keep 10 defenders (bugs that are still on their way through the cave count)
             int live = 0;   // (dead ones waiting to come back through the cave count: no extra bugs)
             foreach (Bots.Bot b in _arena.ActiveBots)
-                if (b != null && b._team == botTeamSwarm && !b.bCondemned && (!b.IsDead || b.bDropshipRespawnPending))
-                    live++;
+                if (b != null && b != _swarmNest && b._team == botTeamSwarm && !b.bCondemned && (!b.IsDead || b.bDropshipRespawnPending))
+                    live++;   // (2026-11-17: not the Queen herself - she's a bot now)
             if (live < SwarmDefenders && now - _swarmNextBugTick >= 0)
             {
                 bool opening = live < SwarmDefenders && _swarmOpening;
@@ -209,7 +216,8 @@ namespace InfServer.Script.GameType_Eol
                 _swarmNextTick = now + 60000;
                 return;
             }
-            _swarmNest = _arena.newVehicle(nestInfo, botTeamSwarm, null, site);
+            SwarmHome = new Helpers.ObjectState { positionX = site.positionX, positionY = site.positionY };
+            _swarmNest = SpawnSwarmQueen(site) ?? _arena.newVehicle(nestInfo, botTeamSwarm, null, site);
             if (_swarmNest == null)
             {
                 _swarmNextTick = now + 60000;
@@ -222,6 +230,25 @@ namespace InfServer.Script.GameType_Eol
             _arena.sendArenaMessage("&An Alien Queen has appeared! (" + Helpers.posToLetterCoord(site.positionX, site.positionY) + ")",
                 _config.flag.victoryWarningBong);
             Log.write(TLog.Normal, "[Eol] Alien swarm nest up at {0},{1}.", site.positionX, site.positionY);
+        }
+
+        /// <summary>The moving Queen as a bot (null: her vehicle isn't a Car in this zone - the standing one is used).</summary>
+        Vehicle SpawnSwarmQueen(Helpers.ObjectState site)
+        {
+            if (!(_arena._server._assets.getVehicleByID(SwarmQueenBotVehId) is VehInfo.Car))
+            {
+                Log.write(TLog.Warning, "[Eol] Alien Queen bot vehicle {0} missing / not a Car - the standing Queen is used.", SwarmQueenBotVehId);
+                return null;
+            }
+            AlienHorde q = _arena.newBot(typeof(AlienHorde), SwarmQueenBotVehId, botTeamSwarm, null, site, this, null) as AlienHorde;
+            if (q == null)
+                return null;
+            ItemInfo mi = _arena._server._assets.getItemByID(SwarmQueenMiscItemId);
+            WeaponController wm = new WeaponController(q._state, new WeaponController.WeaponSettings());
+            if (mi != null && wm.equip(mi)) { wm.Owner = q; EolBotBrain.SetMiscWeapon(q, wm); }
+            q.bRespawn = false;   // (she never comes back through the cave - killing her ends the swarm)
+            q.ShowHealthToAll = true;   // (owner: her HP bar shows to everyone - other aliens' still doesn't)
+            return q;
         }
 
         /// <summary>Vehicle.Death: the swarm's nest.</summary>

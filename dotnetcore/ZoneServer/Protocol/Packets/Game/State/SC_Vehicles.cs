@@ -56,8 +56,8 @@ namespace InfServer.Protocol
 					Write((byte)10);		//Sizeof
 
 					// bot HP is never shown (local 2026-11-14): a living bot reports full health
-					if (veh is InfServer.Bots.Bot && veh._state.health > 0 && veh._type.Hitpoints > 0)
-						Write((short)Math.Min(short.MaxValue, veh._type.Hitpoints));
+					if (veh is InfServer.Bots.Bot vb && !vb.ShowHealthToAll && veh._state.health > 0 && veh._type.Hitpoints > 0)
+						Write((short)Math.Min(short.MaxValue, veh._type.Hitpoints));   // (ShowHealthToAll: the Alien Queen's real bar)
 					else
 						Write(veh._state.health);
 					Write(veh._state.positionX);

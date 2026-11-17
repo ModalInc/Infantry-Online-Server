@@ -272,6 +272,10 @@ namespace InfServer.Script.GameType_Eol
             int now = Environment.TickCount;
             InLiveCombat = false;
 
+            // (2026-11-17) the moving Alien Queen has her own poll (Queen.cs)
+            if (_baseScript != null && _baseScript.IsSwarmNest(this))
+                return PollQueen(now);
+
             // (2026-11-16c) a swarm bug walking through the bug cave to its portal (Script_Eol.AlienSwarm.cs)
             if (_baseScript != null && _baseScript.PollSwarmDeploying(this, now))
                 return base.poll();

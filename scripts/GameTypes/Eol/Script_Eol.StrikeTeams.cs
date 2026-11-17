@@ -146,11 +146,15 @@ namespace InfServer.Script.GameType_Eol
         }
 
         /// <summary>The class the squad needs next: the first core role nobody has, else an extra fighter.</summary>
-        int NextSquadClass(List<RoamingAttacker> members)
+        int NextSquadClass(List<RoamingAttacker> members, Team team = null)
         {
             foreach (int role in SquadCoreRoles)
                 if (!members.Exists(m => MemberHasRole(m, role)))
                     return role == -1 ? PickLeastFieldedClass(StrikeOfficerClasses) : role;
+            // (2026-11-17) the classes the players picked ("change squad ...", Script_Eol.SquadClasses.cs) come first
+            int chosen = NextChosenClass(team, members);
+            if (chosen != 0)
+                return chosen;
             // a random fighting class the squad doesn't have yet (any, if it has them all)
             List<int> fresh = new List<int>();
             foreach (int c in SquadRandomClasses)
@@ -171,6 +175,7 @@ namespace InfServer.Script.GameType_Eol
             if (id == ClsMedic || id == ClsFieldSurgeon) return 100;
             if (IsSquadLeaderVehicle(id)) return 90;
             if (id == ClsEngineer || id == ClsChiefEngineer) return 80;
+            if (IsChosenClass(b)) return 50;   // (2026-11-17) a class the players picked goes after the random fighters
             if (id == ClsHeavy) return 30;
             if (id == ClsMarine) return 20;
             if (id == ClsInfantry) return 10;
@@ -345,13 +350,14 @@ namespace InfServer.Script.GameType_Eol
             int due;
             if (!_strikeNextSpawnTick.TryGetValue(team, out due))
             {
-                due = strength == 0 ? now : now + StrikeRespawnDelayMs;
+                due = strength == 0 ? now : now + SquadRefillDelay(team);
                 _strikeNextSpawnTick[team] = due;
             }
             if (now - due < 0)
                 return false;
 
             bool vehicleSquad = IsVehicleSquadTeam(team);
+            bool pickedClass = false;
             int cls;
             if (vehicleSquad)
             {
@@ -361,7 +367,10 @@ namespace InfServer.Script.GameType_Eol
                     if (!members.Exists(b => b._type != null && b._type.Id == v)) { cls = v; break; }
             }
             else
-                cls = NextSquadClass(members);   // commander, medic, heavy, marine, infantry, engineer, extras
+            {
+                cls = NextSquadClass(members, team);   // commander, medic, engineer, then the picked classes, then extras
+                pickedClass = cls != 0 && cls == NextChosenClass(team, members);
+            }
 
             // (2026-11-16) in the dropship, then through the portal (Script_Eol.Deploy.cs); fallback: the field
             if (DropshipBusy)
@@ -402,6 +411,8 @@ namespace InfServer.Script.GameType_Eol
                 _bots = new List<Bots.Bot>();
             _bots.Add(bot);
             roamBots[team]++;
+            if (pickedClass)
+                NoteSquadSwapSpawned(team);   // (2026-11-17) one more picked class in (Script_Eol.SquadClasses.cs)
 
             if (strength + 1 >= size)
                 _strikeNextSpawnTick.Remove(team);

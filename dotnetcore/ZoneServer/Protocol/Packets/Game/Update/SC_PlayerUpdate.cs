@@ -51,7 +51,8 @@ namespace InfServer.Protocol
 			snapHealth = v._state.health;
 			// Bot HP is never shown to players (local 2026-11-14 - like a real player, you can't read it):
 			// a living bot always reports full health; the death itself comes from the death packet.
-			if (v is InfServer.Bots.Bot && v._state.health > 0 && v._type != null && v._type.Hitpoints > 0)
+			// (2026-11-17) except a bot flagged ShowHealthToAll (the Alien Queen): everyone sees her real bar
+			if (v is InfServer.Bots.Bot pb && !pb.ShowHealthToAll && v._state.health > 0 && v._type != null && v._type.Hitpoints > 0)
 				snapHealth = (short)Math.Min(short.MaxValue, v._type.Hitpoints);
 			snapVelX = v._state.velocityX;
 			snapVelY = v._state.velocityY;

@@ -5662,7 +5662,7 @@ namespace InfServer.Script.GameType_Eol
             int CashShare = (int)((((float)baseCash) / 1000) * cfg.cash.sharePercent);
             int ExpShare = (int)((((float)baseExp) / 1000) * cfg.experience.sharePercent);
             int PointsShare = (int)((((float)basePoints) / 1000) * cfg.point.sharePercent);
-            int BtyShare = (int)((basePoints * (((float)cfg.bounty.percentToAssistBounty) / 1000)));
+            int BtyShare = EolLeechBounty(killer, basePoints, cfg);   // (2026-11-17) same leech as bot kills
 
             foreach (InfServer.Game.Player p in sharedCash)
             {
@@ -5731,9 +5731,7 @@ namespace InfServer.Script.GameType_Eol
                     continue;
 
                 if (!sentTo.Contains(p._id))
-                {   //Update the assist bounty
-                    p.Bounty += BtyShare;
-
+                {   // (assist bounty already given in the Point-radius loop above - 2026-11-17: not twice)
                     GrantEolScaledSharedKillRewards(p, update, victim, cashRewards, expRewards, pointRewards, killerPoints);
 
                     sentTo.Add(p._id);
@@ -6395,6 +6393,20 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>
         /// Calculates and rewards a players for a bot kill
         /// </summary>
+        /// <summary>
+        /// (2026-11-17, owner: "i want it to be around 550 bounty is leeched" then "more like 1250") the bounty
+        /// every team mate in the Point share radius gets from a kill (bot or player): 1250 when the killer has 30k, the
+        /// same ratio below (1250 / 30000 = ~4.17 % of the killer's bounty). Never less than the old share (1 % of the
+        /// kill's points), so a low-bounty killer's big kill still pays something.
+        /// </summary>
+        public const int EolLeechAt30k = 1250;
+        static int EolLeechBounty(InfServer.Game.Player killer, int basePoints, CfgInfo cfg)
+        {
+            int byRatio = (int)Math.Round(Math.Min(30000, Math.Max(0, killer.Bounty)) * (double)EolLeechAt30k / 30000);
+            int old = (int)(basePoints * (((float)cfg.bounty.percentToAssistBounty) / 1000));
+            return Math.Max(byRatio, old);
+        }
+
         static public void calculateBotKillRewards(Bots.Bot victim, InfServer.Game.Player killer)
         {
             CfgInfo cfg = killer._server._zoneConfig;
@@ -6478,7 +6490,9 @@ namespace InfServer.Script.GameType_Eol
             int cashShare = (int)((((float)baseCash) / 1000) * cfg.cash.sharePercent);
             int expShare = (int)((((float)baseExp) / 1000) * cfg.experience.sharePercent);
             int pointsShare = (int)((((float)basePoints) / 1000) * cfg.point.sharePercent);
-            int btyShare = (int)(basePoints * (((float)cfg.bounty.percentToAssistBounty) / 1000));
+            // (2026-11-17, owner: "everyone in the team in the vicinity gets the proper bty leech") the assist bounty: see
+            // EolLeechBounty (1250 at a 30k killer, same ratio below) - every team mate within the Point share radius.
+            int btyShare = EolLeechBounty(killer, basePoints, cfg);
 
             HashSet<InfServer.Game.Player> mates = new HashSet<InfServer.Game.Player>(inCash);
             mates.UnionWith(inExp);
@@ -6494,13 +6508,14 @@ namespace InfServer.Script.GameType_Eol
                     shareCash = addCash(p, shareCash);
                 p.Experience += shareExp;
                 p.AssistPoints += sharePoints;
-                if (inPoints.Contains(p) && btyShare > 0)
-                    p.Bounty += btyShare;
-                if (shareCash == 0 && shareExp == 0 && sharePoints == 0)
+                int shareBty = inPoints.Contains(p) && btyShare > 0 ? btyShare : 0;
+                if (shareBty > 0)
+                    p.Bounty += shareBty;
+                if (shareCash == 0 && shareExp == 0 && sharePoints == 0 && shareBty == 0)
                     continue;
                 p.triggerMessage(2, 500,
-                    String.Format("Assist: {0} (Cash={1} Exp={2} Points={3})",
-                    victimName, shareCash, shareExp, sharePoints));
+                    String.Format("Assist: {0} (Cash={1} Exp={2} Points={3} Bounty={4})",
+                    victimName, shareCash, shareExp, sharePoints, shareBty));
                 p.syncState();
             }
         }
@@ -6556,7 +6571,11 @@ namespace InfServer.Script.GameType_Eol
         public bool botDeath(Bots.Bot dead, InfServer.Game.Player killer, int weaponID)
         {
             // Rewards + death counter first so MaxDeaths / alien wave slots see the updated count.
-            if (killer != null && dead != null && dead._team != killer._team)
+            // (2026-11-17) the moving Alien Queen: her death ends the swarm and pays its reward (no bot-kill reward on top)
+            bool queenDied = dead != null && IsSwarmNest(dead);
+            if (queenDied)
+                OnSwarmNestDeath(dead, killer);
+            if (!queenDied && killer != null && dead != null && dead._team != killer._team)
             {
                 calculateBotKillRewards(dead, killer);
                 OnPlayerKilledBot(killer, dead);
