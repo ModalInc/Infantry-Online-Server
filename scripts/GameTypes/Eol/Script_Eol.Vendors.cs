@@ -59,6 +59,14 @@ namespace InfServer.Script.GameType_Eol
             { 93, HelmetSpecialistPrice }, { 94, HelmetSpecialistPrice }, { 1472, HelmetSpecialistPrice }, { 1340, HelmetSpecialistPrice },
             { 170, HelmetSpecialistPrice }, { 1338, HelmetSpecialistPrice }, { 1339, HelmetSpecialistPrice }, { 1341, HelmetSpecialistPrice },
             { 1342, HelmetSpecialistPrice }, { 188, HelmetSpecialistPrice },
+            // (2026-11-18) the INVENTORY helmets the pickups give (what is actually sold) - the ids above are the dropped
+            // pickups, so every helmet used to sell at the base price. Command: Captain, Lieutenant, Pirate Commander;
+            // specialists: Sergeant, Squad Leader, Field Surgeon, Chief Engineer (+ Bot Engineer), BlackOps, Drop Trooper,
+            // MPAC, NeuroTAC, Marine
+            { 1492, HelmetCommandPrice }, { 1505, HelmetCommandPrice }, { 2061, HelmetCommandPrice },
+            { 1497, HelmetSpecialistPrice }, { 1499, HelmetSpecialistPrice }, { 1504, HelmetSpecialistPrice }, { 1503, HelmetSpecialistPrice },
+            { 1501, HelmetSpecialistPrice }, { 1507, HelmetSpecialistPrice }, { 1502, HelmetSpecialistPrice }, { 1508, HelmetSpecialistPrice },
+            { 1506, HelmetSpecialistPrice },
         };
 
         /// <summary>

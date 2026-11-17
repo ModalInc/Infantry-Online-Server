@@ -283,6 +283,26 @@ namespace InfServer.Script.GameType_Eol
             return BotCombat.IsWallFor(arena._server._assets.Level, arena.getTile(rawX, rawY), type);
         }
 
+        /// <summary>(2026-11-18) no wall within RoomyRaw in 8 directions (and half of it): a patrol spot in the open, not
+        /// one tile off a wall where the bot ends up hugging it.</summary>
+        public const int RoomyRaw = 40;
+        public static bool IsRoomyForBot(Bot bot, short rawX, short rawY)
+        {
+            if (bot?._arena == null)
+                return false;
+            for (int k = 0; k < 8; k++)
+            {
+                double a = k * Math.PI / 4;
+                foreach (int r in new[] { RoomyRaw / 2, RoomyRaw })
+                {
+                    short sx = (short)(rawX + Math.Cos(a) * r), sy = (short)(rawY + Math.Sin(a) * r);
+                    if (BotWallAvoidance.IsImpassable(bot, sx, sy) || GroundWallAt(bot._arena, sx, sy, bot._type))
+                        return false;
+                }
+            }
+            return true;
+        }
+
         public static bool IsOpenForBot(Bot bot, short rawX, short rawY)
         {
             if (bot?._arena == null)
@@ -1348,6 +1368,10 @@ namespace InfServer.Script.GameType_Eol
                 // Open ground only (no wall within a tile) for the first 110 tries - no patrol points on walls.
                 if (i < 110 && !IsOpenForBot(bot, pX, pY))
                     continue;
+                // (2026-11-18, owner: "some human bots in bases are hugging the wall ... naturally patrolling around the
+                // base") and real room round it (no wall within ~2.5 tiles) for the first 90 tries
+                if (i < 90 && !IsRoomyForBot(bot, pX, pY))
+                    continue;
 
                 long fromBot = DistSq(botState.positionX, botState.positionY, pX, pY);
                 // Reject Dest one hop can "arrive" into (minFromBot + arrive guard).
@@ -1374,7 +1398,7 @@ namespace InfServer.Script.GameType_Eol
                         ? 0
                         : DistSq(botState.positionX, botState.positionY, along.positionX, along.positionY);
                     long need = preferAwayFromPeers ? minLeg : minFromBotSq;
-                    if (along != null && alongDist > arriveSq && alongDist >= need)
+                    if (along != null && alongDist > arriveSq && alongDist >= need && (i >= 90 || IsRoomyForBot(bot, along.positionX, along.positionY)))
                     {
                         pX = along.positionX;
                         pY = along.positionY;
