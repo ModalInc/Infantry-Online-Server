@@ -134,6 +134,8 @@ namespace InfServer.Script.GameType_Eol
             if (now - _tickSwarmPoll < 500)
                 return;
             _tickSwarmPoll = now;
+            if (_swarmActive)
+                PollSwarmRally(now);
 
             if (!_swarmActive)
             {
@@ -576,15 +578,51 @@ namespace InfServer.Script.GameType_Eol
         // defending their queen properly. have a radius they stick around to defend") ----------
 
         /// <summary>Swarm bugs fight anything inside this radius round the Queen; past it they break off and go back.</summary>
-        public const int SwarmLeashRadius = 750;
+        // (2026-11-18, owner: "it doesnt have to be a tight area either since the queen moves now. they can roam a bit")
+        public const int SwarmLeashRadius = 1100;   // (was 750)
         /// <summary>Once sent back, a bug keeps walking home until it is this close to the Queen.</summary>
-        const int SwarmLeashHomeRadius = 450;
+        const int SwarmLeashHomeRadius = 650;   // (was 450)
         /// <summary>
         /// (2026-11-17, owner: "if they are attacked they do go out of the radius to attack the person and then they come
         /// back") a bug hurt in the last 5 s goes after its attacker out to this far from the Queen, for up to 15 s after
         /// the last hit - then it gives up and walks home.
         /// </summary>
-        const int SwarmChaseRadius = 1500, SwarmChaseMs = 15000, SwarmHurtWindowMs = 5000;
+        // (2026-11-18, owner: "if someone shoots they should go out and kill them, and return back to the area") farther
+        // and longer (was 1500 px / 15 s), and the whole pack near the one hit goes (PollSwarmRally)
+        const int SwarmChaseRadius = 2800, SwarmChaseMs = 20000, SwarmHurtWindowMs = 5000;
+        const int SwarmRallyRadius = 1000;   // bugs this close to a hurt bug / the Queen go after the shooter too
+        int _tickSwarmRally;
+
+        /// <summary>
+        /// A bug or the Queen was just shot by a player / enemy bot: every bug within SwarmRallyRadius of it is let off the
+        /// leash to chase (SwarmChaseMs) and the shooter goes out as the swarm's combat call, so they target him even
+        /// before they see him. They walk home once the chase runs out.
+        /// </summary>
+        void PollSwarmRally(int now)
+        {
+            if (_swarmNest == null || _swarmNest.IsDead || now - _tickSwarmRally < 400)
+                return;
+            _tickSwarmRally = now;
+            List<Bots.Bot> swarm = new List<Bots.Bot>();
+            foreach (Bots.Bot b in _arena.ActiveBots)
+                if (b != null && b._team == botTeamSwarm && !b.IsDead && !b.bCondemned && b._state != null)
+                    swarm.Add(b);
+            foreach (Bots.Bot hurt in swarm)
+            {
+                if (hurt.LastHurtBy == null || now - hurt.LastHurtTick > 1500)
+                    continue;
+                InfServer.Game.Player byP = hurt.LastHurtBy as InfServer.Game.Player;
+                Vehicle byV = byP == null ? hurt.LastHurtBy as Vehicle : null;
+                Team byTeam = byP != null ? byP._team : byV != null ? byV._team : null;
+                Helpers.ObjectState att = HurtByState(hurt);
+                if (att == null || byTeam == botTeamSwarm || Helpers.distanceTo(att, _swarmNest._state) > SwarmChaseRadius)
+                    continue;
+                PublishCombatCall(botTeamSwarm, hurt, byP, byV, now);
+                foreach (Bots.Bot b in swarm)
+                    if (b != _swarmNest && Helpers.distanceTo(b._state, hurt._state) <= SwarmRallyRadius)
+                        _swarmChaseUntil[b] = now + SwarmChaseMs;
+            }
+        }
         readonly Dictionary<Bots.Bot, int> _swarmChaseUntil = new Dictionary<Bots.Bot, int>();
         /// <summary>The choke the owner reported (tiles, A6): a bug found in it is moved straight back to a post.</summary>
         static readonly short[][] SwarmChokeTiles = { new short[] { 145, 410 } };

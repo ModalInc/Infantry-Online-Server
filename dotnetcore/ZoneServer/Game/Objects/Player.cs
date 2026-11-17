@@ -323,8 +323,10 @@ namespace InfServer.Game
         {
             activeUtilities = new List<ItemInfo.UtilityItem>();
             foreach (ushort utility in equip)
-            {
-                activeUtilities.Add(_server._assets.getItemByID(utility) as ItemInfo.UtilityItem);
+            {   // (2026-11-18) an item that no longer exists in the zone (removed armour) is skipped, not added as null
+                ItemInfo.UtilityItem u = _server._assets.getItemByID(utility) as ItemInfo.UtilityItem;
+                if (u != null)
+                    activeUtilities.Add(u);
             }
         }
 
