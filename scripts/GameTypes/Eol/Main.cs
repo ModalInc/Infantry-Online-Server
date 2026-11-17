@@ -1344,7 +1344,7 @@ namespace InfServer.Script.GameType_Eol
         }
 
         /// <summary>True if any active team currently owns an on-map flag (periodic payout only runs when this is true at cycle end).</summary>
-        static bool AnyActiveTeamOwnsArenaFlag(Arena arena)
+        bool AnyActiveTeamOwnsArenaFlag(Arena arena)
         {
             if (arena == null || arena._flags == null)
                 return false;
@@ -1352,11 +1352,11 @@ namespace InfServer.Script.GameType_Eol
             {
                 if (fs == null || !fs.bActive || fs.team == null)
                     continue;
-                if (IsBotFactionTeamForFlagRewards(fs.team))
-                    continue;
+                if (IsBotFactionTeamForFlagRewards(fs.team) && fs.team.ActivePlayerCount == 0)
+                    continue;   // (2026-11-18: a bot team with players on it counts - its players get the reward)
                 foreach (Team t in arena.ActiveTeams)
                 {
-                    if (t != null && TeamOwnsArenaFlag(t, fs))
+                    if (t != null && TeamOwnsArenaFlag(t, fs) && FlagInPlay(fs))
                         return true;
                 }
             }
@@ -1393,7 +1393,7 @@ namespace InfServer.Script.GameType_Eol
                 bool holds = false;
                 foreach (Arena.FlagState fs in _arena._flags.Values)
                 {
-                    if (!TeamOwnsArenaFlag(t, fs))
+                    if (!TeamOwnsArenaFlag(t, fs) || !FlagInPlay(fs))
                         continue;
                     holds = true;
                     break;
@@ -1991,6 +1991,7 @@ namespace InfServer.Script.GameType_Eol
             PollEngineerCharge(now); // squad Chief Engineers charge low-energy team mates (Script_Eol.EngineerOrders.cs)
             PollPackJumps(now);      // pack bots jump walls / jump away when hurt (Script_Eol.PackJumps.cs)
             PollMissingFlags(now);   // flags skipped while the zone was empty come up once players are in
+            PollOffSectorFlags(now); // (2026-11-18) flags left lying in a closed sector lose their owner (Script_Eol.BotFlagClaim.cs)
             PollChokeRescue(now);    // bots wedged in a known choke (146,411) are moved out (Script_Eol.ChokeRescue.cs)
             PollStuckRescue(now);    // (2026-11-17) any bot stuck anywhere: to a team mate / open ground (Script_Eol.StuckRescue.cs)
             PollAlienSwarm(now);    // the Alien Swarm nest (Script_Eol.AlienSwarm.cs)
@@ -5482,7 +5483,7 @@ namespace InfServer.Script.GameType_Eol
 
                 foreach (Arena.FlagState fs in _arena._flags.Values)
                 {
-                    if (!TeamOwnsArenaFlag(rewardees, fs) || fs.flag == null)
+                    if (!TeamOwnsArenaFlag(rewardees, fs) || fs.flag == null || !FlagInPlay(fs))   // (2026-11-18: only flags in play count)
                         continue;
 
                     flagsOwned++;
