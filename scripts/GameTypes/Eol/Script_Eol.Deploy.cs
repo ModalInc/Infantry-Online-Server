@@ -324,6 +324,7 @@ namespace InfServer.Script.GameType_Eol
         {
             if (bot == null || at == null || bot.IsDead || _arena == null)
                 return;
+            at = OutsideNoSpawnBuilding(at);   // (2026-11-17) never into a no-spawn building (Script_Eol.NoSpawnBuildings.cs)
             putVehicleAtSpawnLocation(bot, at);
             // (2026-11-16d, owner: "lots of invisible bots fighting") the old teleport sent the body (SC_Vehicles)
             // straight to the players at the landing and marked them as having it - a client that had no player-list

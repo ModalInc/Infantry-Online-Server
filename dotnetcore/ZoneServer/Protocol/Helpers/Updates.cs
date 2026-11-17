@@ -258,6 +258,25 @@ namespace InfServer.Protocol
 		/// Ensure each observer has PlayerEnter + Vehicles (human base-vehicle layout),
 		/// then send player-style pose packets (never bBot).
 		/// </summary>
+		/// <summary>How long after firing a bot's cloak / stealth stays off (a player's breaks the same way).</summary>
+		public const int BotCloakBreakMs = 3000;
+
+		/// <summary>The active utilities to send for a bot (null = none); cloak / stealth ones left out while it's firing.</summary>
+		static List<ItemInfo.UtilityItem> BotWireUtilities(Bot b)
+		{
+			List<ItemInfo.UtilityItem> src = b?._activeEquip;
+			if (src == null)
+				return null;
+			List<ItemInfo.UtilityItem> snap;
+			lock (src)
+				snap = new List<ItemInfo.UtilityItem>(src);
+			if (snap.Count == 0)
+				return null;
+			if (b.LastShotTick != 0 && Environment.TickCount - b.LastShotTick < BotCloakBreakMs)
+				snap.RemoveAll(u => u != null && (u.cloakDistance > 0 || u.stealthDistance > 0));
+			return snap.Count > 0 ? snap : null;
+		}
+
 		static void RouteBotAsPlayerToAudience(Bot update, List<Player> audience, int updateTick)
 		{
 			if (audience == null || audience.Count == 0)
@@ -267,6 +286,9 @@ namespace InfServer.Protocol
 				update._alias = "Bot " + update._id;
 
 			short itemID = (short)update._itemUseID;
+			// (2026-11-17, owner: cloaked Infiltrators / Black Ops / SciOps) the bot's switched-on utilities go out like a
+			// player's, so clients apply cloak / stealth / shimmer; a bot that fired in the last 3 s is out of stealth
+			List<ItemInfo.UtilityItem> wireUtils = BotWireUtilities(update);
 			bool onNamelist = Arena.ShouldBotAppearOnNamelist(update);
 			bool alreadyNamelist = update._arena != null
 				&& update._arena.IsBotNamelistAdvertised(update._id);
@@ -322,7 +344,7 @@ namespace InfServer.Protocol
 						player = null,
 						vehicle = update,
 						itemID = itemID,
-						activeUtilities = null,
+						activeUtilities = wireUtils,
 						activeEquip = null,
 						bBot = false,
 						wirePlayerId = update._id
@@ -339,7 +361,7 @@ namespace InfServer.Protocol
 						player = null,
 						vehicle = update,
 						itemID = itemID,
-						activeUtilities = null,
+						activeUtilities = wireUtils,
 						activeEquip = null,
 						bBot = false,
 						wirePlayerId = update._id

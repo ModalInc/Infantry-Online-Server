@@ -66,7 +66,7 @@ namespace InfServer.Script.GameType_Eol
 
         IEnumerable<int> AllCuratedGuns()
         {
-            foreach (int[] pool in new[] { PoolRifle, PoolSmg, PoolShotgun, PoolCarbine, PoolHeavy, PoolPlasma, PoolPlasmaSmg, PoolGauss, PoolLaser, PoolProjector, PoolPistol, AssassinClose, AssassinFar, Grenades })
+            foreach (int[] pool in new[] { PoolRifle, PoolSmg, PoolShotgun, PoolCarbine, PoolHeavy, PoolPlasma, PoolPlasmaSmg, PoolGauss, PoolLaser, PoolProjector, PoolPistol, AssassinClose, AssassinFar, Grenades, PoolProton })
                 foreach (int id in pool)
                     yield return id;
             yield return ItmKamenevAPmk2;

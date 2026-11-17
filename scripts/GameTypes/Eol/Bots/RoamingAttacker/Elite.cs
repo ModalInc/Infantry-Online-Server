@@ -84,11 +84,20 @@ namespace InfServer.Script.GameType_Eol
                 return base.poll();
             IdleWatch(now);
 
+            // (2026-11-17) the Chief Engineer on a build order ("mg here" ...) runs to the spot and builds it
+            if (_baseScript.PollEngineerBuild(this, now))
+                return base.poll();
+
             // (2026-11-17) a medic called with H runs to that player even mid-fight (heals pulse once in reach)
             if (_baseScript.IsSquadMedic(this) && _baseScript.SquadHealCaller(_team, now) != null)
             {
                 Helpers.ObjectState call = _baseScript.MedicMoveTarget(this);
-                if (call != null && Helpers.distanceTo(_state, call) > 80)
+                if (call == null || Helpers.distanceTo(_state, call) <= 80)
+                {   // (2026-11-17, owner: "comes and actually heals you") there: it stays beside the caller while it heals
+                    // (it used to go back to fighting and drift out of heal range)
+                    HoldPosition();
+                    return base.poll();
+                }
                 {
                     bool forceCall = now - _tickEliteNav > 1200;
                     if (forceCall) _tickEliteNav = now;
@@ -113,6 +122,10 @@ namespace InfServer.Script.GameType_Eol
             }
 
             if (EolBotBrain.TryEngageTurret(this, _baseScript, now))
+                return base.poll();
+
+            // (2026-11-17) a Chief Engineer out of a fight repairs its team's damaged turrets / HQ nearby
+            if (_baseScript.PollEngineerRepair(this, now))
                 return base.poll();
 
             // (2026-11-16b) a squad medic out of a fight goes to whoever is hurt, or stays behind its player

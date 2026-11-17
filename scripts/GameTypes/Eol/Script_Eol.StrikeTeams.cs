@@ -64,6 +64,11 @@ namespace InfServer.Script.GameType_Eol
         static readonly int[] PoolGauss = { 1031, 1038, 1141, 1114, 1533 };
         static readonly int[] PoolLaser = { 1103, 1157, 1607 };
         static readonly int[] PoolProjector = { 1146, 1126, 1000 };
+        /// <summary>(2026-11-17, owner: "blackops sometimes have proton sphere") Black Ops energy weapon (skill 13 = BlackOps).</summary>
+        const int ItmProtonSphere = 1623;
+        /// <summary>Stealth utilities: Improved Cloak (Infiltrator), Blackout Field (Black Ops suit), Cloaking Unit (SciOps).</summary>
+        const int ItmImprovedCloak = 43, ItmBlackoutField = 79, ItmCloakingUnit = 5;
+        static readonly int[] PoolProton = { ItmProtonSphere };
 
         public Team botTeamStrike1;
         readonly List<Team> _mixedTeams = new List<Team>();
@@ -124,7 +129,14 @@ namespace InfServer.Script.GameType_Eol
         /// (one of the officer classes), medic, heavy weapons, marine, infantry, engineer - then fighters of any
         /// other class for the 7th / 8th place.
         /// </summary>
-        static readonly int[] SquadCoreRoles = { -1, ClsMedic, ClsHeavy, ClsMarine, ClsInfantry, ClsEngineer };
+        // (2026-11-17, owner: "medic, command and engy always there, the other 3 a class at random ... so it feels much
+        // more alive") the three fixed roles; the rest of the squad is drawn from SquadRandomClasses, no class twice
+        static readonly int[] SquadCoreRoles = { -1, ClsMedic, ClsChiefEngineer };
+        static readonly int[] SquadRandomClasses =
+        {
+            ClsInfantry, ClsHeavy, ClsMarine, ClsJumpTrooper, ClsInfiltrator, ClsBioChem, ClsMPAC,
+            ClsConscript, ClsNeuroTAC, ClsSciOps, ClsBlackOps,
+        };
 
         bool MemberHasRole(Bots.Bot b, int role)
         {
@@ -139,7 +151,12 @@ namespace InfServer.Script.GameType_Eol
             foreach (int role in SquadCoreRoles)
                 if (!members.Exists(m => MemberHasRole(m, role)))
                     return role == -1 ? PickLeastFieldedClass(StrikeOfficerClasses) : role;
-            return PickLeastFieldedClass(StrikeMemberClasses);
+            // a random fighting class the squad doesn't have yet (any, if it has them all)
+            List<int> fresh = new List<int>();
+            foreach (int c in SquadRandomClasses)
+                if (!members.Exists(m => m._type != null && m._type.Id == c))
+                    fresh.Add(c);
+            return fresh.Count > 0 ? fresh[_arena._rand.Next(fresh.Count)] : SquadRandomClasses[_arena._rand.Next(SquadRandomClasses.Length)];
         }
 
         /// <summary>
@@ -161,7 +178,7 @@ namespace InfServer.Script.GameType_Eol
         }
 
         /// <summary>(2026-11-16f, owner) a squad with players on it is 5 at most - players and bots together.</summary>
-        public const int SquadMaxWithPlayers = 5;
+        public const int SquadMaxWithPlayers = 6;   // (2026-11-17, owner: teams of 6, players and bots together)
 
         /// <summary>Roaming squads players may join (pirate elite squad, vehicle squad, human squads).</summary>
         public bool IsJoinableSquadTeam(Team t)
@@ -338,8 +355,8 @@ namespace InfServer.Script.GameType_Eol
             int cls;
             if (vehicleSquad)
             {
-                // one of each: Deathboard, Shimmerboard, Drop Pack
-                cls = VehicleSquadVehIds[0];
+                // one of each: Deathboard, Shimmerboard, Drop Pack - and (2026-11-17, owner) a 4th: a SciOps on a Flight Pack
+                cls = VehFlightPack;
                 foreach (int v in VehicleSquadVehIds)
                     if (!members.Exists(b => b._type != null && b._type.Id == v)) { cls = v; break; }
             }
@@ -373,7 +390,7 @@ namespace InfServer.Script.GameType_Eol
             if (_strikeSkill.TryGetValue(team, out skill) && skill != null)
                 bot.SkillModeOverride = skill;
             if (vehicleSquad)
-                ApplyVehicleSquadLoadout(bot, cls);
+                ApplyVehicleSquadLoadout(bot, cls, sciOpsPack: cls == VehFlightPack);
             else
                 ApplyHumanLoadout(bot, cls, team);
             if (viaDropship)
@@ -485,7 +502,7 @@ namespace InfServer.Script.GameType_Eol
                     break;
                 case ClsBlackOps:
                     close = r.Next(2) == 0 ? Pick(PoolPlasmaSmg) : Pick(PoolGauss);
-                    far = r.Next(2) == 0 ? Pick(PoolPlasma) : Pick(PoolSmg);
+                    far = r.NextDouble() < 0.35 ? ItmProtonSphere : r.Next(2) == 0 ? Pick(PoolPlasma) : Pick(PoolSmg);
                     break;
                 case ClsMarine:
                     close = Pick(PoolShotgun);
@@ -556,20 +573,26 @@ namespace InfServer.Script.GameType_Eol
         }
 
         /// <summary>Boards slash (the Shimmerboard runs its shimmer field); the Drop Pack fires its plasma bolts.</summary>
-        void ApplyVehicleSquadLoadout(Bots.Bot bot, int veh)
+        /// <summary>(2026-11-17, owner: "sciops is a flightpack") the vehicle squad's 4th: a SciOps on a Flight Pack (106) - the pink Proton Beamer and the Plasma Bomb.</summary>
+        const int ItmProtonBeamer = 1125, ItmPlasmaBomb = 120, VehFlightPack = 106;
+
+        void ApplyVehicleSquadLoadout(Bots.Bot bot, int veh, bool sciOpsPack = false)
         {
             try
             {
                 int gun = veh == VehDropPack ? ItmDropPackBolt : ItmDeathboardSlash;
-                EquipCloseFar(bot, gun, gun);
+                if (sciOpsPack)
+                    EquipCloseFar(bot, ItmProtonBeamer, ItmProtonBeamer);
+                else
+                    EquipCloseFar(bot, gun, gun);
                 // the board / pack itself passes all damage to its rider (100 % reduction) - a bot IS the vehicle,
-                // so it was invincible: take hits with the rider's armour (Jump Trooper), like a player would
-                bot.ArmorSource = _arena._server._assets.getVehicleByID(ClsJumpTrooper);
+                // so it was invincible: take hits with the rider's armour (Jump Trooper / SciOps), like a player would
+                bot.ArmorSource = _arena._server._assets.getVehicleByID(sciOpsPack ? ClsSciOps : ClsJumpTrooper);
                 MakeAsToughAsPirates(bot);
                 if (veh == VehShimmerboard)
                     SetUtility(bot, ItmVehicleShimmer);
                 // a few grenades every life, thrown at mid range now and then (6-11 s apart)
-                ItemInfo g = Itm(Grenades[_arena._rand.Next(Grenades.Length)]);
+                ItemInfo g = Itm(sciOpsPack ? ItmPlasmaBomb : Grenades[_arena._rand.Next(Grenades.Length)]);
                 WeaponController grenade = null;
                 if (g != null)
                 {
@@ -599,6 +622,16 @@ namespace InfServer.Script.GameType_Eol
 
                 // Suit SuperCharger on everyone (a free utility slot, switched on)
                 SetUtility(bot, ItmSuperCharger);
+
+                // (2026-11-17, owner) stealth classes: Infiltrators always run the Improved Cloak, Black Ops the
+                // Blackout Field (the Black Ops suit - seen only within 20 px), and some SciOps a Cloaking Unit. Firing
+                // drops the cloak for 3 s, like a player's (engine: Helpers.BotWireUtilities)
+                if (cls == ClsInfiltrator)
+                    SetUtility(bot, ItmImprovedCloak);
+                else if (cls == ClsBlackOps)
+                    SetUtility(bot, ItmBlackoutField);
+                else if (cls == ClsSciOps && r.NextDouble() < 0.4)
+                    SetUtility(bot, ItmCloakingUnit);
 
                 // ~35 % carry 2-3 grenades; ~40 % of riflemen open with a clip of the Kamenev AP mk2
                 WeaponController grenade = null, opener = null;
