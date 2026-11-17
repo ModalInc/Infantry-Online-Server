@@ -806,7 +806,14 @@ namespace InfServer.Bots
             LvlInfo.Tile t = _arena._tiles[ty * _arena._levelWidth + tx];
             // (overhead / light-blue physics: walk under it; boards and packs fly over low green - BotCombat.IsWallFor)
             if (BotCombat.IsWallFor(_arena._server._assets.Level, t, _type))
-                return true;
+            {
+                // (2026-11-17) in the air (a pack's jump): over any physics lower than the bot is right now
+                short[] high = _arena._server._assets.Level.PhysicsHigh;
+                bool over = _state != null && _state.positionZ > 0 && high != null && t.Physics < high.Length
+                    && high[t.Physics] < _state.positionZ;
+                if (!over)
+                    return true;
+            }
             return IsSolidObjectAt(x, y);
         }
 

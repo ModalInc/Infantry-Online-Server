@@ -37,7 +37,9 @@ namespace InfServer.Script.GameType_Eol
         }
         readonly List<PendingSummon> _pendingSummons = new List<PendingSummon>();
 
-        class SquadCall { public InfServer.Game.Player Player; public int Until; }
+        class SquadCall { public InfServer.Game.Player Player; public int Until; public int HealsLeft; }
+        /// <summary>(2026-11-17, owner: "not overpowered ... only a few") an H call gives the caller this many heals.</summary>
+        public const int SquadHealCallHeals = 3;
         readonly Dictionary<Team, SquadCall> _squadHealCall = new Dictionary<Team, SquadCall>();
         readonly Dictionary<Team, SquadCall> _squadFollow = new Dictionary<Team, SquadCall>();
 
@@ -165,6 +167,9 @@ namespace InfServer.Script.GameType_Eol
                 return OrderFollow;
             if (t == "stop" || t == "unfollow" || t == "stop follow" || t == "stop following")
                 return OrderStop;
+            int build = ParseBuildOrder(t);   // (2026-11-17) "mg here" ... "hq here" for the squad's Chief Engineer
+            if (build != 0)
+                return build;
             return 0;
         }
 
@@ -193,6 +198,16 @@ namespace InfServer.Script.GameType_Eol
             int next;
 
             // stop / follow need no cooldown (they cost nothing)
+            if (order >= OrderRemoveBase)
+            {   // (2026-11-17) "remove mg" ... : the engineer dismantles the nearest one
+                HandleRemoveOrder(player, order - OrderRemoveBase);
+                return;
+            }
+            if (order >= OrderBuildBase)
+            {   // (2026-11-17) engineer build orders have their own 2-minute timer (Script_Eol.EngineerOrders.cs)
+                HandleBuildOrder(player, order - OrderBuildBase);
+                return;
+            }
             if (order == OrderStop)
             {
                 bool was = _squadFollow.Remove(team) | _squadDefend.Remove(team);
@@ -237,7 +252,9 @@ namespace InfServer.Script.GameType_Eol
                     player.sendMessage(-1, "Squad: no medic in the squad right now.");
                     return;
                 }
-                _squadHealCall[team] = new SquadCall { Player = player, Until = now + SquadHealCallMs };
+                _squadHealCall[team] = new SquadCall { Player = player, Until = now + SquadHealCallMs, HealsLeft = SquadHealCallHeals };
+                foreach (RoamingAttacker m in medics)
+                    _medicNextPulse.Remove(m);   // (2026-11-17: heals as soon as it's there - no waiting out its last pulse)
                 int warped = 0;
                 foreach (RoamingAttacker m in medics)
                     if (IsDeploying(m) || Helpers.distanceTo(m._state, player._state) > SquadHealWarpBeyond)
@@ -401,8 +418,9 @@ namespace InfServer.Script.GameType_Eol
                         if (b != null && b._team == t && !b.IsDead && !b.bCondemned) { from = b; break; }
                 string name = from != null ? from._alias : t._name;
                 Helpers.Player_RouteChatRaw(t, name, "S for S", 0, Helpers.Chat_Type.Team);
-                Helpers.Player_RouteChatRaw(t, name, "Support ready! @ nme = we come attack with you, @ home = we come defend with you, S / X = summon you", 0, Helpers.Chat_Type.Team);
+                Helpers.Player_RouteChatRaw(t, name, "Support ready! @ nme = we come attack with you, @ home = we come defend with you", 0, Helpers.Chat_Type.Team);
                 Helpers.Player_RouteChatRaw(t, name, "H = medic heals you, follow = we follow you, stop = back on the attack", 0, Helpers.Chat_Type.Team);
+                Helpers.Player_RouteChatRaw(t, name, "Engineer: mg / plasma / rocket / rocket ap / sentry / hq here = I build it (every 30 s), remove mg etc = I dismantle it", 0, Helpers.Chat_Type.Team);
             }
         }
 

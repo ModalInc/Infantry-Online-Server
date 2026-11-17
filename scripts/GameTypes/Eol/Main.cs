@@ -52,7 +52,7 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>Per-player payout when the killer team destroys a defense bot HQ (469).</summary>
         public const int EolBotHqDestroyCashPerPlayer = 80000;   // (2026-11-15, owner: 80k cash / 12k xp per base kill)
         public const int EolBotHqDestroyExpPerPlayer = 12000;
-        public const int EolBotHqDestroyPointsPerPlayer = 750;
+        public const int EolBotHqDestroyPointsPerPlayer = 5000;   // (2026-11-17, owner: was 750; the Alien Queen uses this too)
         /// <summary>Lifetime <see cref="InfServer.Game.Player.ExperienceTotal"/> below this gets a 1.5× cash/exp/points bonus.</summary>
         public const int EolRewardScaleHighCutoffExp = 75000;
         /// <summary>Lifetime exp at or above this is 1.0×; between the two cutoffs is 1.25×.</summary>
@@ -462,6 +462,17 @@ namespace InfServer.Script.GameType_Eol
         /// </summary>
         Team CreateAndRegisterBotTeam(string name)
         {
+            // (2026-11-17, owner: "each human bot team has different jacket colors, most have the same") a bot team
+            // whose name is a .cfg team (TeamInfo14-22) uses that team: its .cfg Colors are the jacket colour. A team
+            // made up here sat past the .cfg's 50 teams, so every one of them got the same default colours.
+            Team cfgTeam = _arena.getTeamByName(name);
+            if (cfgTeam != null)
+            {
+                cfgTeam._password = "jojotheClown";
+                cfgTeam._owner = null;
+                cfgTeam._isPrivate = false;
+                return cfgTeam;
+            }
             Team team = new Team(_arena, _arena._server);
             team._name = name;
             // Must assign id from current Teams.Count then createTeam before the next faction —
@@ -1972,8 +1983,13 @@ namespace InfServer.Script.GameType_Eol
             Bots.Bot.DeathDropResolver = _helmetDropFn;   // pirate / class helmets on death
             PrepareNewBots(now);    // 50 % more armour + spawn protection (Script_Eol.Deploy.cs)
             PollSquadCommands(now); // squad team-chat orders S / X / @ (Script_Eol.SquadCommands.cs)
+            PollNoSpawnBuildings(now); // bots that come alive inside a no-spawn building go outside (Script_Eol.NoSpawnBuildings.cs)
             WireTacticsHooks();     // per-player adaptive skill (Script_Eol.Tactics.cs)
             PollMedics(now);        // squad medics heal bots and players
+            PollEngineerCharge(now); // squad Chief Engineers charge low-energy team mates (Script_Eol.EngineerOrders.cs)
+            PollPackJumps(now);      // pack bots jump walls / jump away when hurt (Script_Eol.PackJumps.cs)
+            PollMissingFlags(now);   // flags skipped while the zone was empty come up once players are in
+            PollChokeRescue(now);    // bots wedged in a known choke (146,411) are moved out (Script_Eol.ChokeRescue.cs)
             PollAlienSwarm(now);    // the Alien Swarm nest (Script_Eol.AlienSwarm.cs)
             PollEliteSquads(now);   // local: two elite roaming squads
             PollStrikeTeams(now);   // local: three human-class strike teams
@@ -5124,7 +5140,8 @@ namespace InfServer.Script.GameType_Eol
                     CfgInfo.Terrain terrain = _arena.getTerrain(pX, pY);
 
                     Helpers.randomPositionInArea(_arena, radius, ref pX, ref pY);
-                    if (_arena.getTile(pX, pY).Blocked && (terrain.message != "Roadway/Cement" || terrain.message != "Clear Terrain"))
+                    if ((_arena.getTile(pX, pY).Blocked && (terrain.message != "Roadway/Cement" || terrain.message != "Clear Terrain"))
+                        || InNoBotSpawnBuilding(pX, pY))   // (2026-11-17) never inside a no-spawn building
                     {
                         blockedAttempts--;
                         if (blockedAttempts <= 0)
@@ -5168,11 +5185,16 @@ namespace InfServer.Script.GameType_Eol
                         continue;
                     if (NearNewPlayerBuffer(pX, pY))
                         continue;   // no bot spawns at the new player buffer (Script_Eol.Territories.cs)
+                    if (InNoBotSpawnBuilding(pX, pY))
+                        continue;   // (2026-11-17) nor inside a no-spawn building (Script_Eol.NoSpawnBuildings.cs)
                     warpPoint = new Helpers.ObjectState();
                     warpPoint.positionX = pX;
                     warpPoint.positionY = pY;
                     break;
                 }
+                // a search centred inside a no-spawn building that found nothing: the nearest open ground outside it
+                if (warpPoint == null && InNoBotSpawnBuilding(posX, posY))
+                    warpPoint = NearestOutsideNoSpawn(posX, posY);
             }
             catch (Exception ex)
             {
@@ -5622,7 +5644,7 @@ namespace InfServer.Script.GameType_Eol
             victim.DeathPoints += killerPoints;
 
             //Update his bounty
-            killer.Bounty += (killerBountyIncrease + victimBounty);
+            killer.Bounty += (int)Math.Round((killerBountyIncrease + victimBounty) * StandardCarrierBountyFactor(killer));
 
             //Check for players in the share radius
             List<InfServer.Game.Player> sharedCash = victim._arena.getPlayersInRange(update.positionX, update.positionY, cfg.cash.shareRadius).ToList();
@@ -5914,10 +5936,73 @@ namespace InfServer.Script.GameType_Eol
         /// resource points) 2k cash / 1k exp; roamer (carriable) flags 3k / 2k; roamer flags whose skill logic needs a
         /// command class (Squad Leader 7 / Sergeant 9 / Captain 10 - Elite Unit, Mercenaries standards) 5k / 3k.
         /// </summary>
+        /// <summary>
+        /// (2026-11-17, owner: "if anyone holds the citizen, or command flags they get slightly higher BTY per kill")
+        /// a player carrying the Citizens Standard or a command standard (Elite Unit, Mercenaries) gains this much more
+        /// bounty from each kill - player or bot. The Eol Roamer flags don't count. (2026-11-17b, owner: "merc slightly
+        /// more, elite unit slightly more compared to merc"; then "15%, 20% and 25%") Citizens +15 %, Mercenaries +20 %,
+        /// Elite Unit +25 %; carrying more than one, the best counts.
+        /// </summary>
+        public const double CitizensCarrierBountyMult = 1.15, MercenariesCarrierBountyMult = 1.20, EliteUnitCarrierBountyMult = 1.25;
+
+        static double StandardCarrierBountyFactor(InfServer.Game.Player p)
+        {
+            if (p == null || p._arena == null || p._arena._flags == null)
+                return 1.0;
+            double best = 1.0;
+            foreach (Arena.FlagState fs in p._arena._flags.Values)
+            {
+                if (fs == null || fs.carrier != p || fs.flag == null)
+                    continue;
+                string n = fs.flag.GeneralData.Name ?? "";
+                double m = n.IndexOf("Elite Unit Standard", StringComparison.OrdinalIgnoreCase) >= 0 ? EliteUnitCarrierBountyMult
+                    : n.IndexOf("Mercenaries Standard", StringComparison.OrdinalIgnoreCase) >= 0 ? MercenariesCarrierBountyMult
+                    : n.IndexOf("Citizens Standard", StringComparison.OrdinalIgnoreCase) >= 0 ? CitizensCarrierBountyMult : 1.0;
+                if (m > best)
+                    best = m;
+            }
+            return best;
+        }
+
+        int _tickMissingFlags;
+
+        /// <summary>
+        /// (2026-11-17, owner: "i dont see any flags on the map") the game can start with nobody in the zone, and the
+        /// engine then skips every flag (each needs at least its MinPlayerCount); they only come back at a flag reset,
+        /// which needs payouts, which need flags - so they never came. Every 5 s: any flag not on the map (not active,
+        /// not carried) is spawned again - the engine still checks its player count and odds.
+        /// </summary>
+        void PollMissingFlags(int now)
+        {
+            if (_arena == null || _arena._flags == null || !_arena._bGameRunning || now - _tickMissingFlags < 5000)
+                return;
+            _tickMissingFlags = now;
+            if (_arena.PlayerCount < 1)
+                return;
+            int spawned = 0;
+            foreach (Arena.FlagState fs in _arena._flags.Values)
+            {
+                if (fs == null || fs.flag == null || fs.bActive || fs.carrier != null)
+                    continue;
+                if (_arena.PlayerCount < fs.flag.FlagData.MinPlayerCount || _arena.PlayerCount > fs.flag.FlagData.MaxPlayerCount)
+                    continue;
+                _arena.flagSpawn(fs);
+                if (fs.bActive)
+                    spawned++;
+            }
+            if (spawned > 0)
+                Log.write(TLog.Normal, "[Eol] {0} flags were not on the map (the zone started empty) - spawned now.", spawned);
+        }
         static void EolFlagRewardMinimum(LioInfo.Flag flag, out int cash, out int exp)
         {
             if (flag == null || flag.FlagData.FlagCarriable == 0)
             { cash = 2000; exp = 1000; return; }
+            // (2026-11-17, owner) the Citizens Standard pays 2.5k exp, the Elite Unit Standard 3.5k (Mercenaries 3k)
+            string name = flag.GeneralData.Name ?? "";
+            if (name.IndexOf("Elite Unit Standard", StringComparison.OrdinalIgnoreCase) >= 0)
+            { cash = 5000; exp = 3500; return; }
+            if (name.IndexOf("Citizens Standard", StringComparison.OrdinalIgnoreCase) >= 0)
+            { cash = 3000; exp = 2500; return; }
             string logic = flag.FlagData.SkillLogic ?? "";
             if (System.Text.RegularExpressions.Regex.IsMatch(logic, @"(^|[^\d%@#-])(7|9|10)([^\d]|$)"))
             { cash = 5000; exp = 3000; return; }
@@ -6357,7 +6442,7 @@ namespace InfServer.Script.GameType_Eol
             killerCash = addCash(killer, killerCash);
             killer.Experience += killerExp;
             killer.KillPoints += killerPoints;
-            killer.Bounty += killerBountyIncrease + victimBounty / 2;
+            killer.Bounty += (int)Math.Round((killerBountyIncrease + victimBounty / 2) * StandardCarrierBountyFactor(killer));
 
             //Inform the killer..
             string victimName = BotNameModule.GetDisplayName(victim);
@@ -6369,39 +6454,43 @@ namespace InfServer.Script.GameType_Eol
             //Sync his state
             killer.syncState();
 
-            //Check for players in the share radius
-            List<InfServer.Game.Player> sharedRewards = victim._arena.getPlayersInRange(victim._state.positionX, victim._state.positionY, cfg.bot.shareRadius);
+            // (2026-11-17, owner: "i wanted to match it for real human kills and the bot kills") teammates leech from a
+            // bot kill EXACTLY as from a player kill (calculatePlayerKillRewards): the zone's [Cash] / [Experience] /
+            // [Point] share radius + percent and [Bounty] PercentToAssistBounty - not the [Bot] 100 px / 10 % share.
+            //   cash  : SharePercent of the kill's cash, within Cash ShareRadius
+            //   exp   : SharePercent of the kill's exp, within Experience ShareRadius
+            //   points: SharePercent of the kill's points, within Point ShareRadius - plus the assist bounty there
+            short vx = victim._state.positionX, vy = victim._state.positionY;
+            HashSet<InfServer.Game.Player> inCash = new HashSet<InfServer.Game.Player>(victim._arena.getPlayersInRange(vx, vy, cfg.cash.shareRadius));
+            HashSet<InfServer.Game.Player> inExp = new HashSet<InfServer.Game.Player>(victim._arena.getPlayersInRange(vx, vy, cfg.experience.shareRadius));
+            HashSet<InfServer.Game.Player> inPoints = new HashSet<InfServer.Game.Player>(victim._arena.getPlayersInRange(vx, vy, cfg.point.shareRadius));
+            int cashShare = (int)((((float)baseCash) / 1000) * cfg.cash.sharePercent);
+            int expShare = (int)((((float)baseExp) / 1000) * cfg.experience.sharePercent);
+            int pointsShare = (int)((((float)basePoints) / 1000) * cfg.point.sharePercent);
+            int btyShare = (int)(basePoints * (((float)cfg.bounty.percentToAssistBounty) / 1000));
 
-            foreach (InfServer.Game.Player p in sharedRewards)
+            HashSet<InfServer.Game.Player> mates = new HashSet<InfServer.Game.Player>(inCash);
+            mates.UnionWith(inExp);
+            mates.UnionWith(inPoints);
+            foreach (InfServer.Game.Player p in mates)
             {
-                if (p == killer || p._team != killer._team)
+                if (p == null || p == killer || p._team != killer._team || p.IsSpectator)
                     continue;
-
-                int shareCash = ApplyEolLifetimeRewardScale(p, (int)((((float)baseCash) / 1000) * cfg.bot.sharePercent));
-                int shareExp = ApplyEolLifetimeRewardScale(p, (int)((((float)baseExp) / 1000) * cfg.bot.sharePercent));
-                int sharePoints = ApplyEolLifetimeRewardScale(p, (int)((((float)basePoints) / 1000) * cfg.bot.sharePercent));
-                shareCash = addCash(p, shareCash);
+                int shareCash = inCash.Contains(p) ? ApplyEolLifetimeRewardScale(p, cashShare) : 0;
+                int shareExp = inExp.Contains(p) ? ApplyEolLifetimeRewardScale(p, expShare) : 0;
+                int sharePoints = inPoints.Contains(p) ? ApplyEolLifetimeRewardScale(p, pointsShare) : 0;
+                if (shareCash != 0)
+                    shareCash = addCash(p, shareCash);
                 p.Experience += shareExp;
                 p.AssistPoints += sharePoints;
+                if (inPoints.Contains(p) && btyShare > 0)
+                    p.Bounty += btyShare;
+                if (shareCash == 0 && shareExp == 0 && sharePoints == 0)
+                    continue;
                 p.triggerMessage(2, 500,
                     String.Format("Assist: {0} (Cash={1} Exp={2} Points={3})",
                     victimName, shareCash, shareExp, sharePoints));
                 p.syncState();
-            }
-
-            // (2026-11-16b, owner) assist ("leach") bounty for teammates near a bot kill, exactly like a player kill:
-            // everyone on the killer's team inside the point share radius gets the zone's PercentToAssistBounty of
-            // the kill's points (calculatePlayerKillRewards does the same for human kills).
-            int btyShare = (int)(basePoints * (((float)cfg.bounty.percentToAssistBounty) / 1000));
-            if (btyShare > 0)
-            {
-                foreach (InfServer.Game.Player p in victim._arena.getPlayersInRange(victim._state.positionX, victim._state.positionY, cfg.point.shareRadius))
-                {
-                    if (p == null || p == killer || p._team != killer._team || p.IsDead || p.IsSpectator)
-                        continue;
-                    p.Bounty += btyShare;
-                    p.syncState();
-                }
             }
         }
 
@@ -7866,6 +7955,21 @@ namespace InfServer.Script.GameType_Eol
         [Scripts.Event("Player.WarpItem")]
         public bool playerWarpItem(InfServer.Game.Player player, ItemInfo.WarpItem item, ushort targetPlayerID, short posX, short posY)
         {
+            // (2026-11-17, owner: "you can store recall if you want ... b please") Store Recall works while carrying a
+            // flag, but the flags stay behind: they drop where the carrier stood (no flags in the store / safe zone)
+            if (player != null && item != null && _arena != null && _arena._flags != null
+                && (item.name ?? "").IndexOf("Store Recall", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                List<Arena.FlagState> carried = new List<Arena.FlagState>();
+                foreach (Arena.FlagState fs in _arena._flags.Values)
+                    if (fs != null && fs.carrier == player && fs.flag != null)
+                        carried.Add(fs);
+                foreach (Arena.FlagState fs in carried)
+                {
+                    _arena.flagAction(true, false, true, player, fs.flag);
+                    player.sendMessage(-1, "You dropped " + (fs.flag.GeneralData.Name ?? "the flag").Trim('"') + " - flags can't go into the store.");
+                }
+            }
             return true;
         }
 

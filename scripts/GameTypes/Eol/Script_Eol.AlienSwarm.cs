@@ -78,7 +78,9 @@ namespace InfServer.Script.GameType_Eol
                 && InSwarmA6(_swarmNest._state.positionX, _swarmNest._state.positionY) && InSwarmA6(x, y);
         }
         /// <summary>Bug mix: Arachnomorph, Electromorph, Predator, Warrior, Brute - and one Alien Chief.</summary>
-        static readonly ushort[] SwarmBugPool = { 149, 153, 154, 155, 155, 433 };
+        /// (2026-11-17, owner: "bots can only be created car vehicles" in the log) the Alien Brute 433 is a Computer
+        /// (turret) in the .veh - a bot can't use it, so every Brute spawn failed; a second Arachnomorph (the other heavy) instead.
+        static readonly ushort[] SwarmBugPool = { 149, 153, 154, 155, 155, 149 };
         const ushort SwarmChiefVehId = 200;
 
         public Team botTeamSwarm;
@@ -292,6 +294,11 @@ namespace InfServer.Script.GameType_Eol
             if (at == null)
                 return false;
             ushort vid = needChief ? SwarmChiefVehId : SwarmBugPool[_arena._rand.Next(SwarmBugPool.Length)];
+            if (!(_arena._server._assets.getVehicleByID(vid) is VehInfo.Car))
+            {   // (a bot needs a Car vehicle - never ask the engine for anything else)
+                Log.write(TLog.Warning, "[Eol] swarm bug vehicle {0} is not a Car - skipped.", vid);
+                return false;
+            }
             AlienHorde bug = _arena.newBot(typeof(AlienHorde), vid, botTeamSwarm, null, at, this, null) as AlienHorde;
             if (bug == null)
                 return false;

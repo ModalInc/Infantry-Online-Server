@@ -16,11 +16,11 @@ namespace InfServer.Script.GameType_Eol
     /// </summary>
     public partial class Script_Eol
     {
-        public const int EolBotTotalTarget = 70;   // (2026-11-16c, owner: "around 70")
+        public const int EolBotTotalTarget = 76;   // (2026-11-17: human + pirate squads of 6, vehicle squad 4; was 70)   // (2026-11-16c, owner: "around 70")
         public const int RosterBaseTeams = 2;
         public const int RosterBaseSize = EolMaxConcurrentBaseDefenseBots;   // 10
         public const int RosterAlienMainSize = 8;
-        public const int RosterVehicleSquadSize = 3;
+        public const int RosterVehicleSquadSize = 4;   // (2026-11-17, owner: Deathboard, Shimmerboard, Drop Pack + a SciOps on a Flight Pack)
         /// <summary>(2026-11-16c) Storm Rangers + 5 mixed teams = 6 joinable human squads of 5-6.</summary>
         public const int RosterMixedTeamCount = 5;
         /// <summary>(2026-11-16c, owner) a joinable squad is 5 to 6 strong, players + bots.</summary>
@@ -43,15 +43,15 @@ namespace InfServer.Script.GameType_Eol
             Random r = new Random(Environment.TickCount);
             // (2026-11-16c, owner) 2 bases of 10, the bug base of 10, and roaming squads of 5-6: pirate roamers 5, the six
             // human squads (Storm Rangers + 5 mixed) 5 each, the spare places spread out (6 at most) - 70 in all
-            _rosterPirateRoamers = SquadMinSize;
+            _rosterPirateRoamers = SquadMaxSize;   // (2026-11-17, owner: "yes 6")
             // (2026-11-16c) the crash-ship alien packs are gone: their places are the Alien Swarm's 10 bugs
             _rosterAlienElite = EolAlienWavesEnabled ? 4 : 0;
             int aliens = EolAlienWavesEnabled ? _rosterAlienElite + RosterAlienMainSize : SwarmDefenders;
-            _rosterHumanRoamers = SquadMinSize;
+            _rosterHumanRoamers = SquadMaxSize;   // (2026-11-17, owner: "lets make teams of 6" - every human squad has its engineer)
             for (int i = 0; i < RosterMixedTeamCount; i++)
-                _rosterMixedSize[i] = SquadMinSize;
+                _rosterMixedSize[i] = SquadMaxSize;
             int rest = EolBotTotalTarget - (RosterBaseTeams * RosterBaseSize + _rosterPirateRoamers + _rosterHumanRoamers
-                + aliens + RosterVehicleSquadSize + RosterMixedTeamCount * SquadMinSize);   // 2
+                + aliens + RosterVehicleSquadSize + RosterMixedTeamCount * SquadMaxSize);   // 0 (2026-11-17: 20 + 6 + 6 + 30 + 10 + 4 = 76)
             for (int guard = 0; rest > 0 && guard < 1000; guard++)
             {
                 int i = r.Next(RosterMixedTeamCount + 1);
@@ -110,7 +110,7 @@ namespace InfServer.Script.GameType_Eol
 
         /// <summary>(2026-11-16, owner: 26 bots on one team) hard caps for every spawn path.</summary>
         public const int EolMaxBotsPerTeam = 10;
-        public const int EolMaxBotsTotal = 74;   // (roster 70 + a little room for bots changing over)
+        public const int EolMaxBotsTotal = 78;   // (roster 70 + a little room for bots changing over)
 
         /// <summary>
         /// True when one more bot may join <paramref name="team"/>: under 10 live (or about-to-revive) bots on that

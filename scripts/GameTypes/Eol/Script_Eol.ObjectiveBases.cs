@@ -40,6 +40,15 @@ namespace InfServer.Script.GameType_Eol
 
                 // right next to the flag (owner: the old hand-made spots were in the same building, not at the flag)
                 Helpers.ObjectState at = FindHqSpotNextTo(fx, fy);
+                // (2026-11-17, owner: "no bots can spawn in the building 361,348") a flag inside a no-spawn building
+                // (Major Resource Point Sector A sits inside it): the base goes up on open ground just outside instead
+                if (at != null && InNoBotSpawnBuilding(at.positionX, at.positionY))
+                {
+                    Helpers.ObjectState outside = HqSpotOutsideNoSpawn(fx, fy);
+                    Log.write(TLog.Normal, "[Eol] Objective base: {0} is inside a no-spawn building - HQ slot {1}.", name,
+                        outside != null ? (outside.positionX / 16) + "," + (outside.positionY / 16) + " (outside)" : "none");
+                    at = outside;
+                }
                 if (at == null)
                 {
                     Log.write(TLog.Warning, "[Eol] Objective base: no open ground next to {0} ({1},{2}).", name, fx, fy);

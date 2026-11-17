@@ -370,6 +370,42 @@ namespace InfServer.Bots
         public bool bDropshipRespawnPending;
         /// <summary>A corpse waiting for a script respawn longer than this is removed (the script lost it).</summary>
         public const int BotPendingCorpseMaxMs = 45000;
+
+        // ---------- jumps (2026-11-17) ----------
+        int _jumpStartTick, _jumpDurationMs;
+        short _jumpPeakZ, _jumpBaseZ;
+        /// <summary>True while a jump arc is running.</summary>
+        public bool IsJumping => _jumpStartTick != 0;
+
+        /// <summary>Start a jump: up to <paramref name="peakZ"/> above the bot's normal height and back down over
+        /// <paramref name="durationMs"/>. Ignored while already in the air.</summary>
+        public bool StartJump(short peakZ, int durationMs)
+        {
+            if (_jumpStartTick != 0 || IsDead || _state == null || durationMs <= 0 || peakZ <= 0)
+                return false;
+            _jumpBaseZ = _state.positionZ;
+            _jumpPeakZ = peakZ;
+            _jumpDurationMs = durationMs;
+            _jumpStartTick = Environment.TickCount == 0 ? 1 : Environment.TickCount;
+            return true;
+        }
+
+        void ApplyJumpArc(int now)
+        {
+            if (_jumpStartTick == 0 || _state == null)
+                return;
+            double t = (now - _jumpStartTick) / (double)_jumpDurationMs;
+            if (t >= 1 || t < 0 || IsDead)
+            {
+                _state.positionZ = _jumpBaseZ;
+                _state.velocityZ = 0;
+                _jumpStartTick = 0;
+                return;
+            }
+            // a parabola: 0 at the start and end, the peak half way
+            _state.positionZ = (short)(_jumpBaseZ + 4 * _jumpPeakZ * t * (1 - t));
+            _state.velocityZ = (short)(t < 0.5 ? 1 : -1);
+        }
         /// <summary>Health in the last routed update (a change routes the bot at once - team health bars).</summary>
         public short _lastRoutedHealth = -1;
         /// <summary>The most health this bot has had (its full bar - bots can have more HP than their vehicle type).</summary>
@@ -1273,6 +1309,11 @@ namespace InfServer.Bots
                 ApplyCombatSenseOverrides(tickCount);
 
                 ApplyMotionRequest();
+
+                // (2026-11-17, owner: packs "can fly when necessary, i.e when running away or to jump over physics")
+                // a jump is a rise-and-fall arc on Z; while high enough the bot passes over lower physics
+                // (MovementController.BlockedForMe), and clients see the height in the pose
+                ApplyJumpArc(tickCount);
 
                 //Allow our controller to update our vehicle state
                 _movement.updateState(delta);

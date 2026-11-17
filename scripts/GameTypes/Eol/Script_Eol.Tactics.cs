@@ -182,6 +182,13 @@ namespace InfServer.Script.GameType_Eol
                         used.posY = m._state.positionY;
                         p._client.sendReliable(used);
                         healed++;
+                        // (2026-11-17) an H call is a few heals, not a fountain: 3, then the medic is back to normal
+                        SquadCall hc;
+                        if (p == caller && _squadHealCall.TryGetValue(m._team, out hc) && --hc.HealsLeft <= 0)
+                        {
+                            _squadHealCall.Remove(m._team);
+                            caller = null;
+                        }
                         if (_arena._rand.Next(4) == 0)
                             SquadSay(m, Pick3("patched you up", "got you", "heal up, stay close"));
                     }

@@ -2958,13 +2958,30 @@ namespace InfServer.Game
 
                 // (2026-11-15, owner: "if bots kill spiders it shouldn't drop anything") a computer (spider hive,
                 // turret...) destroyed by a bot - no player killer - leaves no loot
-                bool killedByBot = killer == null && dead is Computer;
+                // (2026-11-17, owner: "the spider nests arent dropping anything") a bot often lands the last shot on a
+                // hive players were killing - then nothing dropped. Any player who damaged it counts: only a computer
+                // that no player ever hurt (bots alone killed it) leaves no loot.
+                Player dropFor = killer;
+                if (dropFor == null && dead is Computer && dead._attackers != null)
+                    for (int ai = dead._attackers.Count - 1; ai >= 0 && dropFor == null; ai--)
+                    {
+                        Player ap = dead._attackers[ai];
+                        if (ap != null && ap._arena == this && !ap.IsSpectator)
+                            dropFor = ap;
+                    }
+                bool killedByBot = dropFor == null && dead is Computer;
                 if (vehicle.DropItemId != 0 && !killedByBot)
                 {
                     ItemInfo item = _server._assets.getItemByID(vehicle.DropItemId);
                     if (item != null && vehicle.DropItemQuantity > 0)
+                    {
                         itemSpawn(item, (ushort)vehicle.DropItemQuantity, dead._state.positionX, dead._state.positionY, null);
+                        Log.write(TLog.Normal, "[drop] {0} ({1}) destroyed{2}: dropped {3} x{4}", dead._type.Name, dead._type.Id,
+                            dropFor != null ? " by " + dropFor._alias : "", item.name, vehicle.DropItemQuantity);
+                    }
                 }
+                else if (vehicle.DropItemId != 0)
+                    Log.write(TLog.Normal, "[drop] {0} ({1}) destroyed by bots only: no drop", dead._type.Name, dead._type.Id);
 
                 //Update vehicle kills and deaths stat
                 if (killer != null && dead._team != killer._team)
