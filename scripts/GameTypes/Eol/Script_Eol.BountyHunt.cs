@@ -171,7 +171,7 @@ namespace InfServer.Script.GameType_Eol
                 _bountyHuntQueue.Add(p);
                 if (_arena != null && _bountyHuntMarked != null)
                 {
-                    p.sendMessage(0, string.Format(
+                    HuntQuietTo(p, string.Format(
                         "You are on the HUNT list (#{0}). Survive with {1:N0}+ bounty — first in line is hunted.",
                         _bountyHuntQueue.Count, BountyHuntThreshold));
                 }
@@ -261,9 +261,7 @@ namespace InfServer.Script.GameType_Eol
             InfServer.Game.Player mark = _bountyHuntMarked;
             if (mark != null && _arena != null)
             {
-                _arena.sendArenaMessage(string.Format(
-                    "&HUNT ended for {0} ({1}). Survivor pot C={2} | Assassin pot C={3} wiped.",
-                    mark._alias, reason, _bountyHuntSurvivorPotCash, _bountyHuntAssassinPotCash),
+                HuntQuiet(string.Format("&HUNT ended for {0} ({1}).", mark._alias, reason),
                     _config != null ? _config.flag.periodicBong : 1);
 
                 if (applyRemarkCooldown)
@@ -289,7 +287,7 @@ namespace InfServer.Script.GameType_Eol
             }
             else if (_arena != null)
             {
-                _arena.sendArenaMessage("&HUNT queue empty — waiting for the next 30k bounty.", 0);
+                HuntQuiet("&HUNT queue empty — waiting for the next 30k bounty.", 0);
             }
         }
 
@@ -346,14 +344,14 @@ namespace InfServer.Script.GameType_Eol
 
             int waiting = Math.Max(0, _bountyHuntQueue.Count - 1);
             int bong = _config != null ? _config.flag.periodicBong : 1;
-            _arena.sendArenaMessage(string.Format(
-                "&HUNT: {0} is now HUNTED ({1:N0}+ bounty, first in line). {2} waiting. Survivor pot (field) + Assassin pot (kill bonus).",
+            HuntQuiet(string.Format(
+                "&HUNT: {0} is now HUNTED ({1:N0}+ bounty, first in line). {2} waiting.",
                 target._alias, BountyHuntThreshold, waiting), bong);
-            target.sendMessage(0,
-                "You are HUNTED. Survivor pot pays you in the field. Assassin pot grows for your killer (on top of normal kill rewards). Spec/leave/death passes the hunt to the next 30k.");
+            HuntQuietTo(target,
+                "You are HUNTED. Spec/leave/death passes the hunt to the next 30k.");
 
             if (waiting > 0)
-                _arena.sendArenaMessage("&HUNT QUEUE: " + FormatBountyHuntQueuePreview(), 0);
+                HuntQuiet("&HUNT QUEUE: " + FormatBountyHuntQueuePreview(), 0);
 
             BroadcastBountyHuntIntel(target, now, first: true);
             OnBountyHunterHuntStarted(target, now);
@@ -402,8 +400,8 @@ namespace InfServer.Script.GameType_Eol
                 if (_bountyHuntDropshipEnteredTick == 0)
                 {
                     _bountyHuntDropshipEnteredTick = now;
-                    mark.sendMessage(0,
-                        "Survivor pot paused in the dropship. Assassin pot keeps growing. Hunters are waiting in the open sectors.");
+                    HuntQuietTo(mark,
+                        "Hunters are waiting in the open sectors.");
                 }
                 _bountyHuntLastFieldSampleTick = now;
             }
@@ -412,7 +410,7 @@ namespace InfServer.Script.GameType_Eol
                 if (_bountyHuntDropshipEnteredTick != 0)
                 {
                     _bountyHuntDropshipEnteredTick = 0;
-                    mark.sendMessage(0, "Back in the field — survivor pot resumes. Hunters are moving.");
+                    HuntQuietTo(mark, "Back in the field — hunters are moving.");
                 }
                 if (_bountyHuntLastFieldSampleTick != 0)
                 {
@@ -448,6 +446,10 @@ namespace InfServer.Script.GameType_Eol
 
         void ApplyBountyHuntTrickle(InfServer.Game.Player mark, bool grantSurvivor)
         {
+            // (2026-11-17, owner: "lets remove the bounty hunt pots and the messages with it") no survivor trickle, no
+            // assassin pot - the hunt pays nothing extra now (normal kill rewards only)
+            return;
+#pragma warning disable CS0162
             if (grantSurvivor && IsBountyHuntMarkInFieldForSurvivorPot(mark))
             {
                 int cash = ApplyEolLifetimeRewardScale(mark, BountyHuntTrickleCashPerTick);
@@ -480,6 +482,7 @@ namespace InfServer.Script.GameType_Eol
                 _bountyHuntAssassinPotExp + BountyHuntAssassinExpPerTick);
             _bountyHuntAssassinPotPoints = Math.Min(BountyHuntAssassinPointsCap,
                 _bountyHuntAssassinPotPoints + BountyHuntAssassinPointsPerTick);
+#pragma warning restore CS0162
         }
 
         void BroadcastBountyHuntIntel(InfServer.Game.Player mark, int now, bool first)
@@ -493,7 +496,7 @@ namespace InfServer.Script.GameType_Eol
             int enPct = GetPlayerEnergyPercent(mark);
             string sector = DescribeBountyHuntSector(x, y);
             string loc = IsBountyHuntInDropship(mark)
-                ? "DROPSHIP (survivor pot paused — assassin pot grows)"
+                ? "DROPSHIP"
                 : string.Format("{0} ({1},{2})", sector, x, y);
 
             // (2026-11-16c, owner: "ping less, it was spammy") the first intel keeps its sound and the full line;
@@ -502,13 +505,12 @@ namespace InfServer.Script.GameType_Eol
             {
                 int waiting = Math.Max(0, _bountyHuntQueue.Count - 1);
                 int bong = 0;   // (the hunt-start line just before already sounded)
-                _arena.sendArenaMessage(string.Format(
-                    "&HUNT: {0} | {1} | HP {2}% | Survivor ${3} | Assassin ${4} | {5} waiting",
-                    mark._alias, loc, hpPct, _bountyHuntSurvivorPotCash, _bountyHuntAssassinPotCash, waiting), bong);
+                HuntQuiet(string.Format(
+                    "&HUNT: {0} | {1} | HP {2}% | {3} waiting",
+                    mark._alias, loc, hpPct, waiting), bong);
             }
             else
-                _arena.sendArenaMessage(string.Format("&HUNT: {0} at {1} | Assassin pot ${2}",
-                    mark._alias, loc, _bountyHuntAssassinPotCash), 0);
+                HuntQuiet(string.Format("&HUNT: {0} at {1}", mark._alias, loc), 0);
         }
 
         bool IsBountyHuntInDropship(InfServer.Game.Player p)
@@ -587,38 +589,18 @@ namespace InfServer.Script.GameType_Eol
             int now = Environment.TickCount;
             if (killer == null || killer._team == victim._team)
             {
-                victim.sendMessage(0, "Hunt ended (assassin pot forfeited) — next in the 30k queue takes over.");
+                HuntQuietTo(victim, "Hunt ended — next in the 30k queue takes over.");
                 AdvanceBountyHuntFromMark("no assassin payout", applyRemarkCooldown: true, now);
                 return;
             }
 
-            double engagement = ComputeBountyHuntEngagementMult(killer, victim, now);
-            double speed = ComputeBountyHuntSpeedMult(now);
-            double mult = engagement * speed;
-
-            int cash = ApplyEolLifetimeRewardScale(killer, (int)Math.Round(_bountyHuntAssassinPotCash * mult));
-            int exp = ApplyEolLifetimeRewardScale(killer, (int)Math.Round(_bountyHuntAssassinPotExp * mult));
-            int points = ApplyEolLifetimeRewardScale(killer, (int)Math.Round(_bountyHuntAssassinPotPoints * mult));
-
-            if (cash > 0 || exp > 0 || points > 0)
-            {
-                killer.Cash += cash;
-                killer.Experience += exp;
-                killer.BonusPoints += points;
-                killer.syncState();
-            }
-
+            // (2026-11-17, owner) no assassin pot any more: the kill pays the normal kill reward only
             RecordBountyHuntPairPayout(killer._id, victim._id, now);
             TrackBountyHuntPvPKill(killer, victim);
 
             int bong = _config != null ? _config.flag.victoryBong : 1;
-            _arena.sendArenaMessage(string.Format(
-                "&HUNT OVER: {0} eliminated {1}! Assassin pot bonus Cash={2} Exp={3} Pts={4} (x{5:0.00}). Survivor pot was C={6}. Advancing queue…",
-                killer._alias, victim._alias, cash, exp, points, mult,
-                _bountyHuntSurvivorPotCash), bong);
-
-            if (engagement < 0.5)
-                killer.sendMessage(0, "Hunt assassin pot reduced (anti-farm / early kill / recent trade). Normal kill rewards still apply.");
+            HuntQuiet(string.Format("&HUNT OVER: {0} eliminated {1}! Advancing queue…",
+                killer._alias, victim._alias), bong);
 
             AdvanceBountyHuntFromMark("eliminated", applyRemarkCooldown: true, now);
         }
@@ -629,9 +611,7 @@ namespace InfServer.Script.GameType_Eol
                 return;
             if (_arena != null)
             {
-                _arena.sendArenaMessage(string.Format(
-                    "&HUNT ENDED: {0} died — assassin pot forfeited (C={1}). Advancing to next 30k…",
-                    victim._alias, _bountyHuntAssassinPotCash),
+                HuntQuiet(string.Format("&HUNT ENDED: {0} died. Advancing to next 30k…", victim._alias),
                     _config != null ? _config.flag.periodicBong : 1);
             }
             AdvanceBountyHuntFromMark("non-pvp death", applyRemarkCooldown: true, Environment.TickCount);
@@ -648,9 +628,7 @@ namespace InfServer.Script.GameType_Eol
 
             if (_bountyHuntMarked != null && _arena != null)
             {
-                _arena.sendArenaMessage(string.Format(
-                    "&HUNT cancelled ({0}). Survivor pot C={1} | Assassin pot C={2} wiped.",
-                    reason, _bountyHuntSurvivorPotCash, _bountyHuntAssassinPotCash),
+                HuntQuiet(string.Format("&HUNT cancelled ({0}).", reason),
                     _config != null ? _config.flag.periodicBong : 1);
                 if (applyRemarkCooldown)
                     _bountyHuntRemarkReady[_bountyHuntMarked._id] =
@@ -664,6 +642,13 @@ namespace InfServer.Script.GameType_Eol
             InvalidateEolHudTickerCache();
             Log.write(TLog.Normal, "[Eol] Bounty hunt cleared: {0}.", reason);
         }
+
+        // (2026-11-17, owner: "remove all announcements of real players hitting 30k. i want it to be something it is not
+        // announced ... i still want assassin team") the hunt and the assassins still run - nobody is told: no arena lines,
+        // no messages to the hunted, no hunt line on the HUD (logged for the server only)
+        static void HuntQuiet(string msg, int bong) { Log.write(TLog.Inane, "[Eol] (hunt, not announced) " + msg); }
+        static void HuntQuiet(string msg) { HuntQuiet(msg, 0); }
+        static void HuntQuietTo(InfServer.Game.Player p, string msg) { Log.write(TLog.Inane, "[Eol] (hunt, not told to " + (p != null ? p._alias : "?") + ") " + msg); }
 
         void ResetBountyHuntPots()
         {
@@ -786,12 +771,7 @@ namespace InfServer.Script.GameType_Eol
 
             string ds = IsBountyHuntInDropship(_bountyHuntMarked) ? " DS" : "";
             int waiting = Math.Max(0, _bountyHuntQueue.Count - 1);
-            return string.Format("HUNT {0}{1} Surv {2} Asn {3} Q+{4}",
-                _bountyHuntMarked._alias,
-                ds,
-                _bountyHuntSurvivorPotCash,
-                _bountyHuntAssassinPotCash,
-                waiting);
+            return string.Format("HUNT {0}{1} Q+{2}", _bountyHuntMarked._alias, ds, waiting);
         }
 
         string BuildEolBountyHuntTickerCompact()
@@ -802,11 +782,7 @@ namespace InfServer.Script.GameType_Eol
                     return null;
                 return string.Format("HUNT Q{0}", _bountyHuntQueue.Count);
             }
-            return string.Format("HUNT {0} S{1}/A{2} +{3}",
-                _bountyHuntMarked._alias,
-                _bountyHuntSurvivorPotCash,
-                _bountyHuntAssassinPotCash,
-                Math.Max(0, _bountyHuntQueue.Count - 1));
+            return string.Format("HUNT {0} +{1}", _bountyHuntMarked._alias, Math.Max(0, _bountyHuntQueue.Count - 1));
         }
 
         void InvalidateEolHudTickerCache()

@@ -491,12 +491,11 @@ namespace InfServer.Game
 
             if (radius <= wep.energyDamageRadius)
             {
-                /*fraction = 1 - radius / wep.energyDamageRadius;
+                // (2026-11-17) energy damage: bots with player-style energy lose energy first, the rest is health
+                // (OnEnergyHit); every other vehicle still ignores it, as before
+                fraction = 1 - radius / wep.energyDamageRadius;
                 grossDamage = (wep.energyDamageInner - wep.energyDamageOuter) * fraction + wep.energyDamageOuter;
-                netDamage += (grossDamage - _type.Armors[5].SelfIgnore) * (1.0d - _type.Armors[5].SelfReduction / 1000.0d);*/
-
-                // if (netDamage > 0)
-                // TODO: take care of energy damage
+                netDamage += OnEnergyHit(ApplyArmorChannel(grossDamage, _type.Armors[5], 5));
             }
 
             //anti effects
@@ -557,6 +556,7 @@ namespace InfServer.Game
             net += BotHitChannel(wep.electronicDamageInner, wep.electronicDamageOuter, wep.electronicDamageRadius, f, 2);
             net += BotHitChannel(wep.psionicDamageInner, wep.psionicDamageOuter, wep.psionicDamageRadius, f, 3);
             net += BotHitChannel(wep.bypassDamageInner, wep.bypassDamageOuter, wep.bypassDamageRadius, f, 4);
+            net += OnEnergyHit(BotHitChannel(wep.energyDamageInner, wep.energyDamageOuter, wep.energyDamageRadius, f, 5));
 
             if (net > 0)
                 _state.health -= (short)Math.Max(1, Math.Round(net * DamageTakenPercent / 100.0 / 1000));
@@ -570,10 +570,19 @@ namespace InfServer.Game
         static readonly Random _botHitRng = new Random();
 
         /// <summary>
+        /// (2026-11-17) Energy damage that got through the armour (item units, 1000 = 1). Returns the part that still
+        /// hurts health. Default: none (vehicles ignore energy damage, as before); bots with PlayerEnergy override it.
+        /// </summary>
+        protected virtual double OnEnergyHit(double netDamage) { return 0; }
+
+        /// <summary>
         /// (2026-11-16) Share of the armour-reduced damage this vehicle really takes, in percent (100 = all of it).
         /// Eol bots use 67 = 50 % more armour.
         /// </summary>
         public int DamageTakenPercent = 100;
+
+        /// <summary>(2026-11-17) Bounty shown next to this vehicle's name when it is routed as a player (bots); 0 = none.</summary>
+        public int DisplayBounty;
 
         /// <summary>
         /// (2026-11-16) Takes no damage at all until this tick (0 = off): spawn protection, and bots walking through

@@ -134,17 +134,25 @@ namespace InfServer.Bots
         /// <summary>
         /// Reapplies base terrain stats plus utility item movement bonuses.
         /// </summary>
+        static int Floor35(int baseValue, int value)
+        {
+            if (baseValue <= 0) return value;
+            return Math.Max((int)Math.Ceiling(baseValue * 0.35), value);
+        }
+
         public void ApplyUtilityMovementModifiers(BotUtilityMovementModifiers mods)
         {
             _movementMods = mods;
             SpeedValues t0 = _type.TerrainSpeeds[_terrainType];
 
             _rollFriction = t0.RollFriction;
-            _rollThrust = (t0.RollThrust + mods.ThrustBonus + mods.ForwardThrustBonus) * 4800 / 128;
-            _rollThrustStrafe = (t0.StrafeThrust + mods.StrafeThrustBonus) * 4800 / 128;
-            _rollThrustBack = (t0.BackwardThrust + mods.ReverseThrustBonus) * 4800 / 128;
-            _rollRotate = t0.RollRotate + mods.RotateBonus;
-            _rollTopSpeed = t0.RollTopSpeed + mods.TopSpeedBonus;
+            // (2026-11-17) utility thrust / rotate are on a 10x scale of the vehicle's own (Carapace -75 thrust, Infantry 55):
+            // added raw they drove an armoured bot's thrust negative and it rocked in place. Scaled, and never below 35 %.
+            _rollThrust = Floor35(t0.RollThrust, t0.RollThrust + (mods.ThrustBonus + mods.ForwardThrustBonus) / 10) * 4800 / 128;
+            _rollThrustStrafe = Floor35(t0.StrafeThrust, t0.StrafeThrust + (mods.StrafeThrustBonus + mods.ThrustBonus) / 10) * 4800 / 128;
+            _rollThrustBack = Floor35(t0.BackwardThrust, t0.BackwardThrust + (mods.ReverseThrustBonus + mods.ThrustBonus) / 10) * 4800 / 128;
+            _rollRotate = Floor35(t0.RollRotate, t0.RollRotate + mods.RotateBonus / 10);
+            _rollTopSpeed = Floor35(t0.RollTopSpeed, t0.RollTopSpeed + mods.TopSpeedBonus);
         }
 
         /// <summary>

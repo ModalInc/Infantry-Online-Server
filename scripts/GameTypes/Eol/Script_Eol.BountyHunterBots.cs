@@ -103,7 +103,7 @@ namespace InfServer.Script.GameType_Eol
             _tickNextBountyHunterGruntSpawn.Clear();
             _tickNextBountyHunterCaptainSpawn.Clear();
             if (announce && _arena != null && alive > 0)
-                _arena.sendArenaMessage(string.Format("&Assassins: contract over — {0} survivor{1} gone rogue.", alive, alive == 1 ? "" : "s"), 1);
+                HuntQuiet(string.Format("&Assassins: contract over — {0} survivor{1} gone rogue.", alive, alive == 1 ? "" : "s"), 1);
             InvalidateEolHudTickerCache();
             Log.write(TLog.Normal, "[Eol] Assassins released ({0} alive, no respawns until the next hunt).", alive);
         }
@@ -310,7 +310,7 @@ namespace InfServer.Script.GameType_Eol
                 string retarget = IsBountyHunterMarkInField()
                     ? "new contract on " + mark._alias
                     : "waiting for " + mark._alias + " to leave the dropship";
-                _arena.sendArenaMessage("&Assassins: " + retarget + ".", bong);
+                HuntQuiet("&Assassins: " + retarget + ".", bong);
                 foreach (Team t in AssassinTeams())
                     EnsureBountyHunterCaptain(now, t);
                 return;
@@ -384,7 +384,7 @@ namespace InfServer.Script.GameType_Eol
             string wait = IsBountyHunterMarkInField()
                 ? "the contract is on " + mark._alias
                 : "waiting for " + mark._alias + " to leave the dropship";
-            _arena.sendArenaMessage(string.Format(
+            HuntQuiet(string.Format(
                 "&Assassins deployed: {0} cells of {1} — {2}.", deployed, BountyHunterSquadSize, wait), 0);   // (silent: the hunt start sounded)
 
             Log.write(TLog.Normal, "[Eol] Assassins armed for {0} (alive={1}).", mark._alias, GetBountyHunterAliveCount());
@@ -573,7 +573,7 @@ namespace InfServer.Script.GameType_Eol
                 if (_bountyHunterMarkPlayerId != mark._id)
                 {
                     _bountyHunterMarkPlayerId = mark._id;
-                    _arena.sendArenaMessage(string.Format(
+                    HuntQuiet(string.Format(
                         "&Assassins: new contract on {0}.", mark._alias), 1);
                 }
             }
@@ -625,7 +625,7 @@ namespace InfServer.Script.GameType_Eol
             _tickNextBountyHunterCaptainSpawn.Clear();
 
             if (announce && _arena != null)
-                _arena.sendArenaMessage("&Assassins withdrawn.", 1);
+                HuntQuiet("&Assassins withdrawn.", 1);
 
             InvalidateEolHudTickerCache();
             Log.write(TLog.Normal, "[Eol] Assassins torn down.");

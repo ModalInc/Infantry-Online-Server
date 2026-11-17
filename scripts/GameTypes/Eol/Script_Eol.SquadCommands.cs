@@ -211,7 +211,7 @@ namespace InfServer.Script.GameType_Eol
             if (order == OrderStop)
             {
                 bool was = _squadFollow.Remove(team) | _squadDefend.Remove(team);
-                player.sendMessage(0, was ? "&Squad: back to attacking enemy bases." : "&Squad: we're already on the attack.");
+                player.sendMessage(0, was ? "&Squad: stopped following - back to our objectives." : "&Squad: we're already on our objectives.");
                 return;
             }
             if (order == OrderFollow)
@@ -430,6 +430,7 @@ namespace InfServer.Script.GameType_Eol
             EnsureSquadChatHook();
             PollSquadGreetings(now);
             PollPendingSummons(now);
+            PollBoardMedicSummons(now);   // (2026-11-17) the Ghost Reapers' board medic's summon kit
             if (_pendingSuitWarps.Count == 0)
                 return;
             for (int i = _pendingSuitWarps.Count - 1; i >= 0; i--)

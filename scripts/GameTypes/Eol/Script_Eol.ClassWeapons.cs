@@ -21,6 +21,68 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>Pistols and machine pistols (ammo "Ammo - Pistol"), for the close slot.</summary>
         static readonly int[] PoolPistol = { 1035, 1081, 1108, 3016, 1303, 3051, 1305 };
 
+        // (2026-11-17, owner: "the bot weapons they should all have 3 weapons, 1 is the small arms such as the pistols,
+        // the second is the main weapon such as a AR / LMG / cannon / fire support, and the third is a misc weapon such
+        // melee weapons or laser or sonic or shotgun ... they should rotate around in the fight with the main being the
+        // hardest hitting")
+        /// <summary>Sidearms: the pistols + the Unittech SP700q sonic pistol.</summary>
+        static readonly int[] PoolSidearm = { 1035, 1081, 1108, 3016, 1303, 3051, 1305, 1509 };
+        /// <summary>Melee: Combat Knife / Axe / Sword, Chain + Magna Sword, Chain Fist, MagnaFist, Electro Stunner.</summary>
+        static readonly int[] PoolMelee = { 1123, 1013, 1080, 1075, 1076, 1174, 1173, 1065 };
+        /// <summary>Sonic: Unittech SR2000k rifle, SW2002.</summary>
+        static readonly int[] PoolSonic = { 1128, 1039 };
+
+        /// <summary>
+        /// The three guns of a human-class bot, all class-legal: a sidearm (pistol, else an SMG), the main gun - the
+        /// hardest hitting of the class's rifles / heavies / plasma / gauss / projectors (one of its best two, for
+        /// variety; <paramref name="flavour"/> = the class's own pick, kept when it is that good), and a misc gun
+        /// (melee, laser, sonic or shotgun). 0 = none for that slot.
+        /// </summary>
+        void PickThreeWeapons(int cls, int flavour, out int side, out int main, out int misc)
+        {
+            Random r = _arena._rand;
+            HashSet<int> legal = ClassLegalWeapons(cls);
+            Func<int, bool> ok = id => id != 0 && (legal == null || legal.Count == 0 || legal.Contains(id)) && Itm(id) != null;
+
+            List<int> sides = new List<int>();
+            foreach (int id in PoolSidearm) if (ok(id)) sides.Add(id);
+            if (sides.Count == 0) foreach (int[] p in new[] { PoolSmg, PoolPlasmaSmg }) foreach (int id in p) if (ok(id)) sides.Add(id);
+            side = sides.Count > 0 ? sides[r.Next(sides.Count)] : 0;
+
+            List<int> mains = new List<int>();
+            foreach (int[] p in new[] { PoolRifle, PoolHeavy, PoolPlasma, PoolGauss, PoolProjector, PoolCarbine })
+                foreach (int id in p) if (ok(id) && !mains.Contains(id) && id != side) mains.Add(id);
+            mains.Sort((a, b) => GunDps(b).CompareTo(GunDps(a)));
+            main = mains.Count == 0 ? 0 : mains.Count == 1 ? mains[0] : mains[r.Next(2)];
+            if (ok(flavour) && mains.Count > 1 && mains.IndexOf(flavour) >= 0 && mains.IndexOf(flavour) < 2)
+                main = flavour;
+
+            List<int> miscs = new List<int>();
+            foreach (int[] p in new[] { PoolMelee, PoolLaser, PoolSonic, PoolShotgun })
+                foreach (int id in p) if (ok(id) && id != main && id != side && !miscs.Contains(id)) miscs.Add(id);
+            misc = miscs.Count > 0 ? miscs[r.Next(miscs.Count)] : 0;
+
+            if (main == 0) main = side != 0 ? side : misc;
+            if (side == 0) side = main;
+        }
+
+        /// <summary>Rough sustained damage per second of a gun (all damage types, every child of a multi-shot, clip + reload).</summary>
+        double GunDps(int id)
+        {
+            ItemInfo it = Itm(id);
+            double dmg = 0; int delay = 0, clip = 1, reload = 0;
+            Func<ItemInfo.Projectile, double> hit = pj => pj == null ? 0 : (double)pj.kineticDamageInner + pj.explosiveDamageInner + pj.electronicDamageInner + pj.psionicDamageInner + pj.bypassDamageInner + pj.energyDamageInner;
+            if (it is ItemInfo.Projectile pr) { dmg = hit(pr); delay = pr.fireDelay; clip = Math.Max(1, pr.ammoCapacity); reload = pr.reloadDelayNormal; }
+            else if (it is ItemInfo.MultiUse mu)
+            {
+                foreach (var ch in mu.childItems) dmg += hit(Itm(ch.id) as ItemInfo.Projectile);
+                delay = mu.fireDelay; clip = Math.Max(1, mu.ammoCapacity); reload = mu.reloadDelayNormal;
+            }
+            if (dmg <= 0) return 0;
+            double cycle = clip * Math.Max(5, delay) + Math.Max(0, reload);   // (game ticks)
+            return dmg * clip / cycle;
+        }
+
         Dictionary<int, HashSet<int>> _classLegalWeapons;
         static readonly Regex LogicToken = new Regex(@"(!?)([%@#-]?)(\d+)");
 
@@ -66,7 +128,7 @@ namespace InfServer.Script.GameType_Eol
 
         IEnumerable<int> AllCuratedGuns()
         {
-            foreach (int[] pool in new[] { PoolRifle, PoolSmg, PoolShotgun, PoolCarbine, PoolHeavy, PoolPlasma, PoolPlasmaSmg, PoolGauss, PoolLaser, PoolProjector, PoolPistol, AssassinClose, AssassinFar, Grenades, PoolProton })
+            foreach (int[] pool in new[] { PoolRifle, PoolSmg, PoolShotgun, PoolCarbine, PoolHeavy, PoolPlasma, PoolPlasmaSmg, PoolGauss, PoolLaser, PoolProjector, PoolPistol, AssassinClose, AssassinFar, Grenades, PoolProton, PoolSidearm, PoolMelee, PoolSonic })
                 foreach (int id in pool)
                     yield return id;
             yield return ItmKamenevAPmk2;

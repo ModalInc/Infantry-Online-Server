@@ -218,6 +218,12 @@ namespace InfServer.Bots
 
 				if (mug.childItems != null && mug.childItems.Count > 0)
 					_primaryProjectile = am.getItemByID(mug.childItems[0].id) as ItemInfo.Projectile;
+				// (2026-11-17, owner: "the mpacs are shooting like 5 cannons at once, it should be one after the other")
+				if (_fireDelay <= 0)
+				{
+					int gap = Math.Max(mug.reliabilityFireDelay, _primaryProjectile != null ? _primaryProjectile.fireDelay : 0);
+					_fireDelay = Math.Max(150, ItemTicksToMs(gap));
+				}
 			}
 			else if (_primaryItem is ItemInfo.Projectile)
 			{

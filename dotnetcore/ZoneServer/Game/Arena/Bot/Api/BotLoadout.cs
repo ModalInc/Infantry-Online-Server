@@ -17,7 +17,7 @@ namespace InfServer.Bots
     /// </summary>
     public sealed class BotLoadout
     {
-        public const int SlotCount = 6;
+        public const int SlotCount = 10;   // (2026-11-17: 6 vehicle slots + room for a player's armour set)
 
         private readonly Bot _bot;
         private readonly int[] _itemIds = new int[SlotCount];

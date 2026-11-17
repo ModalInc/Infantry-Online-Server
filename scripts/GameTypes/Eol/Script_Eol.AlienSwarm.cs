@@ -31,8 +31,8 @@ namespace InfServer.Script.GameType_Eol
         /// </summary>
         const int SwarmNestVehId = 835;
         public Vehicle SwarmNest { get { return _swarmNest; } }
-        public const int SwarmDefenders = 10;
-        public const int SwarmRewardCash = 95000, SwarmRewardExp = 12000, SwarmRewardPoints = EolBotHqDestroyPointsPerPlayer;   // (2026-11-16f, owner: was 90k / 13k)
+        public const int SwarmDefenders = 12;   // (2026-11-17, owner: "have the alien base team 12 instead"; was 10)
+        public const int SwarmRewardCash = 31200, SwarmRewardExp = 6500,   /* (2026-11-17, owner; was 95k / 12k) */ SwarmRewardPoints = EolBotHqDestroyPointsPerPlayer;   // (2026-11-16f, owner: was 90k / 13k)
         const int SwarmReturnMs = 5 * 60 * 1000;
         const int SwarmFirstDelayMs = 60 * 1000;      // first nest a minute after the match is running
         const int SwarmOpeningSpawnMs = 1200;         // the first 10 come quickly
@@ -82,6 +82,23 @@ namespace InfServer.Script.GameType_Eol
         /// (turret) in the .veh - a bot can't use it, so every Brute spawn failed; a second Arachnomorph (the other heavy) instead.
         static readonly ushort[] SwarmBugPool = { 149, 153, 154, 155, 155, 149 };
         const ushort SwarmChiefVehId = 200;
+        /// <summary>The four bug types, kept even (owner: "make sure its a good mix of aliens always").</summary>
+        static readonly ushort[] SwarmBugTypes = { 149, 153, 154, 155 };
+
+        /// <summary>The bug type the living swarm has fewest of (random between ties) - so 12 = Chief + about 3 of each.</summary>
+        ushort PickSwarmBugType()
+        {
+            Dictionary<ushort, int> n = new Dictionary<ushort, int>();
+            foreach (ushort t in SwarmBugTypes) n[t] = 0;
+            foreach (Bots.Bot b in _arena.ActiveBots)
+                if (b != null && b._team == botTeamSwarm && !b.IsDead && !b.bCondemned && b._type != null && n.ContainsKey((ushort)b._type.Id))
+                    n[(ushort)b._type.Id]++;
+            int min = int.MaxValue;
+            foreach (int c in n.Values) if (c < min) min = c;
+            List<ushort> fewest = new List<ushort>();
+            foreach (KeyValuePair<ushort, int> kv in n) if (kv.Value == min) fewest.Add(kv.Key);
+            return fewest[_arena._rand.Next(fewest.Count)];
+        }
 
         public Team botTeamSwarm;
         Vehicle _swarmNest;
@@ -293,7 +310,7 @@ namespace InfServer.Script.GameType_Eol
             Helpers.ObjectState at = PickSwarmCaveSpot();
             if (at == null)
                 return false;
-            ushort vid = needChief ? SwarmChiefVehId : SwarmBugPool[_arena._rand.Next(SwarmBugPool.Length)];
+            ushort vid = needChief ? SwarmChiefVehId : PickSwarmBugType();
             if (!(_arena._server._assets.getVehicleByID(vid) is VehInfo.Car))
             {   // (a bot needs a Car vehicle - never ask the engine for anything else)
                 Log.write(TLog.Warning, "[Eol] swarm bug vehicle {0} is not a Car - skipped.", vid);

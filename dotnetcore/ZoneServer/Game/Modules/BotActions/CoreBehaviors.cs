@@ -73,7 +73,7 @@ namespace InfServer.Game.Modules.BotActions
         {
             Helpers.ObjectState threat = ctx.GetPrimaryTargetState();
             if (threat == null && BotActionHelpers.RefreshPlayerTarget(ctx))
-                threat = ctx.CurrentPlayerTarget._state;
+                threat = ctx.CurrentPlayerTarget?._state;   // (2026-11-17: could be null here - crashed every arena poll)
 
             Helpers.ObjectState anchor;
             if (ctx.Objectives != null && ctx.Objectives.TryGetPatrolAnchor(ctx.Bot, out anchor) && anchor != null)

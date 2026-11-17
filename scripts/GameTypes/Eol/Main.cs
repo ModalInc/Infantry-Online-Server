@@ -50,8 +50,9 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>HQ chassis id — physical anchor for base bots (469). No leveling/bounty script layer.</summary>
         public int _hqVehId = 469;
         /// <summary>Per-player payout when the killer team destroys a defense bot HQ (469).</summary>
-        public const int EolBotHqDestroyCashPerPlayer = 80000;   // (2026-11-15, owner: 80k cash / 12k xp per base kill)
-        public const int EolBotHqDestroyExpPerPlayer = 12000;
+        public const int EolBotHqDestroyCashPerPlayer = 34500;   // (2026-11-17, owner: 34,500 cash / 6,250 xp; was 80k / 12k)
+        public const int EolKothCash = 32500, EolKothExp = 8500;   // (2026-11-17, owner) KOTH win, flat, before the lifetime scale
+        public const int EolBotHqDestroyExpPerPlayer = 6250;
         public const int EolBotHqDestroyPointsPerPlayer = 5000;   // (2026-11-17, owner: was 750; the Alien Queen uses this too)
         /// <summary>Lifetime <see cref="InfServer.Game.Player.ExperienceTotal"/> below this gets a 1.5× cash/exp/points bonus.</summary>
         public const int EolRewardScaleHighCutoffExp = 75000;
@@ -1981,11 +1982,12 @@ namespace InfServer.Script.GameType_Eol
             EolBotBrain.PlayArea = _playAreaFn;   // bots stay out of the toxic zones (re-set: survives script reloads)
             WireTerritoryHooks();                 // NW territories + the new player buffer (Script_Eol.Territories.cs)
             Bots.Bot.DeathDropResolver = _helmetDropFn;   // pirate / class helmets on death
-            PrepareNewBots(now);    // 50 % more armour + spawn protection (Script_Eol.Deploy.cs)
+            PrepareNewBots(now);    // 35 % more armour + spawn protection (Script_Eol.Deploy.cs)
             PollSquadCommands(now); // squad team-chat orders S / X / @ (Script_Eol.SquadCommands.cs)
             PollNoSpawnBuildings(now); // bots that come alive inside a no-spawn building go outside (Script_Eol.NoSpawnBuildings.cs)
             WireTacticsHooks();     // per-player adaptive skill (Script_Eol.Tactics.cs)
             PollMedics(now);        // squad medics heal bots and players
+            PollBotMedikits(now);   // (2026-11-17) bots patch each other up with medikits
             PollEngineerCharge(now); // squad Chief Engineers charge low-energy team mates (Script_Eol.EngineerOrders.cs)
             PollPackJumps(now);      // pack bots jump walls / jump away when hurt (Script_Eol.PackJumps.cs)
             PollMissingFlags(now);   // flags skipped while the zone was empty come up once players are in
@@ -3212,7 +3214,7 @@ namespace InfServer.Script.GameType_Eol
         {
             string open = FormatEolOpenSectorsTickerPrefix();
             string threat = BuildEolThreatTickerLine();
-            string hunt = IsBountyHuntActive ? BuildEolBountyHuntTickerLine() : null;
+            string hunt = null;   // (2026-11-17, owner: the 30k hunt is not announced - no HUD line)
             return JoinEolTickerParts(open, threat, hunt);
         }
 
@@ -3283,7 +3285,7 @@ namespace InfServer.Script.GameType_Eol
                 bhbPart = "BHB " + aliveH;
             }
 
-            string hunt = IsBountyHuntActive ? BuildEolBountyHuntTickerCompact() : null;
+            string hunt = null;   // (2026-11-17: not announced)
             return JoinEolTickerParts(open, basePart, rotatePart, bhbPart, hunt);
         }
 
@@ -4688,8 +4690,10 @@ namespace InfServer.Script.GameType_Eol
                 if (p == null || p.IsSpectator || !paid.Add(p))
                     continue;
 
-                int cashReward = _config.king.cashReward * _arena.PlayerCount;
-                int experienceReward = _config.king.experienceReward * _arena.PlayerCount;
+                // (2026-11-17, owner: "changed Koth to a flat amount, have it 32,500 cash. and the XP should be 8,500 as the
+                // base, apply the standard rates for new players and the 100k xp lifetime") - was cfg x players in the zone
+                int cashReward = ApplyEolLifetimeRewardScale(p, EolKothCash);
+                int experienceReward = ApplyEolLifetimeRewardScale(p, EolKothExp);
                 int pointReward = _config.king.pointReward * _arena.PlayerCount;
 
                 p.Cash += cashReward;
@@ -6430,6 +6434,12 @@ namespace InfServer.Script.GameType_Eol
             // (2026-11-16b, owner: "leach bty as if they were killing real people") bounty grows like a player kill:
             // the killer's own +5 % and the team's assist bounty below.
             killerBountyIncrease = Convert.ToInt32(((double)killer.Bounty / 100) * c_percentOfOwnIncrease);
+            // (2026-11-17, owner: "bots can also bounty too") the bot's own bounty pays like a player's: 50 % of it into the
+            // rewards and onto the killer's bounty (a fresh bot = its base, 100+: the same +50 bounty as before)
+            int botBountyShare = Convert.ToInt32(BotBountyOf(victim) / 100.0 * c_percentOfVictim);
+            killerPoints += Convert.ToInt32(botBountyShare * c_pointMultiplier);
+            killerCash += Convert.ToInt32(botBountyShare * c_cashMultiplier);
+            killerExp += Convert.ToInt32(botBountyShare * c_expMultiplier);
 
             //Update his stats
             int baseCash = killerCash;
@@ -6442,7 +6452,7 @@ namespace InfServer.Script.GameType_Eol
             killerCash = addCash(killer, killerCash);
             killer.Experience += killerExp;
             killer.KillPoints += killerPoints;
-            killer.Bounty += (int)Math.Round((killerBountyIncrease + victimBounty / 2) * StandardCarrierBountyFactor(killer));
+            killer.Bounty += (int)Math.Round((killerBountyIncrease + botBountyShare) * StandardCarrierBountyFactor(killer));
 
             //Inform the killer..
             string victimName = BotNameModule.GetDisplayName(victim);
@@ -6564,6 +6574,8 @@ namespace InfServer.Script.GameType_Eol
             }
 
             KothOnBotDeath(dead, killer, killerBot);   // crowns (bots play KOTH too)
+            OnBotDiedBounty(dead, killerBot);          // (2026-11-17) bot bounty: passed on to a killer bot, then gone
+            ResetBotMedikits(dead);                    // (fresh medikits next life)
 
             if (killerBot != null)
             {
@@ -7391,7 +7403,10 @@ namespace InfServer.Script.GameType_Eol
             // the killer's kill rewards, which read the victim's bounty), and no restore for a minute.
             MarkBountyDeath(victim);
             if (killType != Helpers.KillType.Player)
-                NoteFormBotDeath(victim);   // adaptive skill: died to the bots / their turrets
+            {
+                NoteFormBotDeath(victim);
+                OnBotKilledPlayer(victim, update);   // (2026-11-17) a bot that kills you takes its share of your bounty
+            }   // adaptive skill: died to the bots / their turrets
             ClearCombatCallsForPlayer(victim);
             _pendingBotDeathUpdate = update;
 
