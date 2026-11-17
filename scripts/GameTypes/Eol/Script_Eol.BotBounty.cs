@@ -21,7 +21,8 @@ namespace InfServer.Script.GameType_Eol
     {
         static readonly Dictionary<Bots.Bot, int> _botBounty = new Dictionary<Bots.Bot, int>();
         static readonly Dictionary<Bots.Bot, int> _botBountyAnnounced = new Dictionary<Bots.Bot, int>();
-        static readonly int[] BotBountyAnnounceAt = { 1000, 2500, 5000, 10000 };
+        // (2026-11-17, owner: "change the WANTED message so it only appears above 5k bty for the bots") was 1k / 2.5k / 5k / 10k
+        static readonly int[] BotBountyAnnounceAt = { 5000, 10000, 20000, 30000 };
         const int BotBountyMinBase = 100;
 
         static int BotBaseBounty(Bots.Bot b)

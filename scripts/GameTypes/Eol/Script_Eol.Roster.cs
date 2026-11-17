@@ -125,7 +125,7 @@ namespace InfServer.Script.GameType_Eol
             {
                 if (b == null || b.bCondemned || (b.IsDead && !b.bDropshipRespawnPending))
                     continue;
-                if (b._team == team)
+                if (b._team == team && b != _swarmNest)   // (2026-11-17: the moving Queen isn't one of the 12)
                     onTeam++;
                 if (!IsAssassinTeam(b._team))
                     total++;

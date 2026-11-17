@@ -797,9 +797,11 @@ namespace InfServer.Game
         }
         bool _bKillHandled;
 
-        /// <summary>(2026-11-17, owner: "make turrets take damage on all weapons") a turret has no energy to drain: energy
-        /// damage (plasma) that gets through its armour hurts its health, like any other damage.</summary>
-        protected override double OnEnergyHit(double netDamage) { return netDamage > 0 ? netDamage : 0; }
+        /// <summary>(2026-11-17, owner: "make turrets take damage on all weapons" / "too squishy ... other weapons can hurt
+        /// it slightly") a turret has no energy to drain: energy damage (plasma) that gets through its armour hurts its
+        /// health at a tenth - energy damage is sized to drain a player's ~600 energy (100-350 a hit), so full value
+        /// melted turrets in a few shots. Explosives stay the turret killer.</summary>
+        protected override double OnEnergyHit(double netDamage) { return netDamage > 0 ? netDamage * 0.1 : 0; }
 
         /// <summary>
         /// Handles damage from explosions triggered nearby

@@ -110,6 +110,17 @@ namespace InfServer.Script.GameType_Eol
                     return;
                 if (s._arena == null || player._arena != s._arena)
                     return;
+                string low = pkt.message != null ? pkt.message.Trim().ToLowerInvariant() : "";
+                if (IsChangeSquadText(low))
+                {   // (2026-11-17) "change squad Jump Trooper, SciOps" (Script_Eol.SquadClasses.cs)
+                    string text = pkt.message;
+                    player._arena.handleEvent(delegate (Arena a)
+                    {
+                        try { if (_chatScript == s) s.HandleChangeSquad(player, text); }
+                        catch (Exception ex) { Log.write(TLog.Warning, "[Eol] change squad: " + ex.Message); }
+                    });
+                    return;
+                }
                 int order = ParseSquadOrder(pkt.message);
                 if (order == 0)
                     return;
@@ -447,6 +458,8 @@ namespace InfServer.Script.GameType_Eol
                 Helpers.Player_RouteChatRaw(t, name, "Support ready! @ nme = we come attack with you, @ home = we come defend with you", 0, Helpers.Chat_Type.Team);
                 Helpers.Player_RouteChatRaw(t, name, "H = medic heals you, follow = we follow you, stop = back on the attack", 0, Helpers.Chat_Type.Team);
                 Helpers.Player_RouteChatRaw(t, name, "Engineer: mg / plasma / rocket / rocket ap / sentry / hq here = I build it (every 30 s), remove mg etc = I dismantle it", 0, Helpers.Chat_Type.Team);
+                if (IsStrikeTeam(t))   // (2026-11-17, owner) pick the squad's other classes
+                    Helpers.Player_RouteChatRaw(t, name, "Want other classes? In the dropship say: change squad Jump Trooper, SciOps - we come to you (F11 names, once every 10 min)", 0, Helpers.Chat_Type.Team);
                 // (2026-11-17, owner) the last line: how to see this again
                 Helpers.Player_RouteChatRaw(t, name, "Say help and we'll tell you again how we can support you", 0, Helpers.Chat_Type.Team);
             }

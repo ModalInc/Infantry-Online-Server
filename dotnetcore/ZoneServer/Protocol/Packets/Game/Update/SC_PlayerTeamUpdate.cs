@@ -51,7 +51,7 @@ namespace InfServer.Protocol
 			{
 				if (v._state.health > hb._peakHealth)
 					hb._peakHealth = v._state.health;
-				if (teamHealth)
+				if (teamHealth || hb.ShowHealthToAll)
 				{   // (2026-11-17, owner: "updates for the team so others can see what health the bots are on") the real
 					// bar, scaled to the vehicle type's hitpoints (the client's full bar) - bots can carry more HP
 					int full = Math.Max(v._type.Hitpoints, (int)hb._peakHealth);

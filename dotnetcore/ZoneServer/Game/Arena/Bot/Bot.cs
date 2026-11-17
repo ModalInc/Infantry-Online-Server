@@ -410,6 +410,9 @@ namespace InfServer.Bots
         public short _lastRoutedHealth = -1;
         /// <summary>The most health this bot has had (its full bar - bots can have more HP than their vehicle type).</summary>
         public short _peakHealth;
+        /// <summary>(2026-11-17, owner: "the HP does not show for the queen ... not other alien hp, just the queen") everyone
+        /// sees this bot's real health bar (other bots report full health to enemies).</summary>
+        public bool ShowHealthToAll;
         private int[] _utilityArmorIgnore = new int[6];
         private int[] _utilityArmorPercent = new int[6];
         private BotUtilityMovementModifiers _utilityMovementMods;
