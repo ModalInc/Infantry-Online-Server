@@ -147,6 +147,8 @@ namespace InfServer.Game
         /// <summary>
         /// Takes care of all bots in the arena
         /// </summary>
+        int _tickBotPollErrorLog;
+
         private void pollBots()
         {	//Handle each bot
             FlushBotPathCallbacks();
@@ -164,7 +166,19 @@ namespace InfServer.Game
             int healthNow = Environment.TickCount;
             foreach (Bot bot in _botPollScratch)
             {	//Does it need to send an update?
-                bool send = bot.poll();
+                bool send;
+                // (2026-11-17) one bot's exception must never stop every other bot's poll (it aborted the whole loop:
+                // all bots after it stood still and stopped shooting)
+                try { send = bot.poll(); }
+                catch (Exception ex)
+                {
+                    if (healthNow - _tickBotPollErrorLog > 10000)
+                    {
+                        _tickBotPollErrorLog = healthNow;
+                        Log.write(TLog.Exception, "Bot {0} ({1}) poll failed: {2}", bot._id, bot._type != null ? bot._type.Name : "?", ex);
+                    }
+                    continue;
+                }
                 // (2026-11-17, owner: "if team member bots are getting hit, their hp does not update ... constant
                 // streamline updates") a living bot whose health changed goes out at once, and at least once a second
                 // regardless - its team sees the real health bar (Update_RouteBot / CaptureBotPose: team only)

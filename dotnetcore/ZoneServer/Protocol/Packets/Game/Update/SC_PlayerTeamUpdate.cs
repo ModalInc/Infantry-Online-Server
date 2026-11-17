@@ -106,8 +106,8 @@ namespace InfServer.Protocol
 
 			if (player != null)
 				Write((itemID == 0) ? (short)(-player.Bounty) : itemID);
-			else
-				Write(itemID);
+			else   // (2026-11-17) a bot's bounty shows next to its name like a player's (scripts set Vehicle.DisplayBounty)
+				Write((itemID == 0 && vehicle != null && vehicle.DisplayBounty > 0) ? (short)(-Math.Min(32767, vehicle.DisplayBounty)) : itemID);
 			
 			Write(vehicle._id);
 			Write(tickUpdate);

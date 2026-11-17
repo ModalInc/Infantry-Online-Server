@@ -181,6 +181,85 @@ namespace InfServer.Script.GameType_Eol
             public WeaponController Opener, Grenade;
             public object OpenerTarget;
             public int OpenerShotsLeft, GrenadesLeft, NextGrenade;
+            // (2026-11-17) the third gun (melee / laser / sonic / shotgun) and its burst window
+            public WeaponController Misc;
+            public int MiscFrom, MiscUntil;
+            // (2026-11-17) stand-still guns: charge-up end, end of the planted burst, earliest next commit
+            public int PlantFireFrom, PlantUntil, NextPlant;
+            public WeaponController PlantGun;
+        }
+
+        /// <summary>The bot's misc gun (third slot): used while the main reloads and in short bursts now and then.</summary>
+        public static void SetMiscWeapon(Bot b, WeaponController misc)
+        {
+            if (b == null)
+                return;
+            Mind m = Get(b);
+            m.Misc = misc;
+            m.MiscFrom = Environment.TickCount + 6000 + m.R.Next(6000);
+            m.MiscUntil = 0;
+        }
+
+        /// <summary>Can <paramref name="w"/> hit something <paramref name="dist"/> away (inside its reach, past its minimum)?</summary>
+        const int MeleeReachRaw = 56;
+        /// <summary>The zone's melee items (knife, axe, swords, fists, stunner) - their rounds have a small speed, so the
+        /// engine's "no muzzle velocity" test missed them and bots ran at players swinging from far away.</summary>
+        static readonly HashSet<int> MeleeItemIds = new HashSet<int> { 1123, 1013, 1080, 1075, 1076, 1174, 1173, 1065, 1047 };
+
+        static bool IsMeleeGun(WeaponController w)
+        {
+            if (w == null) return false;
+            if (MeleeItemIds.Contains(w.ItemID) || BotCombat.IsMeleeWeapon(w)) return true;
+            ItemInfo.Projectile p = w.Projectile;
+            return p != null && p.muzzleVelocity > 0 && p.aliveTime > 0 && (long)p.muzzleVelocity * p.aliveTime / 10000L < 96;
+        }
+
+        static bool GunReaches(WeaponController w, double dist)
+        {
+            if (w == null || w.ItemID == 0)
+                return false;
+            int reach = BotWeaponUtil.GetCombatRangeRaw(AssetManager.Manager?.getItemByID(w.ItemID));
+            int min = BotWeaponUtil.GetMinFireRangeRaw(w);
+            if (IsMeleeGun(w))   // (2026-11-17: a melee weapon reaches arm's length only, never "anything")
+                return dist <= Math.Max(MeleeReachRaw, reach > 0 ? Math.Min(reach, 96) : 0);
+            return (reach <= 0 || dist <= BotCombat.MaxFireDistance(reach, false)) && (min <= 0 || dist >= min);
+        }
+
+        /// <summary>
+        /// (2026-11-17, owner: "they should rotate around in the fight with the main being the hardest hitting") the main
+        /// gun (far slot) whenever it reaches and isn't reloading; the misc gun in a 2-3 s burst every 8-14 s and while the
+        /// main reloads; the sidearm (close slot) when neither can fire. null = keep the engine's pick.
+        /// </summary>
+        static WeaponController RotateGuns(Bot self, Mind m, double dist, int now)
+        {
+            WeaponController main = self._weaponFar, side = self._weaponClose, misc = m.Misc;
+            if (main == null && misc == null)
+                return null;
+            if (self.IsPlanted(now))
+            {   // (planted for a stand-still gun: keep blasting with it)
+                foreach (WeaponController w in new[] { main, side, misc })
+                    if (w != null && w.ItemID == self.PlantedItemId) return w;
+            }
+            bool miscOk = misc != null && GunReaches(misc, dist) && !misc.IsReloading;
+            // (2026-11-17, owner: "melee ... only if they are close and they cannot fire their other weapons") a melee misc
+            // is the last resort: in reach (close) and only when neither the main nor the sidearm can fire
+            if (misc != null && IsMeleeGun(misc))
+            {
+                bool mainCan = main != null && GunReaches(main, dist) && !main.IsReloading;
+                bool sideCan = side != null && !ReferenceEquals(side, misc) && GunReaches(side, dist) && !side.IsReloading;
+                if (mainCan) return main;
+                if (sideCan) return side;
+                return miscOk ? misc : null;
+            }
+            // (2026-11-17, owner: "make sure they are firing on reload ... always") no misc burst windows any more - every
+            // swap costs a switch delay: the main gun always; while it reloads / can't reach, the sidearm, else the misc
+            if (main != null && GunReaches(main, dist) && !main.IsReloading)
+                return main;
+            if (side != null && !ReferenceEquals(side, main) && GunReaches(side, dist) && !side.IsReloading)
+                return side;
+            if (miscOk)
+                return misc;
+            return main;
         }
 
         /// <summary>
@@ -774,6 +853,12 @@ namespace InfServer.Script.GameType_Eol
             if (maser != null && !ReferenceEquals(gun, maser)
                 && !EolBotTargetUtil.TileLineClearForWeaponFire(self._arena, self._state.positionX, self._state.positionY, dest.positionX, dest.positionY))
                 gun = BotWeaponUtil.CommitEngageWeapon(self, maser);
+            else
+            {   // (2026-11-17) sidearm / main / misc rotation (the maser through a wall still comes first)
+                WeaponController rot = RotateGuns(self, Get(self), dist, Environment.TickCount);
+                if (rot != null && !ReferenceEquals(rot, gun))
+                    gun = BotWeaponUtil.CommitEngageWeapon(self, rot) ?? rot;
+            }
             if (gun != null)
                 self._weapon = gun;
 
@@ -839,7 +924,7 @@ namespace InfServer.Script.GameType_Eol
             // reloading / out of reach (fire on reload, like a player).
             WeaponController last = self.LastFiredWeapon;
             if (last != null && !ReferenceEquals(gun, last) && !self.CanFireWeaponNow(gun)
-                && (ReferenceEquals(last, self._weaponClose) || ReferenceEquals(last, self._weaponFar)) && last.ableToFire())
+                && (ReferenceEquals(last, self._weaponClose) || ReferenceEquals(last, self._weaponFar) || ReferenceEquals(last, xm.Misc)) && last.ableToFire())
             {
                 int lReach = BotWeaponUtil.GetCombatRangeRaw(last.ItemID != 0 ? AssetManager.Manager?.getItemByID(last.ItemID) : null);
                 int lMin = BotWeaponUtil.GetMinFireRangeRaw(last);
@@ -856,6 +941,23 @@ namespace InfServer.Script.GameType_Eol
                 _fOutOfReach++;
                 return;
             }
+            // (2026-11-17, owner: "weapons that require stand still the bots respect it and shoot. i.e cannons. so they have
+            // to stand still and start blasting and then if they want to dodge they can dodge ... they have to commit to
+            // blasting to get damage off") a gun whose charge-up is cancelled by moving: plant, wait out the charge-up, blast
+            // for 1.5-2.5 s without moving, then 1-2.5 s free to dodge (a non-planting gun may shoot meanwhile), repeat
+            // (the engine plants / charges / bursts it on every fire path - Bot.StationaryFireGate); between bursts a gun
+            // that doesn't need planting may shoot instead, never the stand-still one on the move
+            if (gun.RequiresStationaryFire && self.InStationaryCooldown(Environment.TickCount))
+            {
+                WeaponController alt = null;
+                foreach (WeaponController w in new[] { self._weaponClose, self._weaponFar, xm.Misc })
+                    if (w != null && !ReferenceEquals(w, gun) && !w.RequiresStationaryFire && !IsMeleeGun(w) && GunReaches(w, dist) && w.ableToFire()) { alt = w; break; }
+                if (alt == null)
+                    return;
+                gun = alt;
+                self._weapon = gun;
+            }
+
             // Unload: fire every time the gun is ready and on target. (Hits on enemy BOTS are resolved for every
             // bot shot in OnBotShotFired below, whichever code path fired it.)
             if (!gun.ableToFire()) { _fCooldown++; return; }

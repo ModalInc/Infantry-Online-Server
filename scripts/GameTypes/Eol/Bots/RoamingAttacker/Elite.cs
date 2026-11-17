@@ -11,6 +11,8 @@ namespace InfServer.Script.GameType_Eol
     public partial class RoamingAttacker : Bot
     {
         int _tickEliteNav;
+        /// <summary>(2026-11-17) while following a player: fight only within this many px of that player.</summary>
+        const int FollowLeash = 650;
         int _idleSince, _idleCheckTick, _soloUntil, _driftPickTick;
         short _idleX, _idleY;
         Helpers.ObjectState _drift;
@@ -112,16 +114,26 @@ namespace InfServer.Script.GameType_Eol
                 }
             }
 
-            bool hostile = BotShouldEngageInsteadOfIdle(now) || (_target != null && !_target.IsDead);
+            // (2026-11-17, owner: "when you say follow me ... they should follow you and then engage if enemy is around, not
+            // go elsewhere immediately") while following: fight only what is near the player we follow - a target more than
+            // FollowLeash px from that player is let go, and a bot that has fallen far behind comes back first
+            InfServer.Game.Player follow = _baseScript.SquadFollowTarget(_team, now);
+            bool farBehind = follow != null && Helpers.distanceTo(_state, follow._state) > FollowLeash + 150;
+            if (follow != null && _target != null && (farBehind || Helpers.distanceTo(_target._state, follow._state) > FollowLeash))
+                ClearActivePlayerTarget();
+
+            bool hostile = !farBehind && (BotShouldEngageInsteadOfIdle(now) || (_target != null && !_target.IsDead));
             if (hostile)
             {
                 seekAndDestroy(now);
+                if (follow != null && _target != null && Helpers.distanceTo(_target._state, follow._state) > FollowLeash)
+                    ClearActivePlayerTarget();   // (it picked something too far from the player: keep following)
                 InLiveCombat = _target != null || InLiveCombat;
                 if (InLiveCombat)
                     return base.poll();
             }
 
-            if (EolBotBrain.TryEngageTurret(this, _baseScript, now))
+            if (!farBehind && EolBotBrain.TryEngageTurret(this, _baseScript, now))
                 return base.poll();
 
             // (2026-11-17) a Chief Engineer out of a fight repairs its team's damaged turrets / HQ nearby

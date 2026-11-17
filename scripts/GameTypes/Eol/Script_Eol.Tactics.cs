@@ -120,14 +120,15 @@ namespace InfServer.Script.GameType_Eol
 
         public bool IsSquadMedic(Bot b)
         {
-            return b != null && b._type != null && MedicClasses.Contains(b._type.Id) && IsRoamingSquadTeam(b._team);
+            // (2026-11-17: medics heal on every human / pirate bot team, not only the roaming squads)
+            return b != null && b._type != null && (MedicClasses.Contains(b._type.Id) && !IsAlienBotTeam(b._team) && !(b is AlienHorde) || IsBoardMedic(b));
         }
 
         static int MaxHealthOf(Vehicle v)
         {
             if (v == null || v._type == null)
                 return 100;
-            return Math.Max(v._type.Hitpoints, v is Bot && v._type.Hitpoints < HumanBotHealth ? HumanBotHealth : v._type.Hitpoints);
+            return Math.Max(1, v._type.Hitpoints);   // (2026-11-17: bots keep their real class HP now - no lift to 100)
         }
 
         static int PlayerMaxHealth(InfServer.Game.Player p)

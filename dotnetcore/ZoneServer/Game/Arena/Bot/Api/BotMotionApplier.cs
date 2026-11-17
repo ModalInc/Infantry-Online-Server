@@ -330,6 +330,12 @@ namespace InfServer.Bots
             int reach = weapon.ItemID != 0 ? BotWeaponUtil.GetCombatRangeRaw(AssetManager.Manager?.getItemByID(weapon.ItemID)) : 0;
             if (reach > 0 && fireDist > MaxFireDistance(reach, IsMeleeWeapon(weapon)))
                 return false;
+            // (2026-11-17, owner: "make sure all weapons respect the physics and laws") a gun whose charge-up moving cancels
+            // only fires planted and charged, on every fire path (pirates included) - checked only once the target is in reach, so a bot never plants for nothing; and a gun with an energy cost needs it
+            if (!bot.StationaryFireGate(weapon, Environment.TickCount))
+                return false;
+            if (!bot.HasEnergyFor(weapon))
+                return false;
 
             int aimResult = weapon.getAimAngle(targetState);
 
@@ -343,6 +349,7 @@ namespace InfServer.Bots
 
             if (freezeMs > 0)
                 bot.freezeMovement(freezeMs);
+            bot.SpendEnergyFor(weapon);
 
             bot._itemUseID = weapon.ItemID;
             weapon.shotFired();

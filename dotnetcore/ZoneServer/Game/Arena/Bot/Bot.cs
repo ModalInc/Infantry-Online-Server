@@ -850,6 +850,168 @@ namespace InfServer.Bots
         }
 
         int _lastFiredItemId, _tickOtherWeaponReady;
+        public static int BotMaxSwitchDelayMs = 350;
+
+        #region Stand-still guns + weapon energy (2026-11-17)
+        int _plantItem, _plantFireFrom, _plantUntil, _nextPlant;
+        static readonly Random _plantRng = new Random();
+
+        /// <summary>
+        /// May this weapon fire now? Normal guns: yes. A stand-still gun (charge-up cancelled by moving): the bot plants
+        /// (frozen), waits the weapon's real charge-up, then blasts for 1.5-2.5 s; after that 1-2.5 s free to dodge, when
+        /// the gun can't fire, then it plants again.
+        /// </summary>
+        public bool StationaryFireGate(WeaponController w, int now)
+        {
+            if (w == null || !w.RequiresStationaryFire)
+                return true;
+            if (_plantItem == w.ItemID && now - _plantUntil < 0)
+            {   // planted: stay put; fire once charged
+                freezeMovement(Math.Max(50, Math.Min(400, _plantUntil - now)));
+                return now - _plantFireFrom >= 0;
+            }
+            if (_nextPlant != 0 && now - _nextPlant < 0)
+                return false;   // dodging between bursts
+            _plantItem = w.ItemID;
+            _plantFireFrom = now + w.PrefireDelayMs;
+            _plantUntil = _plantFireFrom + 1500 + _plantRng.Next(1000);
+            _nextPlant = _plantUntil + 1000 + _plantRng.Next(1500);
+            freezeMovement(400);
+            return false;
+        }
+
+        public bool IsPlanted(int now) { return _plantItem != 0 && now - _plantUntil < 0; }
+        public int PlantedItemId { get { return _plantItem; } }
+        /// <summary>Between bursts of a stand-still gun (it can't fire it now; another gun may).</summary>
+        public bool InStationaryCooldown(int now) { return _nextPlant != 0 && now - _plantUntil >= 0 && now - _nextPlant < 0; }
+
+        static int WeaponEnergyCost(WeaponController w)
+        {
+            ItemInfo it = w != null && w.ItemID != 0 ? AssetManager.Manager?.getItemByID(w.ItemID) : null;
+            // item energy costs are in 1/1000 energy (Maklov plasma rifle 27000 = 27 energy) - raw, no plasma gun could ever fire
+            int raw = it is ItemInfo.MultiUse mu ? mu.energyCostTerrain0 : it is ItemInfo.Projectile pj ? pj.terrain0EnergyCost : 0;
+            return raw <= 0 ? 0 : (raw + 999) / 1000;
+        }
+
+        /// <summary>Player-energy bots need the weapon's energy cost (plasma guns etc.); others always may fire.</summary>
+        public bool HasEnergyFor(WeaponController w)
+        {
+            if (!PlayerEnergy || _energy < 0) return true;
+            int cost = WeaponEnergyCost(w);
+            return cost <= 0 || _energy >= cost;
+        }
+
+        public void SpendEnergyFor(WeaponController w)
+        {
+            if (!PlayerEnergy || _energy < 0) return;
+            int cost = WeaponEnergyCost(w);
+            if (cost <= 0) return;
+            _energy = Math.Max(0, _energy - cost);
+            if (_state != null) _state.energy = (short)Math.Round(_energy);
+        }
+        #endregion
+
+        #region Player-style energy (2026-11-17)
+        /// <summary>
+        /// (2026-11-17, owner: "same armor setups as real players ... energy drain becomes important") the bot runs a
+        /// player's energy: the vehicle's EnergyMax + its items' extraCapacity, recharging at the vehicle's EnergyRate +
+        /// its items' rechargeRate (the Suit SuperCharger adds, fields take away). Energy damage drains it first and the
+        /// rest hurts health; at 0 every energy item (fields, cloaks - rechargeRate below 0) switches off until the bot
+        /// is back to 30 %. Off unless a script turns it on.
+        /// </summary>
+        public bool PlayerEnergy;
+        /// <summary>Recharge rate units per energy point per second (vehicle 250 = 25 energy a second).</summary>
+        public static double EnergyRateDivisor = 10.0;
+        double _energy = -1;
+        int _tickEnergy;
+        bool _energyItemsDown;
+        readonly bool[] _energyItemWasOn = new bool[BotLoadout.SlotCount];
+
+        public double Energy { get { return _energy < 0 ? 0 : _energy; } }
+        public bool EnergyItemsDown { get { return _energyItemsDown; } }
+
+        int EnergyMaxNow()
+        {
+            VehInfo ev = ArmorSource ?? _type;   // (a rider / pirate uses its class's energy, like its armour)
+            int m = ev != null ? Math.Max(0, ev.EnergyMax) : 0;
+            if (Loadout != null)
+                foreach (ItemInfo.UtilityItem u in Loadout.GetActiveUtilities())
+                    m += u.extraCapacity;
+            return Math.Max(0, m);
+        }
+
+        void PollEnergy(int now)
+        {
+            if (!PlayerEnergy || Loadout == null || _state == null)
+                return;
+            if (_energy < 0 || _tickEnergy == 0)
+            {
+                _energy = EnergyMaxNow();
+                _tickEnergy = now;
+                return;
+            }
+            double dt = (now - _tickEnergy) / 1000.0;
+            if (dt < 0.1)
+                return;
+            _tickEnergy = now;
+            if (dt > 2) dt = 2;
+            VehInfo ev = ArmorSource ?? _type;
+            int rate = ev != null ? Math.Max(0, ev.EnergyRate) : 0;
+            foreach (ItemInfo.UtilityItem u in Loadout.GetActiveUtilities())
+                rate += u.rechargeRate;
+            int max = EnergyMaxNow();
+            _energy = Math.Min(max, _energy + rate / EnergyRateDivisor * dt);
+            if (_energy <= 0)
+            {
+                _energy = 0;
+                if (!_energyItemsDown)
+                    SetEnergyItems(false);
+            }
+            else if (_energyItemsDown && _energy >= max * 0.3)
+                SetEnergyItems(true);
+            _state.energy = (short)Math.Max(0, Math.Min(short.MaxValue, Math.Round(_energy)));
+        }
+
+        /// <summary>Switch the energy-using items (rechargeRate below 0) off at empty, back on once recharged.</summary>
+        void SetEnergyItems(bool on)
+        {
+            _energyItemsDown = !on;
+            for (int i = 0; i < BotLoadout.SlotCount; i++)
+            {
+                if (Loadout.GetSlotKind(i) != BotLoadoutSlotKind.Utility)
+                    continue;
+                ItemInfo.UtilityItem u = AssetManager.Manager?.getItemByID(Loadout.GetItemId(i)) as ItemInfo.UtilityItem;
+                if (u == null || u.rechargeRate >= 0)
+                    continue;
+                if (!on)
+                {
+                    _energyItemWasOn[i] = Loadout.IsActive(i);
+                    if (_energyItemWasOn[i]) Loadout.SetUtilityActive(i, false);
+                }
+                else if (_energyItemWasOn[i])
+                {
+                    Loadout.SetUtilityActive(i, true);
+                    _energyItemWasOn[i] = false;
+                }
+            }
+        }
+
+        protected override double OnEnergyHit(double netDamage)
+        {
+            if (!PlayerEnergy || netDamage <= 0)
+                return base.OnEnergyHit(netDamage);
+            if (_energy < 0)
+                _energy = EnergyMaxNow();
+            double drain = netDamage / 1000.0;
+            double fromEnergy = Math.Min(_energy, drain);
+            _energy -= fromEnergy;
+            if (_state != null)
+                _state.energy = (short)Math.Max(0, Math.Round(_energy));
+            // (2026-11-17, owner: "the bots still feel a bit squishy") energy damage only drains energy (fields / cloak drop at
+            // 0), like a player's - it no longer spills into health (400-1000 energy hits were killing bots through any armour)
+            return 0;
+        }
+        #endregion
 
         /// <summary>
         /// One trigger finger (local 2026-11-14): the same weapon follows its own cooldown; a DIFFERENT weapon has
@@ -869,7 +1031,9 @@ namespace InfServer.Bots
             if (w == null)
                 return;
             _lastFiredItemId = w.ItemID;
-            _tickOtherWeaponReady = Environment.TickCount + Math.Max(0, w.FireDelayOtherMs);
+            // (2026-11-17, owner: "make sure they are firing on reload ... always") the swap to another gun is capped at 0.35 s
+            // for bots - the full 1.5-3 s item switch delay left them waiting instead of shooting while the main reloaded
+            _tickOtherWeaponReady = Environment.TickCount + Math.Min(BotMaxSwitchDelayMs, Math.Max(0, w.FireDelayOtherMs));
             LastShotTick = Environment.TickCount == 0 ? 1 : Environment.TickCount;
             LastFiredWeapon = w;
         }
@@ -1232,6 +1396,7 @@ namespace InfServer.Bots
 
             // Scripts swap / create guns freely; every one picks up this bot's skill profile.
             WireWeaponOwners();
+            PollEnergy(tickCount);
 
             //If it's a ridiculous delta, clamp rather than fully skipping the tick
             if (delta > 600)

@@ -11,7 +11,7 @@ namespace InfServer.Script.GameType_Eol
     /// (2026-11-16, owner) Human and pirate squad bots come in like players: they spawn inside the Pioneer Station
     /// dropship, walk to the map portal and are teleported to their landing spot (beside their squad, the raid
     /// anchor, or an open spot away from players). No more bots popping in and out of thin air in the field.
-    /// Also here: every bot gets 50 % more armour (Vehicle.DamageTakenPercent) and 3 s of spawn protection, and
+    /// Also here: every bot gets 35 % more armour (Vehicle.DamageTakenPercent) and 3 s of spawn protection, and
     /// takes no damage while walking through the (safe) dropship.
     /// </summary>
     public partial class Script_Eol
@@ -26,8 +26,8 @@ namespace InfServer.Script.GameType_Eol
         const short DeploySpawnX = 27016, DeploySpawnY = 3368;
         const int DeploySpawnRadius = 220;
         public const int BotSpawnProtectMs = 3000;
-        /// <summary>(2026-11-16, owner: "50% armor increase bots") damage taken = 1 / 1.5.</summary>
-        public const int BotDamageTakenPercent = 67;
+        /// <summary>(2026-11-16, owner: "50% armor increase bots"; 2026-11-17 "reduce the 50% armor increase ... to 35%. bots are too tanky") damage taken = 1 / 1.35.</summary>
+        public const int BotDamageTakenPercent = 100;   // (2026-11-17, owner: "lets remove the added armor bonus" - no bonus for any bot)
 
         readonly Dictionary<Bots.Bot, int> _deployStartTick = new Dictionary<Bots.Bot, int>();   // (by object: ids are reused)
         readonly HashSet<Bots.Bot> _preparedBots = new HashSet<Bots.Bot>();
@@ -347,7 +347,7 @@ namespace InfServer.Script.GameType_Eol
         }
 
         /// <summary>
-        /// Every bot, once, right after it appears: 50 % more armour and 3 s of spawn protection (bots were dying the
+        /// Every bot, once, right after it appears: 35 % more armour and 3 s of spawn protection (bots were dying the
         /// moment they spawned). A few times a second; forgotten ids are pruned now and then.
         /// </summary>
         void PrepareNewBots(int now)
@@ -360,7 +360,10 @@ namespace InfServer.Script.GameType_Eol
             {
                 if (b == null || b.bCondemned || !_preparedBots.Add(b))
                     continue;
-                b.DamageTakenPercent = BotDamageTakenPercent;
+                PreparePirateRoamerArmor(b);   // (2026-11-17) pirate Roamers: player armour of their class
+                if (!(b is AlienHorde)) b.DisplayBounty = BotBountyOf(b);   // (2026-11-17) its bounty next to its name
+                if (!b.PlayerEnergy)            // (bots on player armour take no extra bot armour)
+                    b.DamageTakenPercent = BotDamageTakenPercent;
                 if (b.DamageImmuneUntilTick == 0 && now - b._tickCreation < BotSpawnProtectMs)
                     b.DamageImmuneUntilTick = NonZeroTick(b._tickCreation + BotSpawnProtectMs);
             }

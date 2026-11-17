@@ -33,7 +33,7 @@ namespace InfServer.Script.GameType_Eol
         static readonly int[] StrikeMemberClasses =
         {
             ClsInfantry, ClsHeavy, ClsJumpTrooper, ClsInfiltrator, ClsMedic, ClsEngineer, ClsBioChem, ClsMPAC,   // Partisan / Paramedic (Paramilitary) removed 2026-11-14
-            ClsConscript, ClsNeuroTAC, ClsSciOps,   // Combat Tech removed (local 2026-11-14) ClsDropTrooper, ClsMarine, ClsFieldSurgeon, ClsChiefEngineer, ClsBlackOps,
+            ClsNeuroTAC, ClsSciOps,   // (2026-11-17, owner: "have no conscripts" - only the F11 classes) Combat Tech removed (local 2026-11-14) ClsDropTrooper, ClsMarine, ClsFieldSurgeon, ClsChiefEngineer, ClsBlackOps,
         };
         // Colonel (151) and Grand Marshal aren't ready yet (local 2026-11-14) - not fielded
         static readonly int[] StrikeOfficerClasses = { ClsSquadLeader, ClsSergeant, ClsLieutenant, ClsCaptain };
@@ -42,7 +42,7 @@ namespace InfServer.Script.GameType_Eol
 
         // elite vehicle squad (personal vehicles)
         const int VehDeathboard = 108, VehShimmerboard = 131, VehDropPack = 109;
-        static readonly int[] VehicleSquadVehIds = { VehDeathboard, VehShimmerboard, VehDropPack };
+        static readonly int[] VehicleSquadVehIds = { VehDeathboard, VehShimmerboard, VehDropPack, VehHoverboard };   // (+ the board medic, 2026-11-17)
         const int ItmDeathboardSlash = 1047, ItmVehicleShimmer = 174, ItmDropPackBolt = 3008;   // "DropPack Blaster" - its own twin bolts
 
         // items (Pioneer Station .itm)
@@ -58,7 +58,7 @@ namespace InfServer.Script.GameType_Eol
         // IRL909 - bots never stop to shoot; no items without a usable projectile - Titan CCS, Havzeks Stroker)
         static readonly int[] PoolShotgun = { 3023, 1016, 3001, 1465 };
         static readonly int[] PoolCarbine = { 1002, 3104, 1001, 3094 };
-        static readonly int[] PoolHeavy = { 1057, 3028, 3021, 1310, 3105, 3110, 1004 };
+        static readonly int[] PoolHeavy = { 1057, 3028, 3021, 1310, 3105, 3110, 1004, 1061, 3031, 3095, 3102 };   // (2026-11-17: + the autocannons AC 2000k, AC mk2, ACp-90, LPC-4 - they plant to fire)
         static readonly int[] PoolPlasma = { 1044, 1104, 1007, 1188, 1311, 1006 };
         static readonly int[] PoolPlasmaSmg = { 1100, 109, 1006, 1343 };
         static readonly int[] PoolGauss = { 1031, 1038, 1141, 1114, 1533 };
@@ -135,7 +135,7 @@ namespace InfServer.Script.GameType_Eol
         static readonly int[] SquadRandomClasses =
         {
             ClsInfantry, ClsHeavy, ClsMarine, ClsJumpTrooper, ClsInfiltrator, ClsBioChem, ClsMPAC,
-            ClsConscript, ClsNeuroTAC, ClsSciOps, ClsBlackOps,
+            ClsNeuroTAC, ClsSciOps, ClsBlackOps,   // (2026-11-17: no Conscripts, no Colonel / Partisan / Combat Tech - not on F11)
         };
 
         bool MemberHasRole(Bots.Bot b, int role)
@@ -389,7 +389,9 @@ namespace InfServer.Script.GameType_Eol
             string skill;
             if (_strikeSkill.TryGetValue(team, out skill) && skill != null)
                 bot.SkillModeOverride = skill;
-            if (vehicleSquad)
+            if (vehicleSquad && cls == VehHoverboard)
+                ApplyBoardMedicLoadout(bot);   // (2026-11-17) the Ghost Reapers' board medic
+            else if (vehicleSquad)
                 ApplyVehicleSquadLoadout(bot, cls, sciOpsPack: cls == VehFlightPack);
             else
                 ApplyHumanLoadout(bot, cls, team);
@@ -525,6 +527,21 @@ namespace InfServer.Script.GameType_Eol
             EnforceClassWeapons(cls, ref close, ref far);
         }
 
+        /// <summary>(2026-11-17) sidearm (close slot), main (far slot) and misc gun for a class - see PickThreeWeapons.</summary>
+        void PickClassWeapons(int cls, Team team, out int side, out int main, out int misc)
+        {
+            int close, far;
+            PickClassWeapons(cls, team, out close, out far);
+            if (cls == ClsBlackOps && far == ItmProtonSphere)
+            {   // the Proton Sphere stays their main when they roll it (owner, part 11)
+                int s0, m0;
+                PickThreeWeapons(cls, 0, out s0, out m0, out misc);
+                side = s0; main = ItmProtonSphere; return;
+            }
+            PickThreeWeapons(cls, far, out side, out main, out misc);
+            if (main == 0) { side = close; main = far; }
+        }
+
         /// <summary>Equip close + far; falls back to the Titan AR if a pool item is missing or not a gun.</summary>
         void EquipCloseFar(Bots.Bot bot, int close, int far)
         {
@@ -575,6 +592,23 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>Boards slash (the Shimmerboard runs its shimmer field); the Drop Pack fires its plasma bolts.</summary>
         /// <summary>(2026-11-17, owner: "sciops is a flightpack") the vehicle squad's 4th: a SciOps on a Flight Pack (106) - the pink Proton Beamer and the Plasma Bomb.</summary>
         const int ItmProtonBeamer = 1125, ItmPlasmaBomb = 120, VehFlightPack = 106;
+        /// <summary>Energy guns for the Flight Pack SciOps's third slot: Proton Accelerator, Particle Accelerators, WaveTech MR2 / MR1, FusionCorp IRLSMG.</summary>
+        static readonly int[] SciOpsEnergyGuns = { 1478, 1101, 1055, 1103, 1157, 1607 };
+
+        /// <summary>A random SciOps-legal energy gun (by the item's own skill logic); 0 = none.</summary>
+        int PickSciOpsEnergyGun()
+        {
+            VehInfo veh = _arena._server._assets.getVehicleByID(ClsSciOps);
+            List<int> skills = ClassSkillIds(ClsSciOps), ok = new List<int>();
+            foreach (int id in SciOpsEnergyGuns)
+            {
+                ItemInfo it = Itm(id);
+                if (it != null && it.id != ItmProtonBeamer && (it is ItemInfo.Projectile || it is ItemInfo.MultiUse)
+                    && (veh == null || skills.Count == 0 || ClassMayUse(it.skillLogic, veh.ClassId, skills)))
+                    ok.Add(id);
+            }
+            return ok.Count == 0 ? 0 : ok[_arena._rand.Next(ok.Count)];
+        }
 
         void ApplyVehicleSquadLoadout(Bots.Bot bot, int veh, bool sciOpsPack = false)
         {
@@ -582,15 +616,24 @@ namespace InfServer.Script.GameType_Eol
             {
                 int gun = veh == VehDropPack ? ItmDropPackBolt : ItmDeathboardSlash;
                 if (sciOpsPack)
-                    EquipCloseFar(bot, ItmProtonBeamer, ItmProtonBeamer);
+                {   // (2026-11-17, owner: "the pink gun he has now as a main gun, and secondary is plasma bomb, and third maybe
+                    // some other cool gun in energy") main = Proton Beamer (far slot), secondary = Plasma Bomb (close slot, also
+                    // thrown on its timer below), third = a SciOps-legal energy gun in the misc rotation
+                    EquipCloseFar(bot, ItmPlasmaBomb, ItmProtonBeamer);
+                    int eg = PickSciOpsEnergyGun();
+                    ItemInfo ei = eg != 0 ? Itm(eg) : null;
+                    WeaponController we = new WeaponController(bot._state, new WeaponController.WeaponSettings());
+                    if (ei != null && we.equip(ei)) { we.Owner = bot; EolBotBrain.SetMiscWeapon(bot, we); }
+                }
                 else
                     EquipCloseFar(bot, gun, gun);
                 // the board / pack itself passes all damage to its rider (100 % reduction) - a bot IS the vehicle,
                 // so it was invincible: take hits with the rider's armour (Jump Trooper / SciOps), like a player would
                 bot.ArmorSource = _arena._server._assets.getVehicleByID(sciOpsPack ? ClsSciOps : ClsJumpTrooper);
-                MakeAsToughAsPirates(bot);
                 if (veh == VehShimmerboard)
                     SetUtility(bot, ItmVehicleShimmer);
+                // (2026-11-17) the rider's player armour + energy (replaces the old bot armour)
+                ApplyPlayerArmor(bot, sciOpsPack ? ClsSciOps : ClsJumpTrooper, useClassTable: true);
                 // a few grenades every life, thrown at mid range now and then (6-11 s apart)
                 ItemInfo g = Itm(sciOpsPack ? ItmPlasmaBomb : Grenades[_arena._rand.Next(Grenades.Length)]);
                 WeaponController grenade = null;
@@ -615,10 +658,15 @@ namespace InfServer.Script.GameType_Eol
             try
             {
                 Random r = _arena._rand;
-                int close, far;
-                PickClassWeapons(cls, team, out close, out far);
-                EquipCloseFar(bot, close, far);
-                MakeAsToughAsPirates(bot);
+                int close, far, misc;
+                PickClassWeapons(cls, team, out close, out far, out misc);
+                EquipCloseFar(bot, close, far);   // close slot = sidearm, far slot = main
+                if (misc != 0)
+                {
+                    ItemInfo mi = Itm(misc);
+                    WeaponController wm = new WeaponController(bot._state, new WeaponController.WeaponSettings());
+                    if (mi != null && wm.equip(mi)) { wm.Owner = bot; EolBotBrain.SetMiscWeapon(bot, wm); }
+                }
 
                 // Suit SuperCharger on everyone (a free utility slot, switched on)
                 SetUtility(bot, ItmSuperCharger);
@@ -632,6 +680,9 @@ namespace InfServer.Script.GameType_Eol
                     SetUtility(bot, ItmBlackoutField);
                 else if (cls == ClsSciOps && r.NextDouble() < 0.4)
                     SetUtility(bot, ItmCloakingUnit);
+
+                // (2026-11-17, owner) a real player's armour set for the class + player energy - replaces the old bot armour
+                ApplyPlayerArmor(bot, cls, useClassTable: bot._type == null || bot._type.Id != cls);
 
                 // ~35 % carry 2-3 grenades; ~40 % of riflemen open with a clip of the Kamenev AP mk2
                 WeaponController grenade = null, opener = null;
