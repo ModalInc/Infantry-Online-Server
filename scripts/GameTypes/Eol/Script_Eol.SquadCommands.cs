@@ -122,7 +122,7 @@ namespace InfServer.Script.GameType_Eol
             catch (Exception) { }
         }
 
-        const int OrderHome = 1, OrderEnemy = 2, OrderToMe = 3, OrderDefendHere = 4, OrderHeal = 5, OrderFollow = 6, OrderStop = 7;
+        const int OrderHome = 1, OrderEnemy = 2, OrderToMe = 3, OrderDefendHere = 4, OrderHeal = 5, OrderFollow = 6, OrderStop = 7, OrderHelp = 8;
         /// <summary>"@ home": the squad holds the spot it was called to this long (then back to attacking bases).</summary>
         const int SquadDefendMs = 5 * 60 * 1000;
         const int SquadDefendRadius = 350;
@@ -167,6 +167,9 @@ namespace InfServer.Script.GameType_Eol
                 return OrderFollow;
             if (t == "stop" || t == "unfollow" || t == "stop follow" || t == "stop following")
                 return OrderStop;
+            // (2026-11-17, owner: "if someone types help in team chat, the bots say the message again")
+            if (t == "help" || t == "commands" || t == "cmds" || t == "?" || t == "help pls")
+                return OrderHelp;
             int build = ParseBuildOrder(t);   // (2026-11-17) "mg here" ... "hq here" for the squad's Chief Engineer
             if (build != 0)
                 return build;
@@ -208,6 +211,15 @@ namespace InfServer.Script.GameType_Eol
                 HandleBuildOrder(player, order - OrderBuildBase);
                 return;
             }
+            if (order == OrderHelp)
+            {   // the squad leader repeats how the squad can support you (once per 10 s per team - it's 4 lines)
+                int hn;
+                if (_squadHelpNext.TryGetValue(team, out hn) && now - hn < 0)
+                    return;
+                _squadHelpNext[team] = now + 10000;
+                QueueSquadGreeting(team, now, helpOnly: true);
+                return;
+            }
             if (order == OrderStop)
             {
                 bool was = _squadFollow.Remove(team) | _squadDefend.Remove(team);
@@ -238,6 +250,9 @@ namespace InfServer.Script.GameType_Eol
 
             bool inField = !(_eol != null && _eol.IsInPioneerDropshipSafeZone(player._state.positionX, player._state.positionY))
                 && InPlayArea(player._state.positionX, player._state.positionY, 0);
+            // (2026-11-17, owner: "i meant the g6 zone ... that new player friendly zone ... the green area") "@" works from
+            // the new player zone too: the bots come to you there and stay round you until you leave it
+            bool onSafe = InSummonSafeZone(player._state.positionX, player._state.positionY);
 
             if (order == OrderHeal)
             {
@@ -267,7 +282,9 @@ namespace InfServer.Script.GameType_Eol
 
             if (order == OrderToMe || order == OrderDefendHere)
             {
-                if (!inField)
+                // (2026-11-17, owner: "allow team members to summon bots into the safe zone") "@" also works from the
+                // dropship - the bots wait round you there and walk out through the portal when you leave
+                if (!inField && !onSafe && order == OrderDefendHere)
                 {
                     player.sendMessage(-1, "Squad: get out into the field first.");
                     return;
@@ -390,10 +407,17 @@ namespace InfServer.Script.GameType_Eol
         readonly Dictionary<Team, int> _squadGreetDue = new Dictionary<Team, int>();
 
         /// <summary>A player joined: a moment later (once they're on the team) the squad leader greets them.</summary>
-        void QueueSquadGreeting(Team team, int now)
+        readonly HashSet<Team> _squadGreetHelpOnly = new HashSet<Team>();
+        readonly Dictionary<Team, int> _squadHelpNext = new Dictionary<Team, int>();
+
+        void QueueSquadGreeting(Team team, int now, bool helpOnly = false)
         {
-            if (team != null)
-                _squadGreetDue[team] = now + 1500;
+            if (team == null)
+                return;
+            if (helpOnly && _squadGreetDue.ContainsKey(team) && !_squadGreetHelpOnly.Contains(team))
+                return;   // (a full greeting is already on its way - it has the help lines)
+            _squadGreetDue[team] = now + (helpOnly ? 600 : 1500);
+            if (helpOnly) _squadGreetHelpOnly.Add(team); else _squadGreetHelpOnly.Remove(team);
         }
 
         /// <summary>Team chat from the squad leader: "S for S" then "Support ready! Say @ nme or @ home".</summary>
@@ -417,11 +441,72 @@ namespace InfServer.Script.GameType_Eol
                     foreach (Bots.Bot b in _arena.ActiveBots)
                         if (b != null && b._team == t && !b.IsDead && !b.bCondemned) { from = b; break; }
                 string name = from != null ? from._alias : t._name;
-                Helpers.Player_RouteChatRaw(t, name, "S for S", 0, Helpers.Chat_Type.Team);
+                bool helpOnly = _squadGreetHelpOnly.Remove(t);
+                if (!helpOnly)
+                    Helpers.Player_RouteChatRaw(t, name, "S for S", 0, Helpers.Chat_Type.Team);
                 Helpers.Player_RouteChatRaw(t, name, "Support ready! @ nme = we come attack with you, @ home = we come defend with you", 0, Helpers.Chat_Type.Team);
                 Helpers.Player_RouteChatRaw(t, name, "H = medic heals you, follow = we follow you, stop = back on the attack", 0, Helpers.Chat_Type.Team);
                 Helpers.Player_RouteChatRaw(t, name, "Engineer: mg / plasma / rocket / rocket ap / sentry / hq here = I build it (every 30 s), remove mg etc = I dismantle it", 0, Helpers.Chat_Type.Team);
+                // (2026-11-17, owner) the last line: how to see this again
+                Helpers.Player_RouteChatRaw(t, name, "Say help and we'll tell you again how we can support you", 0, Helpers.Chat_Type.Team);
             }
+        }
+
+        // ---------- bots summoned into the dropship (2026-11-17) ----------
+        readonly Dictionary<Bots.Bot, InfServer.Game.Player> _shipSummoned = new Dictionary<Bots.Bot, InfServer.Game.Player>();
+
+        /// <summary>Open ground round a player in the dropship / safe zone, in clear sight of them (never across a wall).</summary>
+        Helpers.ObjectState SummonSpotInSafe(Helpers.ObjectState p)
+        {
+            Random r = _rand ?? (_rand = new Random(Environment.TickCount));
+            for (int i = 0; i < 24; i++)
+            {
+                double a = r.NextDouble() * 2 * Math.PI; int rad = 48 + r.Next(i < 12 ? 72 : 112);
+                short x = (short)(p.positionX + Math.Cos(a) * rad), y = (short)(p.positionY + Math.Sin(a) * rad);
+                if (x < 32 || y < 32 || _arena.getTile(x, y).Blocked || InNoBotSpawnBuilding(x, y))
+                    continue;
+                if (LineClear(x, y, p.positionX, p.positionY))
+                    return new Helpers.ObjectState { positionX = x, positionY = y };
+            }
+            return new Helpers.ObjectState { positionX = p.positionX, positionY = p.positionY };   // (right on them)
+        }
+
+        /// <summary>The new player zone (the green spawn-zone buffer, at / near its edge) - bots normally keep out of it.</summary>
+        bool InSummonSafeZone(short x, short y)
+        {
+            return NearNewPlayerBuffer(x, y);
+        }
+
+        /// <summary>A bot summoned into the dropship: the player's spot while they're still in there (it waits round them), else null.</summary>
+        public Helpers.ObjectState ShipSummonHold(Bots.Bot b)
+        {
+            InfServer.Game.Player p;
+            if (b == null || !_shipSummoned.TryGetValue(b, out p) || p == null || p.IsDead || p.IsSpectator || p._arena != _arena
+                || p._state == null || p._team != b._team)
+                return null;
+            if (!(_eol != null && _eol.IsInPioneerDropshipSafeZone(p._state.positionX, p._state.positionY))
+                && !InSummonSafeZone(p._state.positionX, p._state.positionY))
+                return null;
+            return p._state;
+        }
+
+        /// <summary>The player left the dropship (or died / left): the bots summoned in there walk out through the portal.</summary>
+        void PollShipSummoned(int now)
+        {
+            if (_shipSummoned.Count == 0)
+                return;
+            List<Bots.Bot> done = null;
+            foreach (KeyValuePair<Bots.Bot, InfServer.Game.Player> kv in _shipSummoned)
+            {
+                Bots.Bot b = kv.Key;
+                if (b == null || b.IsDead || b.bCondemned) { (done ??= new List<Bots.Bot>()).Add(b); continue; }
+                if (ShipSummonHold(b) != null)
+                    continue;
+                if (_eol != null && b._state != null && _eol.IsInPioneerDropshipSafeZone(b._state.positionX, b._state.positionY) && !IsDeploying(b))
+                    BeginDeploy(b, now);
+                (done ??= new List<Bots.Bot>()).Add(b);
+            }
+            if (done != null) foreach (Bots.Bot b in done) _shipSummoned.Remove(b);
         }
 
         /// <summary>The queued "@" teleports, one bot at a time, onto open ground around the player.</summary>
@@ -431,6 +516,7 @@ namespace InfServer.Script.GameType_Eol
             PollSquadGreetings(now);
             PollPendingSummons(now);
             PollBoardMedicSummons(now);   // (2026-11-17) the Ghost Reapers' board medic's summon kit
+            PollShipSummoned(now);        // (2026-11-17) bots summoned into the dropship walk out when their player does
             if (_pendingSuitWarps.Count == 0)
                 return;
             for (int i = _pendingSuitWarps.Count - 1; i >= 0; i--)
@@ -443,14 +529,17 @@ namespace InfServer.Script.GameType_Eol
                 Bots.Bot b = w.Bot;
                 if (b == null || b.IsDead || b.bCondemned || p == null || p.IsDead || p.IsSpectator || p._team != b._team)
                     continue;
-                if (!InPlayArea(p._state.positionX, p._state.positionY, 0))
+                bool ship = _eol != null && _eol.IsInPioneerDropshipSafeZone(p._state.positionX, p._state.positionY);
+                bool safe = !ship && InSummonSafeZone(p._state.positionX, p._state.positionY);
+                if (!ship && !safe && !InPlayArea(p._state.positionX, p._state.positionY, 0))
                     continue;
-                Helpers.ObjectState at = OpenSpotNear(p._state.positionX, p._state.positionY, 160);
+                Helpers.ObjectState at = ship || safe ? SummonSpotInSafe(p._state) : OpenSpotNear(p._state.positionX, p._state.positionY, 160);
                 if (at == null)
                     continue;
                 _deployStartTick.Remove(b);   // (one still in the dropship comes straight out)
                 WarpBot(b, at);
                 b.DamageImmuneUntilTick = NonZeroTick(now + 1500);
+                if (ship || safe) _shipSummoned[b] = p; else _shipSummoned.Remove(b);
             }
         }
     }

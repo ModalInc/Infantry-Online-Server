@@ -1075,7 +1075,7 @@ namespace InfServer.Script.GameType_Eol
         /// on the bot) to find enemies - like a player hearing a fight. Returns true while investigating.
         /// Base guards don't call this (they hold the base).
         /// </summary>
-        public static bool TryInvestigate(Bot self, Script_Eol script, int now)
+        public static bool TryInvestigate(Bot self, Script_Eol script, int now, Helpers.ObjectState home = null, int homeRadius = 0)
         {
             if (!Enabled || self?._arena == null || self._state == null || self.IsDead)
                 return false;
@@ -1123,6 +1123,8 @@ namespace InfServer.Script.GameType_Eol
                     if (!InArea(n.X, n.Y) || !InTerritory(self, n.X, n.Y))
                         continue;   // (not outside its territory, never into the new player buffer)
                     double d = Helpers.distanceTo(self._state.positionX, self._state.positionY, n.X, n.Y);
+                    if (home != null && Helpers.distanceTo(home.positionX, home.positionY, n.X, n.Y) > homeRadius)
+                        continue;   // (2026-11-17) a base-team bot: only fighting round its own base
                     if (d < 200 || d > earshot)
                         continue;
                     if (d < bestD) { bestD = d; best = n; found = true; }
@@ -1138,7 +1140,7 @@ namespace InfServer.Script.GameType_Eol
             return true;
         }
 
-        static void GoTo(Bot self, Helpers.ObjectState spot, PathPriority pri)
+        public static void GoTo(Bot self, Helpers.ObjectState spot, PathPriority pri)
         {
             Helpers.ObjectState dest = new Helpers.ObjectState { positionX = spot.positionX, positionY = spot.positionY };
             self.ApplyNavigationApproach(dest, EolHqPatrol.MakeLineClearPendingSeek(self, () => dest), new BotNavigateOptions
@@ -1624,10 +1626,15 @@ namespace InfServer.Script.GameType_Eol
         const int BufferTargetMarginRaw = 150;    // a target this close to (or inside) the buffer is never engaged
 
         /// <summary>Turn the bot away if it's at the buffer. True while it is heading away (no hunting / engaging).</summary>
+        /// <summary>(2026-11-17) set by the script: a bot its player summoned into the new player zone (it stays round them there).</summary>
+        public static Func<Bot, bool> HeldBySummon;
+
         static bool BufferGuard(Bot self, Mind m, int now)
         {
             if (BufferEdge == null || self?._state == null)
                 return false;
+            if (HeldBySummon != null && HeldBySummon(self))
+                return false;   // (summoned to its player in the new player zone - not turned away)
             if (NearBuffer(self._state.positionX, self._state.positionY, BufferTurnBackRaw)
                 && (m.BufferRetreatUntil == 0 || now - m.BufferRetreatUntil >= 0 || now - m.LastBufferPull > 4000))
             {

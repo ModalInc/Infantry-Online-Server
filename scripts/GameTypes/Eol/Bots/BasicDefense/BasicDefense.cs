@@ -121,6 +121,8 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>
         /// Allows the script to maintain itself
         /// </summary>
+        bool _homeLeashed; Helpers.ObjectState _homeLeashSpot;   // (2026-11-17) EolHqPatrol.UpdateHomeLeash
+
         public override bool poll()
         {
             if (bOverriddenPoll)
@@ -211,6 +213,18 @@ namespace InfServer.Script.GameType_Eol
             }
 
             pollForActions(now);
+
+            // (2026-11-17, owner) too far from the base: stop chasing, walk back (shooting on the way), then patrol again
+            if (EolHqPatrol.UpdateHomeLeash(this, vHq, ref _homeLeashed))
+            {
+                _actionQueue.Clear();
+                if (_target != null)
+                    EolBotPhysicsUtil.TryFireOnlyWhileUnstick(this, _target);
+                if (_homeLeashSpot == null) { Navigation.Clear(); _homeLeashSpot = EolHqPatrol.PickNearHq(this, _arena, vHq) ?? vHq._state; }
+                EolBotBrain.GoTo(this, _homeLeashSpot, PathPriority.Combat);
+                return base.poll();
+            }
+            _homeLeashSpot = null;
 
             bool needPatrol = true;
             bool combatMoved = false;

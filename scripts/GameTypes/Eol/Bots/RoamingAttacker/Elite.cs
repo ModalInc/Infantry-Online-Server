@@ -156,6 +156,14 @@ namespace InfServer.Script.GameType_Eol
                 return base.poll();
             }
 
+            // (2026-11-17) summoned into the dropship / new player zone: wait round that player until they leave it
+            Helpers.ObjectState shipHold = _baseScript.ShipSummonHold(this);
+            if (shipHold != null)
+            {
+                DriftAround(shipHold.positionX, shipHold.positionY, now, followCentre: true);
+                return base.poll();
+            }
+
             RoamingAttacker leader = _baseScript.EliteSquadLeader(_team);
 
             // (2026-11-16b) a squad cut down to under half waits for its reinforcements (from the dropship)

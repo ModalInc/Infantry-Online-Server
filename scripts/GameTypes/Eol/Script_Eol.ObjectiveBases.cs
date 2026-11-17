@@ -98,40 +98,69 @@ namespace InfServer.Script.GameType_Eol
         }
 
         /// <summary>
-        /// Turret ring for an objective base: the six pieces of the hand-made layouts (Rocket, 2 MG, Plasma, Maser,
-        /// Sentry) spread evenly all round the HQ (60 degrees apart, the gun types alternating so every side has a
-        /// mix), each on the most open ground near its place in the ring - open ground = long sight lines, so together
-        /// they cover every angle of approach. A piece with no open ground near its place is left out.
+        /// (2026-11-17, owner: "have the turrets re arrange in different spots. make sure it makes sense and the turrets
+        /// basically cover each other") the turret layout of an objective base, different every time it spawns: an INNER
+        /// ring (MG, Sentry, Plasma ~120-150 px out) and an OUTER ring (Rocket, Maser, MG ~190-240 px) in the inner ring's
+        /// gaps, from a random starting angle. Every turret must see the HQ or a turret already placed (clear tiles between
+        /// them) - spots that see more of the others score higher, then long sight lines (open ground), so the guns cover
+        /// each other and every approach. A piece with no such spot is left out.
         /// </summary>
         void PlaceObjectiveBaseTurrets(Team team, Helpers.ObjectState hq)
         {
-            int[] pieces = { 467, 457, 823, 460, 457, 466 };   // Rocket, MG, Maser, Plasma, MG, Sentry
-            double start = new Random(hq.positionX * 31 + hq.positionY).NextDouble() * Math.PI / 3;
+            Random r = _rand ?? new Random(Environment.TickCount);
+            double start = r.NextDouble() * 2 * Math.PI, step = 2 * Math.PI / 3;
+            // (inner first, so the outer ring can be covered by it)
+            var plan = new[] {
+                new { veh = 457, a = start,                 radii = new[] { 128, 144, 112 } },   // MG
+                new { veh = 466, a = start + step,          radii = new[] { 128, 144, 112 } },   // Sentry
+                new { veh = 460, a = start + 2 * step,      radii = new[] { 128, 144, 112 } },   // Plasma
+                new { veh = 467, a = start + step / 2,      radii = new[] { 208, 224, 192 } },   // Rocket
+                new { veh = 823, a = start + step * 1.5,    radii = new[] { 208, 224, 192 } },   // Maser
+                new { veh = 457, a = start + step * 2.5,    radii = new[] { 208, 224, 192 } },   // MG
+            };
             List<KeyValuePair<int, int>> taken = new List<KeyValuePair<int, int>>();
-            for (int i = 0; i < pieces.Length; i++)
+            foreach (var piece in plan)
             {
-                double baseA = start + i * Math.PI / 3;
                 int bestX = 0, bestY = 0, bestScore = -1;
-                foreach (int r in new[] { 192, 160, 224, 128 })
-                    foreach (double jitter in new[] { 0.0, 0.2, -0.2, 0.4, -0.4 })
+                foreach (int rad in piece.radii)
+                    foreach (double jitter in new[] { 0.0, 0.18, -0.18, 0.36, -0.36 })
                     {
-                        int x = hq.positionX + (int)Math.Round(Math.Cos(baseA + jitter) * r);
-                        int y = hq.positionY + (int)Math.Round(Math.Sin(baseA + jitter) * r);
+                        int x = hq.positionX + (int)Math.Round(Math.Cos(piece.a + jitter) * rad);
+                        int y = hq.positionY + (int)Math.Round(Math.Sin(piece.a + jitter) * rad);
                         if (!AreaOpen(x, y, 24) || NearNewPlayerBuffer((short)x, (short)y))
                             continue;
-                        bool close = false;
+                        bool close = false; int sees = LineClear(x, y, hq.positionX, hq.positionY) ? 1 : 0;
                         foreach (KeyValuePair<int, int> t in taken)
-                            if ((long)(t.Key - x) * (t.Key - x) + (long)(t.Value - y) * (t.Value - y) < 96L * 96) { close = true; break; }
-                        if (close)
-                            continue;
-                        int score = OpenScore(x, y);
+                        {
+                            long dsq = (long)(t.Key - x) * (t.Key - x) + (long)(t.Value - y) * (t.Value - y);
+                            if (dsq < 80L * 80) { close = true; break; }
+                            if (dsq < 320L * 320 && LineClear(x, y, t.Key, t.Value)) sees++;
+                        }
+                        if (close || sees == 0)
+                            continue;   // (never a turret nobody can cover)
+                        int score = sees * 40 + OpenScore(x, y);
                         if (score > bestScore) { bestScore = score; bestX = x; bestY = y; }
                     }
                 if (bestScore < 0)
                     continue;
                 taken.Add(new KeyValuePair<int, int>(bestX, bestY));
-                createVehicleAtObjectState(pieces[i], bestX - hq.positionX, bestY - hq.positionY, team, hq);
+                createVehicleAtObjectState(piece.veh, bestX - hq.positionX, bestY - hq.positionY, team, hq);
             }
+            Log.write(TLog.Normal, "[Eol] Objective base at {0},{1}: {2} turrets placed (random layout, mutual cover).", hq.positionX / 16, hq.positionY / 16, taken.Count);
+        }
+
+        /// <summary>No blocked tile on the straight line between two points (16 px steps).</summary>
+        bool LineClear(int x0, int y0, int x1, int y1)
+        {
+            double dx = x1 - x0, dy = y1 - y0, len = Math.Sqrt(dx * dx + dy * dy);
+            int n = Math.Max(1, (int)(len / 16));
+            for (int i = 1; i < n; i++)
+            {
+                int px = x0 + (int)Math.Round(dx * i / n), py = y0 + (int)Math.Round(dy * i / n);
+                if (_arena.getTile((short)px, (short)py).Blocked)
+                    return false;
+            }
+            return true;
         }
 
         /// <summary>How open the ground is around a spot: open tiles along 8 sight lines out to ~20 tiles.</summary>

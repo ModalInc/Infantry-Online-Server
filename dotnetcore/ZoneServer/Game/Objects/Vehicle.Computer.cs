@@ -797,6 +797,10 @@ namespace InfServer.Game
         }
         bool _bKillHandled;
 
+        /// <summary>(2026-11-17, owner: "make turrets take damage on all weapons") a turret has no energy to drain: energy
+        /// damage (plasma) that gets through its armour hurts its health, like any other damage.</summary>
+        protected override double OnEnergyHit(double netDamage) { return netDamage > 0 ? netDamage : 0; }
+
         /// <summary>
         /// Handles damage from explosions triggered nearby
         /// </summary>		
