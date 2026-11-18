@@ -90,6 +90,21 @@ namespace InfServer.Script.GameType_Eol
             if (_baseScript.PollEngineerBuild(this, now))
                 return base.poll();
 
+            // (2026-11-19, owner: "the bots when you summon them in the dropship, they start shooting others. the drop ship is a
+            // safe zone so they should not do that. they should basically follow you outside the dropship. not shooting")
+            // in the dropship: no target, no fighting - round the player who summoned it until they leave (then out through
+            // the portal behind them, Deploy.cs), and that check now comes BEFORE the fight check (it used to come after)
+            Helpers.ObjectState shipHold = _baseScript.ShipSummonHold(this);
+            if (shipHold != null || _baseScript.BotInDropshipSafeZone(this))
+            {
+                ClearActivePlayerTarget();
+                if (shipHold != null)
+                    DriftAround(shipHold.positionX, shipHold.positionY, now, followCentre: true);
+                else
+                    DriftAround(_state.positionX, _state.positionY, now);
+                return base.poll();
+            }
+
             // (2026-11-17) a medic called with H runs to that player even mid-fight (heals pulse once in reach)
             if (_baseScript.IsSquadMedic(this) && _baseScript.SquadHealCaller(_team, now) != null)
             {
@@ -175,11 +190,11 @@ namespace InfServer.Script.GameType_Eol
                 return base.poll();
             }
 
-            // (2026-11-17) summoned into the dropship / new player zone: wait round that player until they leave it
-            Helpers.ObjectState shipHold = _baseScript.ShipSummonHold(this);
-            if (shipHold != null)
+            // (2026-11-17) summoned into the new player zone: wait round that player until they leave it (the dropship: above)
+            Helpers.ObjectState zoneHold = _baseScript.ShipSummonHold(this);
+            if (zoneHold != null)
             {
-                DriftAround(shipHold.positionX, shipHold.positionY, now, followCentre: true);
+                DriftAround(zoneHold.positionX, zoneHold.positionY, now, followCentre: true);
                 return base.poll();
             }
 

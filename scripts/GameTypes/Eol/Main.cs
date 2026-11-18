@@ -51,7 +51,8 @@ namespace InfServer.Script.GameType_Eol
         public int _hqVehId = 469;
         /// <summary>Per-player payout when the killer team destroys a defense bot HQ (469).</summary>
         public const int EolBotHqDestroyCashPerPlayer = 34500;   // (2026-11-17, owner: 34,500 cash / 6,250 xp; was 80k / 12k)
-        public const int EolKothCash = 32500, EolKothExp = 8500;   // (2026-11-17, owner) KOTH win, flat, before the lifetime scale
+        // (2026-11-19, owner: "Koth reward should be slightly lower on the cash side. maybe by 30%") cash 32,500 -> 22,750
+        public const int EolKothCash = 22750, EolKothExp = 8500;   // (2026-11-17, owner) KOTH win, flat, before the lifetime scale
         public const int EolBotHqDestroyExpPerPlayer = 6250;
         public const int EolBotHqDestroyPointsPerPlayer = 5000;   // (2026-11-17, owner: was 750; the Alien Queen uses this too)
         /// <summary>Lifetime <see cref="InfServer.Game.Player.ExperienceTotal"/> below this gets a 1.5× cash/exp/points bonus.</summary>
@@ -5640,6 +5641,7 @@ namespace InfServer.Script.GameType_Eol
             killerCash = ApplyEolLifetimeRewardScale(killer, baseCash);
             killerExp = ApplyEolLifetimeRewardScale(killer, baseExp);
             killerPoints = ApplyEolLifetimeRewardScale(killer, basePoints);
+            ApplyStandardCarrierKillBonus(killer, ref killerCash, ref killerExp, ref killerPoints);
 
             //Inform the killer
             Helpers.Player_RouteKill(killer, update, victim, killerCash, killerPoints, killerPoints, killerExp);
@@ -5967,6 +5969,21 @@ namespace InfServer.Script.GameType_Eol
                     best = m;
             }
             return best;
+        }
+
+        /// <summary>
+        /// (2026-11-19, owner: "Holding flag while killing others should give about 15% increase rewards. i.e the xp, cash and
+        /// points") the killer carrying a standard (Citizens, Mercenaries, Elite Unit) gets 15 % more cash, exp and points
+        /// from each kill - player or bot. The killer's own reward only (the team's shares stay as they are).
+        /// </summary>
+        public const double StandardCarrierKillRewardMult = 1.15;
+        static void ApplyStandardCarrierKillBonus(InfServer.Game.Player killer, ref int cash, ref int exp, ref int points)
+        {
+            if (StandardCarrierBountyFactor(killer) <= 1.0)
+                return;
+            cash = (int)Math.Round(cash * StandardCarrierKillRewardMult);
+            exp = (int)Math.Round(exp * StandardCarrierKillRewardMult);
+            points = (int)Math.Round(points * StandardCarrierKillRewardMult);
         }
 
         int _tickMissingFlags;
@@ -6463,6 +6480,7 @@ namespace InfServer.Script.GameType_Eol
             killerCash = ApplyEolLifetimeRewardScale(killer, baseCash);
             killerExp = ApplyEolLifetimeRewardScale(killer, baseExp);
             killerPoints = ApplyEolLifetimeRewardScale(killer, basePoints);
+            ApplyStandardCarrierKillBonus(killer, ref killerCash, ref killerExp, ref killerPoints);
 
             killerCash = addCash(killer, killerCash);
             killer.Experience += killerExp;

@@ -496,6 +496,12 @@ namespace InfServer.Script.GameType_Eol
             return NearNewPlayerBuffer(x, y);
         }
 
+        /// <summary>(2026-11-19) the bot is in the dropship (a safe zone: no fighting in there).</summary>
+        public bool BotInDropshipSafeZone(Bots.Bot b)
+        {
+            return b != null && b._state != null && _eol != null && _eol.IsInPioneerDropshipSafeZone(b._state.positionX, b._state.positionY);
+        }
+
         /// <summary>A bot summoned into the dropship: the player's spot while they're still in there (it waits round them), else null.</summary>
         public Helpers.ObjectState ShipSummonHold(Bots.Bot b)
         {
