@@ -23,6 +23,18 @@ namespace InfServer.Script.GameType_Eol
         const int StuckWallMs = 8000;
         const int StuckWallFightMs = 20000;
 
+        /// <summary>A live enemy player / bot within r (raw) of this bot.</summary>
+        bool EnemyNear(Bot b, int r)
+        {
+            foreach (InfServer.Game.Player p in _arena.getPlayersInRange(b._state.positionX, b._state.positionY, r))
+                if (p != null && !p.IsDead && !p.IsSpectator && p._team != b._team)
+                    return true;
+            foreach (Vehicle v in _arena.getVehiclesInRange(b._state.positionX, b._state.positionY, r,
+                delegate (Vehicle x) { return x is Bot && x != b && !x.IsDead && x._team != b._team; }))
+                return true;
+            return false;
+        }
+
         /// <summary>The bot fired in the last 3 s.</summary>
         static bool Fighting(Bot b, int now) { return b.LastShotTick != 0 && now - b.LastShotTick < 3000; }
         const int StuckAnyMs = 30000;
@@ -58,7 +70,8 @@ namespace InfServer.Script.GameType_Eol
                 bool baseBot = b is BasicDefense || b is Captain;
                 int still = now - s.Since;
                 // (a bot that shot in the last 3 s is fighting - maybe from cover: give it longer before moving it)
-                int wallMs = Fighting(b, now) ? StuckWallFightMs : StuckWallMs;
+                // (2026-11-18) in a fight (firing, or an enemy close by - it may be lining up or reloading behind cover): longer
+                int wallMs = Fighting(b, now) || EnemyNear(b, 700) ? StuckWallFightMs : StuckWallMs;
                 bool wedged = still >= wallMs && TerrainTouching(x, y, 24);
                 Helpers.ObjectState hqState = baseBot ? FindHqVehicleForTeam(b._team)?._state : null;
                 bool lostFromBase = hqState != null && still >= StuckAnyMs && Helpers.distanceTo(b._state, hqState) > EolHqPatrol.HomeLeashRaw;

@@ -51,7 +51,10 @@ namespace InfServer.Script.GameType_Eol
         const short SwarmCavePortalTileX = 1705, SwarmCavePortalTileY = 416;
         const int SwarmCaveSpawnRadius = 160;
         /// <summary>Where the nest comes up, in tiles, in turn (the owner's spots: A3, then the south-west).</summary>
-        static readonly short[][] SwarmSitesTiles = { new short[] { 76, 178 }, new short[] { 55, 419 } };
+        static readonly short[][] SwarmSitesTiles = { new short[] { 76, 178 }, new short[] { 55, 419 }, new short[] { 342, 260 } };
+        /// <summary>(2026-11-18, owner: "add a possible queen spawn in this area 342,260 and 448,259 and 230,246 and 629,64")
+        /// the third site (index 2): one of these, at random among those in an open sector.</summary>
+        static readonly short[][] SwarmExtraSpotsTiles = { new short[] { 342, 260 }, new short[] { 448, 259 }, new short[] { 230, 246 }, new short[] { 629, 64 } };
         /// <summary>(2026-11-17, owner) the A3 site (index 0) is one of these, picked at random each time.</summary>
         static readonly short[][] SwarmA3SpotsTiles = { new short[] { 96, 175 }, new short[] { 54, 156 }, new short[] { 17, 131 }, new short[] { 33, 213 } };
         /// <summary>(2026-11-17, owner) the A6 site (index 1) is one of these, picked at random each time.</summary>
@@ -189,6 +192,16 @@ namespace InfServer.Script.GameType_Eol
             return false;
         }
 
+        /// <summary>A random spot of the list that lies in an open sector (null: none open).</summary>
+        short[] PickOpenSwarmSpot(short[][] spots)
+        {
+            List<short[]> open = new List<short[]>();
+            foreach (short[] t in spots)
+                if (_eol != null && _eol.IsInAnyActiveSector(TileRaw(t[0]), TileRaw(t[1])))
+                    open.Add(t);
+            return open.Count == 0 ? null : open[_arena._rand.Next(open.Count)];
+        }
+
         void StartSwarm(int now)
         {
             VehInfo nestInfo = _arena._server._assets.getVehicleByID(SwarmNestVehId);
@@ -206,7 +219,10 @@ namespace InfServer.Script.GameType_Eol
                 if (idx == 1 && LiveHqInSwarmA6())
                     continue;
                 short[] tile = idx == 0 ? SwarmA3SpotsTiles[_arena._rand.Next(SwarmA3SpotsTiles.Length)]
-                    : idx == 1 ? SwarmA6SpotsTiles[_arena._rand.Next(SwarmA6SpotsTiles.Length)] : SwarmSitesTiles[idx];
+                    : idx == 1 ? SwarmA6SpotsTiles[_arena._rand.Next(SwarmA6SpotsTiles.Length)]
+                    : idx == 2 ? PickOpenSwarmSpot(SwarmExtraSpotsTiles) : SwarmSitesTiles[idx];
+                if (tile == null)
+                    continue;
                 short x = TileRaw(tile[0]), y = TileRaw(tile[1]);
                 if (!_eol.IsInAnyActiveSector(x, y))
                     continue;

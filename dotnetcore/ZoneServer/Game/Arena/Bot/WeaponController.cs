@@ -93,6 +93,9 @@ namespace InfServer.Bots
 		}
 
 		/// <summary>True while a clip reload timer is active.</summary>
+		/// <summary>(2026-11-18) ms left on the current reload (0 = not reloading).</summary>
+		public int ReloadMsLeft { get { return IsReloading ? _tickReloadDone - Environment.TickCount : 0; } }
+
 		public bool IsReloading
 		{
 			get { return _tickReloadDone != 0 && Environment.TickCount < _tickReloadDone; }

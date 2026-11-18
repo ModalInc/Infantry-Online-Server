@@ -30,6 +30,12 @@ namespace InfServer.Script.GameType_Eol
         static readonly Dictionary<int, int> RoamerArmourClass = new Dictionary<int, int>
         {
             { 142, ClsCaptain }, { 144, ClsMarine }, { 145, ClsMarine }, { 146, ClsMarine }, { 147, ClsMarine }, { 157, ClsMarine },
+            // (2026-11-18, owner: "feels much better, except the pirate bots, please apply same logic to them") the pirate
+            // base bots too - Defenders: Marine, base Captains: Captain, Engineers: Chief Engineer (they had only their
+            // vehicle's flat 6 ignore + 10 %, Engineers 1 + 0 %)
+            { 140, ClsMarine }, { 141, ClsMarine }, { 143, ClsMarine }, { 156, ClsMarine }, { 158, ClsMarine },
+            { 162, ClsCaptain }, { 415, ClsCaptain }, { 437, ClsCaptain },
+            { 463, ClsChiefEngineer }, { 464, ClsChiefEngineer }, { 465, ClsChiefEngineer },
         };
 
         Dictionary<int, List<int>> _classSkillIds;
@@ -122,7 +128,7 @@ namespace InfServer.Script.GameType_Eol
                 bot.ExtraArmorIgnore = 0;
                 bot.ExtraArmorPercent = 0;
                 bot.ExtraArmorPercentBypassEnergy = 0;
-                bot.DamageTakenPercent = 100;
+                bot.DamageTakenPercent = bot is AlienHorde ? AlienDamageTakenPercent : BotDamageTakenPercent;   // (2026-11-18: no bonus - BotDamageTakenPercent)
                 if (useClassTable)
                 {
                     VehInfo cv = _arena._server._assets.getVehicleByID(cls);
@@ -156,6 +162,10 @@ namespace InfServer.Script.GameType_Eol
                     field = PickOne(ClassArmourChoices(cls, FieldsCategory));
                 }
                 if (stealth) body = 0;   // (owner) a cloak / stealth user wears no body armour
+                // (2026-11-18, owner: "the infils energy is really slow regen rate ... the same with black ops") and no
+                // field: cloak + field drained more than they recharge (BlackOps -27.5 -18 vs +42.5 a second), so energy
+                // sat near zero and cloak / fields kept switching off - the cloak is their energy cost, like a player's
+                if (stealth) field = 0;
                 foreach (int id in new[] { body, boots, gauntlets, field })
                     if (id != 0 && Itm(id) is ItemInfo.UtilityItem && !BotHasUtility(bot, id))
                         SetUtility(bot, id);
@@ -166,6 +176,13 @@ namespace InfServer.Script.GameType_Eol
                     _playerArmorLogged++;
                     Log.write(TLog.Normal, "[Eol] player armour: class {0} -> body {1}, boots {2}, gauntlets {3}, field {4}{5}",
                         cls, Itm(body)?.name ?? "-", Itm(boots)?.name ?? "-", Itm(gauntlets)?.name ?? "-", Itm(field)?.name ?? "-", stealth ? " (stealth: no body armour)" : "");
+                    // (2026-11-18) what is really worn and counted against damage
+                    List<string> worn = new List<string>();
+                    foreach (ItemInfo.UtilityItem u in bot.Loadout.GetActiveUtilities()) worn.Add(u.name);
+                    int ki, kp, ei, ep;
+                    bot.GetWornArmor(0, out ki, out kp); bot.GetWornArmor(1, out ei, out ep);
+                    Log.write(TLog.Normal, "[Eol]   worn + counted: {0} | kinetic {1} ignore {2:0.#} %, explosive {3} ignore {4:0.#} %",
+                        string.Join(", ", worn), ki / 1000, kp / 10.0, ei / 1000, ep / 10.0);
                 }
             }
             catch (Exception ex)
@@ -179,8 +196,8 @@ namespace InfServer.Script.GameType_Eol
         void PreparePirateRoamerArmor(Bots.Bot b)
         {
             int cls;
-            if (b == null || b.PlayerEnergy || b._type == null || !IsRoamBotTeam(b._team) || !RoamerArmourClass.TryGetValue(b._type.Id, out cls))
-                return;
+            if (b == null || b.PlayerEnergy || b._type == null || b is AlienHorde || !RoamerArmourClass.TryGetValue(b._type.Id, out cls))
+                return;   // (2026-11-18: any team now - the pirate base teams too)
             ApplyPlayerArmor(b, cls, useClassTable: true);
         }
     }

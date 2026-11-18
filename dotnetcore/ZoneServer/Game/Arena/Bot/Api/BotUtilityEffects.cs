@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Assets;
 
@@ -62,6 +63,12 @@ namespace InfServer.Bots
             return net > 0 ? net : 0;
         }
 
+        /// <summary>
+        /// Utility armour like a player's: every worn piece's flat ignore and percentage ADD UP (percent capped at 100 %),
+        /// applied after the vehicle (class) armour - the engine's original rule. (2026-11-18, owner: "the damage system
+        /// towards bots should literally be the same as me fighting an armor player with how armor stacks") - a
+        /// multiplicative experiment the same day was reverted.
+        /// </summary>
         public static void AccumulateUtilityArmor(
             IEnumerable<ItemInfo.UtilityItem> utilities,
             out int[] ignore,
@@ -72,6 +79,8 @@ namespace InfServer.Bots
 
             foreach (ItemInfo.UtilityItem util in utilities)
             {
+                if (util == null)
+                    continue;
                 ignore[(int)DamageChannel.Kinetic] += util.kineticIgnore;
                 percent[(int)DamageChannel.Kinetic] += util.kineticPercent;
 

@@ -54,7 +54,9 @@ namespace InfServer.Script.GameType_Eol
         {
             EolBotPersona p = new EolBotPersona();
             // aliens: pack animals, mostly fearless; humans: more mixed
-            p.Fighter = alien || r.NextDouble() < 0.35;          // aliens: bloodthirsty animals - never retreat
+            // (2026-11-18, owner: "remove the flight or fight ... they should always engage if they see someone") every bot
+            // is a fighter - nobody pulls back when hurt or outnumbered (was: aliens + 35 %)
+            p.Fighter = true;
             p.FleeHp = 0.20 + r.NextDouble() * 0.10;            // 20-30 %
             p.RejoinHp = 0.68 + r.NextDouble() * 0.17;          // 68-85 %
             p.TeamPlayer = r.NextDouble() < (alien ? 0.75 : 0.55);
@@ -183,6 +185,9 @@ namespace InfServer.Script.GameType_Eol
             public int OpenerShotsLeft, GrenadesLeft, NextGrenade;
             // (2026-11-17) the third gun (melee / laser / sonic / shotgun) and its burst window
             public WeaponController Misc;
+            public object DrainTarget; public int DrainUntil;   // (2026-11-18) the sidearm's energy-drain opener
+            public int MixNext, MixUntil;                       // (2026-11-18) a misc-gun burst now and then
+            public WeaponController Melee; public bool EnergySaving;   // (2026-11-18) low energy: free guns / melee
             public int MiscFrom, MiscUntil;
             // (2026-11-17) stand-still guns: charge-up end, end of the planted burst, earliest next commit
             public int PlantFireFrom, PlantUntil, NextPlant;
@@ -190,6 +195,12 @@ namespace InfServer.Script.GameType_Eol
         }
 
         /// <summary>The bot's misc gun (third slot): used while the main reloads and in short bursts now and then.</summary>
+        /// <summary>(2026-11-18) the melee weapon a bot falls back on while its energy recharges.</summary>
+        public static void SetMeleeWeapon(Bot b, WeaponController melee)
+        {
+            if (b != null) Get(b).Melee = melee;
+        }
+
         public static void SetMiscWeapon(Bot b, WeaponController misc)
         {
             if (b == null)
@@ -230,7 +241,19 @@ namespace InfServer.Script.GameType_Eol
         /// gun (far slot) whenever it reaches and isn't reloading; the misc gun in a 2-3 s burst every 8-14 s and while the
         /// main reloads; the sidearm (close slot) when neither can fire. null = keep the engine's pick.
         /// </summary>
-        static WeaponController RotateGuns(Bot self, Mind m, double dist, int now)
+        /// <summary>A gun whose round does energy damage (plasma pistols / SMGs): it drains the target's energy.</summary>
+        static bool IsDrainGun(WeaponController w)
+        {
+            ItemInfo.Projectile p = w?.Projectile;
+            return p != null && p.energyDamageInner > 0;
+        }
+
+        const int SideDrainMs = 1200;          // the sidearm's opening burst on a new target
+        // (2026-11-18, owner: "the bots were caught in some weird freeze and stutter and they werent shooting") holding fire
+        // through 1.5 s main reloads froze them - the sidearm covers any reload of 0.6 s or more again
+        const int SideOnReloadMinMs = 600;
+
+        static WeaponController RotateGuns(Bot self, Mind m, double dist, int now, object target = null)
         {
             WeaponController main = self._weaponFar, side = self._weaponClose, misc = m.Misc;
             if (main == null && misc == null)
@@ -239,6 +262,26 @@ namespace InfServer.Script.GameType_Eol
             {   // (planted for a stand-still gun: keep blasting with it)
                 foreach (WeaponController w in new[] { main, side, misc })
                     if (w != null && w.ItemID == self.PlantedItemId) return w;
+            }
+            // (2026-11-18, owner: "if cloak classes are using up all their energy, they should move to a melee to let their
+            // energy regain, and then back again to the guns ... not spamming something with low energy and only firing low
+            // rate") below 20 % energy a bot saves it until it is back to 60 %: a gun that costs no energy, else its melee
+            // weapon (it closes in with it), never the energy guns at a trickle
+            if (self.PlayerEnergy)
+            {
+                double ef = self.EnergyFraction;
+                if (ef < 0.2) m.EnergySaving = true;
+                else if (ef >= 0.6) m.EnergySaving = false;
+                if (m.EnergySaving)
+                {
+                    foreach (WeaponController w in new[] { main, side, misc })
+                        if (w != null && Bot.WeaponEnergyCost(w) == 0 && GunReaches(w, dist) && !w.IsReloading)
+                            return w;
+                    // (2026-11-18, owner: "an infil tried to melee me from far away ... any class ... should not melee from far
+                    // away") the melee weapon only within striking distance; farther off it keeps its guns
+                    if (m.Melee != null && dist <= MeleeReachRaw + 24)
+                        return m.Melee;
+                }
             }
             bool miscOk = misc != null && GunReaches(misc, dist) && !misc.IsReloading;
             // (2026-11-17, owner: "melee ... only if they are close and they cannot fire their other weapons") a melee misc
@@ -251,11 +294,38 @@ namespace InfServer.Script.GameType_Eol
                 if (sideCan) return side;
                 return miscOk ? misc : null;
             }
-            // (2026-11-17, owner: "make sure they are firing on reload ... always") no misc burst windows any more - every
-            // swap costs a switch delay: the main gun always; while it reloads / can't reach, the sidearm, else the misc
-            if (main != null && GunReaches(main, dist) && !main.IsReloading)
+            // (2026-11-18, owner: "they should only be using a pistol type weapon for energy drain, and then they swap to a
+            // harder hitting weapon" / "the pistol for energy drain can either be a plasma type or a pistol ammo type weapon
+            // ... then go into their main weapon and sometimes the misc weapon to mix it up a bit") the sidearm opens on each
+            // new target for SideDrainMs, then the main gun - with a 1.5-2.5 s misc burst every 8-14 s; on a main reload the
+            // misc gun, the sidearm only if the reload is long; the sidearm also when the main can't reach (close quarters)
+            bool sideOk = side != null && !ReferenceEquals(side, main) && GunReaches(side, dist) && !side.IsReloading;
+            bool mainReach = main != null && GunReaches(main, dist);
+            if (target != null && !ReferenceEquals(target, m.DrainTarget))
+            {
+                m.DrainTarget = target;
+                m.DrainUntil = sideOk ? now + SideDrainMs : 0;
+                m.MixNext = now + SideDrainMs + 4000 + m.R.Next(4000);   // (first misc burst a little into the fight)
+            }
+            if (sideOk && m.DrainUntil != 0 && now - m.DrainUntil < 0)
+                return side;
+            if (miscOk && m.MixUntil != 0 && now - m.MixUntil < 0)
+                return misc;
+            if (miscOk && m.MixNext != 0 && now - m.MixNext >= 0)
+            {
+                m.MixUntil = now + 1500 + m.R.Next(1000);
+                m.MixNext = now + 8000 + m.R.Next(6000);
+                return misc;
+            }
+            if (mainReach && !main.IsReloading)
                 return main;
-            if (side != null && !ReferenceEquals(side, main) && GunReaches(side, dist) && !side.IsReloading)
+            if (mainReach && main.IsReloading)
+            {
+                if (miscOk) return misc;
+                if (sideOk && main.ReloadMsLeft >= SideOnReloadMinMs) return side;
+                return main;   // (a short reload: wait for the harder hitter)
+            }
+            if (sideOk)
                 return side;
             if (miscOk)
                 return misc;
@@ -345,7 +415,7 @@ namespace InfServer.Script.GameType_Eol
             {   // elite: sharp, disciplined, sticks together. Assassins ("ultra") and elite aliens never retreat.
                 bool alienElite = b is AlienHorde;
                 bool assassin = b.SkillModeOverride == "ultra";
-                m.P.Fighter = assassin || alienElite || m.R.NextDouble() < 0.6;
+                m.P.Fighter = true;   // (2026-11-18, owner: no flight or fight - always engage)
                 m.P.TeamPlayer = true;
                 m.P.Retaliates = !assassin;          // assassins stay on the contract
                 m.P.Backpedals = !alienElite;
@@ -804,17 +874,24 @@ namespace InfServer.Script.GameType_Eol
                 }
 
                 float forward, strafe;
-                if (dist > range * 1.05 || (targetRunning && dist > pref * 1.2))
+                // (2026-11-18, owner: "if i move away half a coordinate from a team, they just look at me and strafe in spot
+                // ... they should be following me to engage") the gun in hand out of reach = close in like a chase, and
+                // past the preferred range push in hard (it used to drift at half power while strafing at full)
+                int handReach = EolBotCombatUtil.GetCombatRangeRaw(self._weapon != null && self._weapon.ItemID != 0
+                    ? AssetManager.Manager?.getItemByID(self._weapon.ItemID) : null);
+                bool handShort = handReach > 0 && dist > handReach * 0.9;
+                if (dist > range * 1.05 || handShort || (targetRunning && dist > pref * 1.2))
                 {   // chase: straight at them, a little weave
                     forward = 1f;
                     strafe = 0.18f * m.StrafeSign;
                 }
                 else
                 {   // fight: drift around them at the preferred range
-                    if (dist > pref * 1.15) forward = 0.55f;
+                    bool tooFar = dist > pref * 1.15;
+                    if (tooFar) forward = 0.85f;
                     else if (dist < pref * 0.70) forward = needMin > 0 && dist < needMin ? -1f : -0.55f;
                     else forward = (float)Math.Max(-0.3, Math.Min(0.3, (dist - pref) / pref * 0.8));
-                    strafe = P.StrafePower * m.StrafeSign;
+                    strafe = P.StrafePower * m.StrafeSign * (tooFar ? 0.5f : 1f);
                 }
 
                 DriveAimFire(self, steering, dest, target, dist, forward, strafe);
@@ -855,7 +932,7 @@ namespace InfServer.Script.GameType_Eol
                 gun = BotWeaponUtil.CommitEngageWeapon(self, maser);
             else
             {   // (2026-11-17) sidearm / main / misc rotation (the maser through a wall still comes first)
-                WeaponController rot = RotateGuns(self, Get(self), dist, Environment.TickCount);
+                WeaponController rot = RotateGuns(self, Get(self), dist, Environment.TickCount, target);
                 if (rot != null && !ReferenceEquals(rot, gun))
                     gun = BotWeaponUtil.CommitEngageWeapon(self, rot) ?? rot;
             }

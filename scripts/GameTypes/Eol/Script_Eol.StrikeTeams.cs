@@ -59,7 +59,7 @@ namespace InfServer.Script.GameType_Eol
         static readonly int[] PoolShotgun = { 3023, 1016, 3001, 1465 };
         static readonly int[] PoolCarbine = { 1002, 3104, 1001, 3094 };
         static readonly int[] PoolHeavy = { 1057, 3028, 3021, 1310, 3105, 3110, 1004, 1061, 3031, 3095, 3102 };   // (2026-11-17: + the autocannons AC 2000k, AC mk2, ACp-90, LPC-4 - they plant to fire)
-        static readonly int[] PoolPlasma = { 1044, 1104, 1007, 1188, 1311, 1006 };
+        static readonly int[] PoolPlasma = { 1044, 1104, 1007, 1188, 1311 };   // (2026-11-18: Maklov PP08 pistol out - pistols are sidearms only)
         static readonly int[] PoolPlasmaSmg = { 1100, 109, 1006, 1343 };
         static readonly int[] PoolGauss = { 1031, 1038, 1141, 1114, 1533 };
         static readonly int[] PoolLaser = { 1103, 1157, 1607 };
@@ -295,6 +295,7 @@ namespace InfServer.Script.GameType_Eol
 
         void PollStrikeTeams(int now)
         {
+            PollPendingFoot(now);   // (2026-11-18) vehicle-squad riders on foot after their vehicle went down
             if (!StrikeTeamsEnabled || _arena == null || !_arena._bGameRunning || !EolHasArenaPresence())
                 return;
             if (now - _tickStrikePoll < 1500)
@@ -406,7 +407,9 @@ namespace InfServer.Script.GameType_Eol
                 ApplyHumanLoadout(bot, cls, team);
             if (viaDropship)
                 BeginDeploy(bot, now);
-            EnableBotDropshipRespawn(bot, 0);   // (2026-11-16d) dies -> corpse -> back through the dropship, same bot
+            if (!vehicleSquad)
+                EnableBotDropshipRespawn(bot, 0);   // (2026-11-16d) dies -> corpse -> back through the dropship, same bot
+            // (2026-11-18) vehicle squad: losing the vehicle puts its rider on foot (Script_Eol.VehicleSquadFoot.cs)
             if (_bots == null)
                 _bots = new List<Bots.Bot>();
             _bots.Add(bot);
@@ -603,6 +606,7 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>Boards slash (the Shimmerboard runs its shimmer field); the Drop Pack fires its plasma bolts.</summary>
         /// <summary>(2026-11-17, owner: "sciops is a flightpack") the vehicle squad's 4th: a SciOps on a Flight Pack (106) - the pink Proton Beamer and the Plasma Bomb.</summary>
         const int ItmProtonBeamer = 1125, ItmPlasmaBomb = 120, VehFlightPack = 106;
+        const int ItmCombatSword = 1080;
         /// <summary>Energy guns for the Flight Pack SciOps's third slot: Proton Accelerator, Particle Accelerators, WaveTech MR2 / MR1, FusionCorp IRLSMG.</summary>
         static readonly int[] SciOpsEnergyGuns = { 1478, 1101, 1055, 1103, 1157, 1607 };
 
@@ -677,6 +681,13 @@ namespace InfServer.Script.GameType_Eol
                     ItemInfo mi = Itm(misc);
                     WeaponController wm = new WeaponController(bot._state, new WeaponController.WeaponSettings());
                     if (mi != null && wm.equip(mi)) { wm.Owner = bot; EolBotBrain.SetMiscWeapon(bot, wm); }
+                }
+                // (2026-11-18) the cloak classes carry a Combat Sword for when their energy runs low (EolBotBrain.RotateGuns)
+                if (cls == ClsInfiltrator || cls == ClsBlackOps)
+                {
+                    ItemInfo ki = Itm(ItmCombatSword);
+                    WeaponController wk = new WeaponController(bot._state, new WeaponController.WeaponSettings());
+                    if (ki != null && wk.equip(ki)) { wk.Owner = bot; EolBotBrain.SetMeleeWeapon(bot, wk); }
                 }
 
                 // Suit SuperCharger on everyone (a free utility slot, switched on)

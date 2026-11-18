@@ -393,6 +393,13 @@ namespace InfServer.Game
                 if (newBot._team == null)
                     newBot._team = EnsureBotNamelistFallbackTeam();
 
+                if (!string.IsNullOrEmpty(NextBotAlias))
+                {   // (2026-11-18) a name handed over (HandOverBotAlias)
+                    newBot._alias = NextBotAlias;
+                    if (BotNames != null) BotNames.Assign(newBot, NextBotAlias);
+                    NextBotAlias = null;
+                }
+
                 if (string.IsNullOrEmpty(newBot._alias) && BotNames != null)
                     newBot._alias = BotNames.Acquire(newBot, name => IsBotAliasTakenByAnother(name, newBot));
 
@@ -456,7 +463,7 @@ namespace InfServer.Game
         /// </summary>
         public static bool ShouldBotAppearOnNamelist(Bot bot)
         {
-            if (bot == null)
+            if (bot == null || bot.HideFromNamelist)
                 return false;
             // (local 2026-11-14) a bot that just died stays listed until its death animation has played (even
             // once its script condemned it). Bots are drawn as players: dropping the namelist row deletes the
@@ -720,6 +727,25 @@ namespace InfServer.Game
         /// <summary>
         /// Sends a bot team-list entry to all connected clients once (no re-enter if already listed).
         /// </summary>
+        /// <summary>
+        /// (2026-11-18, owner: "it should be the same person if the vehicle dies") <paramref name="to"/> carries on as
+        /// <paramref name="from"/>: it takes its name (registry + team list); <paramref name="from"/> (dead, about to be
+        /// removed) gets a hidden placeholder so the two never clash.
+        /// </summary>
+        public string HandOverBotAlias(Bot from)
+        {
+            if (from == null || string.IsNullOrEmpty(from._alias) || from._alias.StartsWith("~"))
+                return null;
+            string name = from._alias;
+            from.HideFromNamelist = true;    // (off the team list now and for good - no placeholder name ever shown)
+            broadcastBotNamelistLeave(from);
+            if (BotNames != null) BotNames.Release(from);
+            return name;
+        }
+
+        /// <summary>(2026-11-18) the name the next newBot gets (one shot) - a rider carrying on under its own name.</summary>
+        public string NextBotAlias;
+
         void broadcastBotNamelistEntry(Bot bot)
         {
             if (bot == null)

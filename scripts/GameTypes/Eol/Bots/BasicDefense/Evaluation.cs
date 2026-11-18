@@ -107,7 +107,9 @@ namespace InfServer.Script.GameType_Eol
                 && ((now - _tickLastActionEvalRetreat >= EolBotActionEvalThrottle.DefenseRetreatMs)
                 || _state.health <= EolBotActionEvalThrottle.DefenseRetreatHealthBypass);
             Action.Priority retreatP = Action.Priority.None;
-            if (retreatAllowed)
+            // (2026-11-18, owner: "they should always engage if they see someone") no falling back while an enemy is near -
+            // only when nobody is around (to heal up at the HQ); defending the HQ under attack is unchanged
+            if (retreatAllowed && !hostiles)
             {
                 _tickLastActionEvalRetreat = now;
                 if (hostiles || _state.health <= EolBotActionEvalThrottle.DefenseRetreatHealthBypass)

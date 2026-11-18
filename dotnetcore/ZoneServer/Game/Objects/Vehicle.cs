@@ -64,6 +64,7 @@ namespace InfServer.Game
         public int _tickAntiFire;           //The time until fire has been disabled
         public int _tickAntiRotate;         //The time until rotation has been disabled
         public int _tickAntiRecharge;       //The time until energy regen has been disabled
+        public int _tickAntiThrust;         //(2026-11-18) the time until movement is slowed (stunner) - bots
         #endregion
 
         #region Events
@@ -513,6 +514,8 @@ namespace InfServer.Game
                 {
                     _tickAntiRotate = Environment.TickCount + (wep.antiEffectsRotate * 10);
                 }
+                if (wep.antiEffectsThrust > 0)
+                    _tickAntiThrust = Environment.TickCount + (wep.antiEffectsThrust * 10);
             }
 
             //Apply the damage
@@ -550,6 +553,16 @@ namespace InfServer.Game
             // dead centre, so it does inner..outer by where it burst (the old code gave the full centre damage of
             // EVERY channel at once).
             double f = 0.35 + _botHitRng.NextDouble() * 0.65;   // 1 = dead centre
+            // (2026-11-18, owner: "the stun from the medic should effect bots aswell") a bot's direct hit carries the
+            // round's anti effects (stunner: no fire / no turning / crawl) like a player's
+            if (wep.antiEffectsRadius > 0)
+            {
+                int tnow = Environment.TickCount;
+                if (wep.antiEffectsFire > 0) _tickAntiFire = tnow + wep.antiEffectsFire * 10;
+                if (wep.antiEffectsRecharge > 0) _tickAntiRecharge = tnow + wep.antiEffectsRecharge * 10;
+                if (wep.antiEffectsRotate > 0) _tickAntiRotate = tnow + wep.antiEffectsRotate * 10;
+                if (wep.antiEffectsThrust > 0) _tickAntiThrust = tnow + wep.antiEffectsThrust * 10;
+            }
             double net = 0;
             net += BotHitChannel(wep.kineticDamageInner, wep.kineticDamageOuter, wep.kineticDamageRadius, f, 0);
             net += BotHitChannel(wep.explosiveDamageInner, wep.explosiveDamageOuter, wep.explosiveDamageRadius, f, 1);
