@@ -1281,7 +1281,7 @@ namespace InfServer.Script.GameType_Eol
         {
             Computer best = null; double bestD = double.MaxValue;
             foreach (Vehicle v in self._arena.getVehiclesInRange(self._state.positionX, self._state.positionY, range,
-                delegate (Vehicle x) { return x is Computer c && c._primaryGun != null && !x.IsDead && x._team != self._team && !(script != null && script.RaidFlagBeforeHq(self, x)); }))   // (2026-11-19: a raider next to the team's roamer flag goes for the flag, not the HQ)
+                delegate (Vehicle x) { return x is Computer c && (c._primaryGun != null || (script != null && x._type != null && script.IsHqVehId(x._type.Id))) && !x.IsDead && x._team != self._team && !(script != null && script.RaidFlagBeforeHq(self, x)); }))   // (2026-11-19: HQs too - they have no gun now)   // (2026-11-19: a raider next to the team's roamer flag goes for the flag, not the HQ)
             {
                 Computer c = (Computer)v;
                 if (IsTargetIgnored(self, c, Helpers.distanceTo(self._state, c._state)))

@@ -74,7 +74,7 @@ namespace InfServer.Script.GameType_Eol
             if (_arena == null)
                 return false;
             foreach (Vehicle v in _arena.Vehicles)
-                if (v != null && v._type != null && v._type.Id == _hqVehId && !v.IsDead && !v.bCondemned && v._state != null
+                if (v != null && v._type != null && IsHqVehId(v._type.Id) && !v.IsDead && !v.bCondemned && v._state != null
                     && InSwarmA6(v._state.positionX, v._state.positionY))
                     return true;
             return false;

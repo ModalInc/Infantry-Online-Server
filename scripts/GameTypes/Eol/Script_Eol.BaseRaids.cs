@@ -21,8 +21,8 @@ namespace InfServer.Script.GameType_Eol
     ///     shared out: 1 roamer flag held = 1 squad comes, 2 = 2, 3 = 3, all 4 = 5. Nearest squads first; fewer flags,
     ///     the extra squads go back to roaming. No HQ or no roamer flag: the raid is over.
     ///   - A raiding squad marches on the base (out of its usual territory) - its leader to a roamer flag the team holds
-    ///     (near the squad) or the HQ, the rest in formation - fights what it finds there and shoots the HQ (its mounted
-    ///     MG makes it a turret to the bots), except while one of the team's roamer flags is close: that first.
+    ///     (near the squad) or the HQ, the rest in formation - fights what it finds there and shoots the HQ (bots treat
+    ///     an HQ like a turret), except while one of the team's roamer flags is close: that first.
     ///   - A raider that reaches one of the team's roamer flags lying on the ground takes it: the flag goes to the bot's
     ///     team and moves with the bot, which runs (no fighting) to a spot 3,000+ px from the base and drops it there.
     ///     Killed on the way, it drops where it fell; a player who touches the flag takes it back as usual.
@@ -226,7 +226,7 @@ namespace InfServer.Script.GameType_Eol
             return hqUp ? new Helpers.ObjectState { positionX = r.Hq._state.positionX, positionY = r.Hq._state.positionY } : null;
         }
 
-        /// <summary>The HQ this bot's squad is raiding (its mounted MG makes it a turret to the bots), while one of the team's
+        /// <summary>The HQ this bot's squad is raiding (bots shoot HQs like turrets), while one of the team's
         /// roamer flags is close: leave the HQ for now - the flag first.</summary>
         public bool RaidFlagBeforeHq(Bot b, Vehicle v)
         {
@@ -346,7 +346,7 @@ namespace InfServer.Script.GameType_Eol
                     if (f != null && f.bActive && f.carrier == null)
                         spots.Add(new Helpers.ObjectState { positionX = f.posX, positionY = f.posY });
             foreach (Vehicle v in _arena.Vehicles)
-                if (v != null && !v.IsDead && v._type != null && v._type.Id == _hqVehId && v._state != null)
+                if (v != null && !v.IsDead && v._type != null && IsHqVehId(v._type.Id) && v._state != null)
                     spots.Add(v._state);
             for (int tries = 0; tries < 40 && spots.Count > 0; tries++)
             {

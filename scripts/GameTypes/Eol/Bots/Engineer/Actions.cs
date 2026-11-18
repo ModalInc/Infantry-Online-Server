@@ -107,7 +107,7 @@ namespace InfServer.Script.GameType_Eol
             {
                 if (!IsHealableBaseVehicle(v))
                     continue;
-                if (v._type.Id == hqId)
+                if (_baseScript.IsHqVehId(v._type.Id))
                     continue;
                 stops.Add(v);
             }

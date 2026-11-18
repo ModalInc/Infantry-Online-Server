@@ -49,6 +49,10 @@ namespace InfServer.Script.GameType_Eol
 
         /// <summary>HQ chassis id — physical anchor for base bots (469). No leveling/bounty script layer.</summary>
         public int _hqVehId = 469;
+        /// <summary>(2026-11-19, owner: "the HQ should not have that mounted MG on top, it looks odd ... if real humans create HQ,
+        /// its should be the same HQ") the HQ (469, players' and bot bases' alike) has no gun now and is drawn as the
+        /// Headquarters building (headquarters.blo) - bots attack it all the same (EolBotBrain.FindHostileTurret).</summary>
+        public bool IsHqVehId(int id) { return id == _hqVehId; }
         /// <summary>Per-player payout when the killer team destroys a defense bot HQ (469).</summary>
         public const int EolBotHqDestroyCashPerPlayer = 22500;   // (2026-11-17, owner: 34,500 cash / 6,250 xp; was 80k / 12k) (2026-11-19, owner: cash 22,500)
         // (2026-11-19, owner: "Koth reward should be slightly lower on the cash side. maybe by 30%") cash 32,500 -> 22,750; "please drop xp reward to 5,250 for koth" exp 8,500 -> 5,250
@@ -1806,7 +1810,7 @@ namespace InfServer.Script.GameType_Eol
                 return list;
             foreach (Vehicle v in _arena.Vehicles)
             {
-                if (v == null || v._type == null || v.IsDead || v._type.Id != _hqVehId)
+                if (v == null || v._type == null || v.IsDead || !IsHqVehId(v._type.Id))
                     continue;
                 if (v.bCondemned || IsVehicleDespawnQueued(v))
                     continue;
@@ -2214,7 +2218,7 @@ namespace InfServer.Script.GameType_Eol
             Vehicle hqVehicle = null;
             try
             {
-                hqVehicle = createVehicleAtObjectState(469, 0, 0, team, pylonBase);
+                hqVehicle = createVehicleAtObjectState(_hqVehId, 0, 0, team, pylonBase);
             }
             catch (Exception ex)
             {
@@ -2526,7 +2530,7 @@ namespace InfServer.Script.GameType_Eol
                     continue;
                 if (IsVehicleDespawnQueued(v))
                     continue;
-                if (v._type.Id == _hqVehId && v._team == team)
+                if (IsHqVehId(v._type.Id) && v._team == team)
                     return true;
             }
             return false;
@@ -2545,7 +2549,7 @@ namespace InfServer.Script.GameType_Eol
             {
                 if (v == null || v._type == null || v.IsDead || v._state == null)
                     continue;
-                if (v._type.Id != _hqVehId)
+                if (!IsHqVehId(v._type.Id))
                     continue;
                 long dx = (long)v._state.positionX - anchorX;
                 long dy = (long)v._state.positionY - anchorY;
@@ -7320,7 +7324,7 @@ namespace InfServer.Script.GameType_Eol
             }
 
             //Are they trying to create a headquarters?
-            if (created._type.Id == _hqVehId)
+            if (IsHqVehId(created._type.Id))
             {
                 // The engine adds the new vehicle to _arena.Vehicles BEFORE firing this event, so a plain
                 // TeamHasLiveHqVehicle(team) check would match the HQ we're creating right now and wrongly
@@ -7354,7 +7358,7 @@ namespace InfServer.Script.GameType_Eol
                 return true;   // the Alien Swarm's nest (Script_Eol.AlienSwarm.cs)
 
             //Did they just kill an HQ?!
-            if (dead._type.Id == _hqVehId)
+            if (IsHqVehId(dead._type.Id))
             {
                 if (dead._state != null && IsDefenseBotTeam(dead._team))
                 {

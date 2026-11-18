@@ -47,7 +47,7 @@ namespace InfServer.Script.GameType_Eol
         {
             if (_placingRebuild || team == null || v?._type == null || v._state == null)
                 return;
-            if (v._type.Id == _hqVehId)
+            if (IsHqVehId(v._type.Id))
             {
                 _baseTurretSlots[team] = new List<TurretSlot>();
                 foreach (Bot b in new List<Bot>(_baseRebuildJobs.Keys))
