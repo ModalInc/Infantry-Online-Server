@@ -1999,6 +1999,7 @@ namespace InfServer.Script.GameType_Eol
             PollAlienSwarm(now);    // the Alien Swarm nest (Script_Eol.AlienSwarm.cs)
             PollEliteSquads(now);   // local: two elite roaming squads
             PollStrikeTeams(now);   // local: three human-class strike teams
+            PollBaseRaids(now);     // (2026-11-19) roamer squads raid a player base holding roamer flags (Script_Eol.BaseRaids.cs)
             PollBotDropshipRespawns(now);
             SyncIngameBountyStats();
             PollBountyHunt(now);
