@@ -1992,6 +1992,7 @@ namespace InfServer.Script.GameType_Eol
             PollPackJumps(now);      // pack bots jump walls / jump away when hurt (Script_Eol.PackJumps.cs)
             PollMissingFlags(now);   // flags skipped while the zone was empty come up once players are in
             PollOffSectorFlags(now); // (2026-11-18) flags left lying in a closed sector lose their owner (Script_Eol.BotFlagClaim.cs)
+            PollNoSummonFlags(now);  // (2026-11-18) standard carriers can't be summoned (Script_Eol.FlagSummonBlock.cs)
             PollChokeRescue(now);    // bots wedged in a known choke (146,411) are moved out (Script_Eol.ChokeRescue.cs)
             PollStuckRescue(now);    // (2026-11-17) any bot stuck anywhere: to a team mate / open ground (Script_Eol.StuckRescue.cs)
             PollAlienSwarm(now);    // the Alien Swarm nest (Script_Eol.AlienSwarm.cs)
@@ -6576,7 +6577,9 @@ namespace InfServer.Script.GameType_Eol
             bool queenDied = dead != null && IsSwarmNest(dead);
             if (queenDied)
                 OnSwarmNestDeath(dead, killer);
-            if (!queenDied && killer != null && dead != null && dead._team != killer._team)
+            // (2026-11-18) a vehicle-squad bot's vehicle destroyed: its rider goes on foot - no kill reward for the vehicle
+            bool vehicleLost = !queenDied && OnVehicleSquadVehicleLost(dead);
+            if (!queenDied && !vehicleLost && killer != null && dead != null && dead._team != killer._team)
             {
                 calculateBotKillRewards(dead, killer);
                 OnPlayerKilledBot(killer, dead);

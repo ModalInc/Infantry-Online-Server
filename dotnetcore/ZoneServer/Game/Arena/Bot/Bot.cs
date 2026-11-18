@@ -413,6 +413,8 @@ namespace InfServer.Bots
         /// <summary>(2026-11-17, owner: "the HP does not show for the queen ... not other alien hp, just the queen") everyone
         /// sees this bot's real health bar (other bots report full health to enemies).</summary>
         public bool ShowHealthToAll;
+        /// <summary>(2026-11-18) never on the team list again (a vehicle bot whose rider carries on as another bot).</summary>
+        public bool HideFromNamelist;
         private int[] _utilityArmorIgnore = new int[6];
         private int[] _utilityArmorPercent = new int[6];
         private BotUtilityMovementModifiers _utilityMovementMods;
@@ -866,6 +868,9 @@ namespace InfServer.Bots
         /// </summary>
         public bool StationaryFireGate(WeaponController w, int now)
         {
+            // (2026-11-18) stunned (Electro Stunner etc.): no firing until it wears off
+            if (_tickAntiFire != 0 && now - _tickAntiFire < 0)
+                return false;
             if (w == null || !w.RequiresStationaryFire)
                 return true;
             if (_plantItem == w.ItemID && now - _plantUntil < 0)
@@ -888,7 +893,7 @@ namespace InfServer.Bots
         /// <summary>Between bursts of a stand-still gun (it can't fire it now; another gun may).</summary>
         public bool InStationaryCooldown(int now) { return _nextPlant != 0 && now - _plantUntil >= 0 && now - _nextPlant < 0; }
 
-        static int WeaponEnergyCost(WeaponController w)
+        public static int WeaponEnergyCost(WeaponController w)
         {
             ItemInfo it = w != null && w.ItemID != 0 ? AssetManager.Manager?.getItemByID(w.ItemID) : null;
             // item energy costs are in 1/1000 energy (Maklov plasma rifle 27000 = 27 energy) - raw, no plasma gun could ever fire
@@ -931,6 +936,8 @@ namespace InfServer.Bots
         readonly bool[] _energyItemWasOn = new bool[BotLoadout.SlotCount];
 
         public double Energy { get { return _energy < 0 ? 0 : _energy; } }
+        /// <summary>(2026-11-18) energy now / max (1 when the bot doesn't run player energy).</summary>
+        public double EnergyFraction { get { if (!PlayerEnergy || _energy < 0) return 1; int m = EnergyMaxNow(); return m <= 0 ? 1 : _energy / m; } }
         public bool EnergyItemsDown { get { return _energyItemsDown; } }
 
         int EnergyMaxNow()
@@ -962,6 +969,8 @@ namespace InfServer.Bots
             int rate = ev != null ? Math.Max(0, ev.EnergyRate) : 0;
             foreach (ItemInfo.UtilityItem u in Loadout.GetActiveUtilities())
                 rate += u.rechargeRate;
+            if (_tickAntiRecharge != 0 && now - _tickAntiRecharge < 0 && rate > 0)
+                rate = 0;   // (2026-11-18) an anti-recharge hit: no regen while it lasts
             int max = EnergyMaxNow();
             _energy = Math.Min(max, _energy + rate / EnergyRateDivisor * dt);
             if (_energy <= 0)
@@ -1093,6 +1102,9 @@ namespace InfServer.Bots
                     RefreshUtilityEffects();
             }
         }
+
+        /// <summary>(2026-11-18) the worn-armour totals for one damage channel (for logs / checks).</summary>
+        public void GetWornArmor(int channel, out int ignore, out int percent) { GetUtilityArmorForChannel(channel, out ignore, out percent); }
 
         protected override void GetUtilityArmorForChannel(int channel, out int ignore, out int percent)
         {
@@ -1484,7 +1496,16 @@ namespace InfServer.Bots
                 ApplyJumpArc(tickCount);
 
                 //Allow our controller to update our vehicle state
+                byte yawBefore = _state.yaw;
                 _movement.updateState(delta);
+                // (2026-11-18, owner: "the stun from the medic should effect bots aswell") stunned: crawl, can't turn
+                if (_tickAntiThrust != 0 && tickCount - _tickAntiThrust < 0)
+                {
+                    _state.velocityX = (short)(_state.velocityX / 5);
+                    _state.velocityY = (short)(_state.velocityY / 5);
+                }
+                if (_tickAntiRotate != 0 && tickCount - _tickAntiRotate < 0)
+                    _state.yaw = yawBefore;
 
                 // Keep Api navigator path index in sync with what steering actually advanced.
                 if (MovementMode == BotMovementMode.Api

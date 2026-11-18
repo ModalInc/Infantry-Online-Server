@@ -393,6 +393,12 @@ namespace InfServer.Script.GameType_Eol
                 InfServer.Game.Player player = s.Player;
                 if (player == null || player.IsDead || player.IsSpectator || player._arena != _arena || !IsJoinableSquadTeam(player._team))
                     continue;
+                if (CarriesNoSummonFlag(player))
+                {   // (2026-11-18, owner) no teleporting away with the Citizens / Elite Unit / Mercenaries Standard
+                    player.sendMessage(-1, "Squad: you can't be summoned while you carry a standard.");
+                    _squadOrderNext.Remove(player);
+                    continue;
+                }
                 RoamingAttacker to = SummonTarget(player._team, s.Order);
                 if (to == null)
                 {

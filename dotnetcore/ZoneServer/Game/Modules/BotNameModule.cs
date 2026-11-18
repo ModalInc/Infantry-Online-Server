@@ -194,6 +194,21 @@ namespace InfServer.Game.Modules
             }
         }
 
+        /// <summary>(2026-11-18) give this bot exactly this name (a bot carrying on as another - see Arena.TransferBotAlias).</summary>
+        public void Assign(Bot bot, string name)
+        {
+            if (bot == null || string.IsNullOrEmpty(name))
+                return;
+            lock (_lock)
+            {
+                string old;
+                if (_botToName.TryGetValue(bot, out old) && !string.IsNullOrEmpty(old))
+                    _inUse.Remove(old);
+                _botToName[bot] = name;
+                _inUse.Add(name);
+            }
+        }
+
         /// <summary>Return a ~Bot name to the free list.</summary>
         public void Release(Bot bot)
         {

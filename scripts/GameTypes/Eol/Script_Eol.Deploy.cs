@@ -27,7 +27,13 @@ namespace InfServer.Script.GameType_Eol
         const int DeploySpawnRadius = 220;
         public const int BotSpawnProtectMs = 3000;
         /// <summary>(2026-11-16, owner: "50% armor increase bots"; 2026-11-17 "reduce the 50% armor increase ... to 35%. bots are too tanky") damage taken = 1 / 1.35.</summary>
-        public const int BotDamageTakenPercent = 100;   // (2026-11-17, owner: "lets remove the added armor bonus" - no bonus for any bot)
+        // (2026-11-17, owner: "lets remove the added armor bonus") then (2026-11-18, owner: "bots are a bit too squishy again,
+        // maybe increase armor by 20% ... make sure aliens have no armor increase") - 20 % more armour = 1/1.2 of the damage
+        // then (2026-11-18, owner: "up the increase armor we did to 30% from 20%") - 1/1.3 of the damage
+        // then (2026-11-18, owner: "if we drop to 0% and then let the armor it self do the defense") - no bonus: the armour
+        // pieces do it, stacked realistically now (engine BotUtilityEffects.AccumulateUtilityArmor)
+        public const int BotDamageTakenPercent = 100;
+        public const int AlienDamageTakenPercent = 100;
 
         readonly Dictionary<Bots.Bot, int> _deployStartTick = new Dictionary<Bots.Bot, int>();   // (by object: ids are reused)
         readonly HashSet<Bots.Bot> _preparedBots = new HashSet<Bots.Bot>();
@@ -362,7 +368,9 @@ namespace InfServer.Script.GameType_Eol
                     continue;
                 PreparePirateRoamerArmor(b);   // (2026-11-17) pirate Roamers: player armour of their class
                 if (!(b is AlienHorde)) b.DisplayBounty = BotBountyOf(b);   // (2026-11-17) its bounty next to its name
-                if (!b.PlayerEnergy)            // (bots on player armour take no extra bot armour)
+                if (b is AlienHorde)            // (aliens: no armour bonus)
+                    b.DamageTakenPercent = AlienDamageTakenPercent;
+                else if (!b.PlayerEnergy)       // (bots on player armour get it in ApplyPlayerArmor)
                     b.DamageTakenPercent = BotDamageTakenPercent;
                 if (b.DamageImmuneUntilTick == 0 && now - b._tickCreation < BotSpawnProtectMs)
                     b.DamageImmuneUntilTick = NonZeroTick(b._tickCreation + BotSpawnProtectMs);
