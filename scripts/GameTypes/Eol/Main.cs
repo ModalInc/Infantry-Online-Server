@@ -2249,7 +2249,7 @@ namespace InfServer.Script.GameType_Eol
                                 createVehicleAtObjectState(467, -133, 20, team, pylonBase);
                                 createVehicleAtObjectState(457, -264, 84, team, pylonBase);
                                 createVehicleAtObjectState(457, 245, 84, team, pylonBase);
-                                createVehicleAtObjectState(467, 0, 50, team, pylonBase);
+                                createVehicleAtObjectState(466, 0, 50, team, pylonBase);   // (2026-11-19: was a 2nd Rocket - the set has 1 Rocket, 1 Sentry)
                                 createVehicleAtObjectState(460, 0, 132, team, pylonBase);
                                 createVehicleAtObjectState(823, 229, -156, team, pylonBase);
                                 break;
@@ -2377,6 +2377,7 @@ namespace InfServer.Script.GameType_Eol
                                 PlaceObjectiveBaseTurrets(team, pylonBase);
                                 break;
                         }
+                        EnsureBaseTurretSet(team, pylonBase);   // (2026-11-19) every base: the full turret set (Script_Eol.ObjectiveBases.cs)
                     #endregion
 
             pick.Value.setExists(false);
