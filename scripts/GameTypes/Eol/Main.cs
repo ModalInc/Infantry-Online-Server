@@ -51,8 +51,8 @@ namespace InfServer.Script.GameType_Eol
         public int _hqVehId = 469;
         /// <summary>Per-player payout when the killer team destroys a defense bot HQ (469).</summary>
         public const int EolBotHqDestroyCashPerPlayer = 34500;   // (2026-11-17, owner: 34,500 cash / 6,250 xp; was 80k / 12k)
-        // (2026-11-19, owner: "Koth reward should be slightly lower on the cash side. maybe by 30%") cash 32,500 -> 22,750
-        public const int EolKothCash = 22750, EolKothExp = 8500;   // (2026-11-17, owner) KOTH win, flat, before the lifetime scale
+        // (2026-11-19, owner: "Koth reward should be slightly lower on the cash side. maybe by 30%") cash 32,500 -> 22,750; "please drop xp reward to 5,250 for koth" exp 8,500 -> 5,250
+        public const int EolKothCash = 22750, EolKothExp = 5250;   // (2026-11-17, owner) KOTH win, flat, before the lifetime scale
         public const int EolBotHqDestroyExpPerPlayer = 6250;
         public const int EolBotHqDestroyPointsPerPlayer = 5000;   // (2026-11-17, owner: was 750; the Alien Queen uses this too)
         /// <summary>Lifetime <see cref="InfServer.Game.Player.ExperienceTotal"/> below this gets a 1.5× cash/exp/points bonus.</summary>
