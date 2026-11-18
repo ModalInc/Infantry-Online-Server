@@ -6020,15 +6020,17 @@ namespace InfServer.Script.GameType_Eol
             if (flag == null || flag.FlagData.FlagCarriable == 0)
             { cash = 2000; exp = 1000; return; }
             // (2026-11-17, owner) the Citizens Standard pays 2.5k exp, the Elite Unit Standard 3.5k (Mercenaries 3k)
+            // (2026-11-19, owner: "make roamers flags, 2,500 cash and 1,250xp ... citizens standard xp 1,500 ... merc standard
+            // 1,750 and ... elite standard 2,100 xp") Elite 5k / 2.1k, Mercenaries 5k / 1.75k, Citizens 3k / 1.5k, roamers 2.5k / 1.25k
             string name = flag.GeneralData.Name ?? "";
             if (name.IndexOf("Elite Unit Standard", StringComparison.OrdinalIgnoreCase) >= 0)
-            { cash = 5000; exp = 3500; return; }
+            { cash = 5000; exp = 2100; return; }
             if (name.IndexOf("Citizens Standard", StringComparison.OrdinalIgnoreCase) >= 0)
-            { cash = 3000; exp = 2500; return; }
+            { cash = 3000; exp = 1500; return; }
             string logic = flag.FlagData.SkillLogic ?? "";
             if (System.Text.RegularExpressions.Regex.IsMatch(logic, @"(^|[^\d%@#-])(7|9|10)([^\d]|$)"))
-            { cash = 5000; exp = 3000; return; }
-            cash = 3000; exp = 2000;
+            { cash = 5000; exp = 1750; return; }
+            cash = 2500; exp = 1250;
         }
 
         static double GetEolFlagHoldMultiplier(int flagsOwned)
