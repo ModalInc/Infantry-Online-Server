@@ -746,10 +746,32 @@ namespace InfServer.Game
         /// <summary>(2026-11-18) the name the next newBot gets (one shot) - a rider carrying on under its own name.</summary>
         public string NextBotAlias;
 
+        /// <summary>
+        /// (2026-11-19, owner: "there is Bot 4968 names in ghost reapers. that should not happen") a bot that left the team
+        /// list (RemoveBotFromNamelist frees its name and leaves "Bot &lt;id&gt;" so no packet ever carries a blank name) and
+        /// comes back - a dropship respawn - was listed again as "Bot 4968". Before it goes on the list: a placeholder name
+        /// ("Bot &lt;id&gt;" / "~Bot..." / none) is replaced with a real one from the pool. Hidden bots are left alone.
+        /// </summary>
+        public void EnsureRealBotAlias(Bot bot)
+        {
+            if (bot == null || BotNames == null || bot.HideFromNamelist)
+                return;
+            string a = bot._alias;
+            if (!string.IsNullOrEmpty(a) && a != "Bot " + bot._id && !a.StartsWith("~Bot", StringComparison.OrdinalIgnoreCase))
+                return;
+            BotNames.Release(bot);
+            string n = BotNames.Acquire(bot, name => IsBotAliasTakenByAnother(name, bot));
+            if (!string.IsNullOrEmpty(n) && !n.StartsWith("~"))
+                bot._alias = n;
+            else if (string.IsNullOrEmpty(bot._alias))
+                bot._alias = "Bot " + bot._id;
+        }
+
         void broadcastBotNamelistEntry(Bot bot)
         {
             if (bot == null)
                 return;
+            EnsureRealBotAlias(bot);
             if (string.IsNullOrEmpty(bot._alias))
                 bot._alias = "Bot " + bot._id;
 
@@ -1073,6 +1095,7 @@ namespace InfServer.Game
         {
             if (player?._client == null || bot == null)
                 return;
+            EnsureRealBotAlias(bot);   // (2026-11-19) never listed under a placeholder name
             if (string.IsNullOrEmpty(bot._alias))
                 bot._alias = "Bot " + bot._id;
 
