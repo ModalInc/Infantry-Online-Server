@@ -105,6 +105,9 @@ namespace InfServer.Script.GameType_Eol
 
             int now = Environment.TickCount;
             _itemUseID = 0;
+            // (2026-11-19, owner) a fallen turret of the base's layout first: rebuilt on its spot after 3 s of work
+            if (_baseScript != null && _baseScript.PollBaseEngineerRebuild(this, now))
+                return base.poll();
             RunRepairLoop(now);
             return base.poll();
         }

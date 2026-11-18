@@ -1743,6 +1743,7 @@ namespace InfServer.Script.GameType_Eol
                 _defenseBaseVehicles[team] = list;
             }
             list.Add(v);
+            RecordBaseLayoutPiece(team, v);   // (2026-11-19) the layout, for the engineer's rebuilds (Script_Eol.BaseRebuild.cs)
         }
 
         void ClearAllDefenseBaseVehicleLists()

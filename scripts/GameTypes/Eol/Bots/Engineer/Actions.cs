@@ -27,11 +27,20 @@ namespace InfServer.Script.GameType_Eol
             return true;
         }
 
+        // (2026-11-19, owner: "they should also be able to heal these turrets if they are low but not too much so its
+        // overpowered") the engineer only starts on one under half health, works it back up to 75 % at most, 5 % of its
+        // hitpoints at a time, one pulse every 2 s (it used to top everything up to full with its repair item)
+        const double RepairStartBelow = 0.50, RepairUpTo = 0.75, RepairStep = 0.05;
+        const int RepairPulseMs = 2000;
+        int _tickRepairPulse;
+
         bool NeedsRepair(Vehicle v)
         {
             if (!IsHealableBaseVehicle(v))
                 return false;
-            return v._state.health < v._type.Hitpoints;
+            double hp = (double)v._state.health / v._type.Hitpoints;
+            // (one it's already working on: until 75 %; otherwise only under half)
+            return hp < (ReferenceEquals(v, _nextRet) ? RepairUpTo : RepairStartBelow);
         }
 
         int GetRepairRangeRaw()
@@ -325,6 +334,9 @@ namespace InfServer.Script.GameType_Eol
         {
             if (_repairItem == null || primary == null)
                 return;
+            if (_tickRepairPulse != 0 && now - _tickRepairPulse < RepairPulseMs)
+                return;
+            _tickRepairPulse = now == 0 ? 1 : now;
 
             // Only vehicle repairs for this eng.
             if (_repairItem.repairType != 1 && _repairItem.repairType != 0)
@@ -370,22 +382,19 @@ namespace InfServer.Script.GameType_Eol
             if (target == null || _repairItem == null)
                 return;
 
-            // Same formula as Vehicle.heal — avoid null Player for unoccupied computers.
-            float percentage = (float)_repairItem.repairPercentage / 100;
-            if (_repairItem.repairPercentage > 100)
-                percentage = (float)_repairItem.repairPercentage / 1000;
-
-            int repairAmount = _repairItem.repairAmount;
-            int next = (int)(target._state.health + (percentage * target._state.health) + repairAmount);
-            if (next > target._type.Hitpoints)
-                next = target._type.Hitpoints;
-            if (next < 0)
-                next = 0;
+            // (2026-11-19) 5 % of its hitpoints, never past 75 % (the item's own formula topped it up to full)
+            int max = target._type.Hitpoints, cap = (int)(max * RepairUpTo);
+            if (target._state.health >= cap)
+                return;
+            int next = Math.Min(cap, target._state.health + Math.Max(5, (int)(max * RepairStep)));
             target._state.health = (short)next;
 
             Computer computer = target as Computer;
             if (computer != null)
+            {
                 computer._sendUpdate = true;
+                Helpers.Update_RouteComputerHealth(computer);   // (everyone near sees the bar go up)
+            }
         }
     }
 }
