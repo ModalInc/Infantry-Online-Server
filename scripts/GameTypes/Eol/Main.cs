@@ -50,7 +50,7 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>HQ chassis id — physical anchor for base bots (469). No leveling/bounty script layer.</summary>
         public int _hqVehId = 469;
         /// <summary>Per-player payout when the killer team destroys a defense bot HQ (469).</summary>
-        public const int EolBotHqDestroyCashPerPlayer = 34500;   // (2026-11-17, owner: 34,500 cash / 6,250 xp; was 80k / 12k)
+        public const int EolBotHqDestroyCashPerPlayer = 22500;   // (2026-11-17, owner: 34,500 cash / 6,250 xp; was 80k / 12k) (2026-11-19, owner: cash 22,500)
         // (2026-11-19, owner: "Koth reward should be slightly lower on the cash side. maybe by 30%") cash 32,500 -> 22,750; "please drop xp reward to 5,250 for koth" exp 8,500 -> 5,250
         public const int EolKothCash = 22750, EolKothExp = 5250;   // (2026-11-17, owner) KOTH win, flat, before the lifetime scale
         public const int EolBotHqDestroyExpPerPlayer = 6250;
