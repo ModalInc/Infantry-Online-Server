@@ -6007,7 +6007,10 @@ namespace InfServer.Script.GameType_Eol
                 return;
             _tickMissingFlags = now;
             if (_arena.PlayerCount < 1)
+            {
+                HideFlagsInClosedSectors();
                 return;
+            }
             int spawned = 0;
             foreach (Arena.FlagState fs in _arena._flags.Values)
             {
@@ -6015,12 +6018,16 @@ namespace InfServer.Script.GameType_Eol
                     continue;
                 if (_arena.PlayerCount < fs.flag.FlagData.MinPlayerCount || _arena.PlayerCount > fs.flag.FlagData.MaxPlayerCount)
                     continue;
+                if (!FlagAreaTouchesOpenSector(fs))
+                    continue;   // (2026-11-19) its whole spawn area is in a closed sector: it waits until that opens
                 _arena.flagSpawn(fs);
                 if (fs.bActive)
                     spawned++;
             }
-            if (spawned > 0)
-                Log.write(TLog.Normal, "[Eol] {0} flags were not on the map (the zone started empty) - spawned now.", spawned);
+            // (2026-11-19) one that landed in a closed part of its area is hidden again at once (same pass, no flicker)
+            int hidden = HideFlagsInClosedSectors();
+            if (spawned - hidden > 0)
+                Log.write(TLog.Normal, "[Eol] {0} flags were not on the map (the zone started empty) - spawned now.", spawned - hidden);
         }
         static void EolFlagRewardMinimum(LioInfo.Flag flag, out int cash, out int exp)
         {
