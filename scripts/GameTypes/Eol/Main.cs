@@ -50,8 +50,8 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>HQ chassis id — physical anchor for base bots (469). No leveling/bounty script layer.</summary>
         public int _hqVehId = 469;
         /// <summary>(2026-11-19, owner: "the HQ should not have that mounted MG on top, it looks odd ... if real humans create HQ,
-        /// its should be the same HQ") the HQ (469, players' and bot bases' alike) has no gun now and is drawn as the
-        /// Headquarters building (headquarters.blo) - bots attack it all the same (EolBotBrain.FindHostileTurret).</summary>
+        /// its should be the same HQ") the HQ (469, players' and bot bases' alike) has no gun and no MG drawn on top any more
+        /// (zone .veh: its turret sprite removed) - bots attack it all the same (EolBotBrain.FindHostileTurret).</summary>
         public bool IsHqVehId(int id) { return id == _hqVehId; }
         /// <summary>Per-player payout when the killer team destroys a defense bot HQ (469).</summary>
         public const int EolBotHqDestroyCashPerPlayer = 22500;   // (2026-11-17, owner: 34,500 cash / 6,250 xp; was 80k / 12k) (2026-11-19, owner: cash 22,500)
