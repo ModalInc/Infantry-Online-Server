@@ -313,6 +313,7 @@ namespace InfServer.Protocol
 					if (!onNamelist)
 						continue;
 
+					update._arena?.EnsureRealBotAlias(update);   // (2026-11-19) back on the list: a real name, not "Bot <id>"
 					if (string.IsNullOrEmpty(update._alias))
 						update._alias = "Bot " + update._id;
 
