@@ -278,7 +278,7 @@ namespace InfServer.Script.GameType_Eol
             double bestD = double.MaxValue;
             foreach (Vehicle v in _arena.Vehicles)
             {
-                if (v == null || v._type == null || v.IsDead || v.bCondemned || v._type.Id != _hqVehId)
+                if (v == null || v._type == null || v.IsDead || v.bCondemned || !IsHqVehId(v._type.Id))
                     continue;
                 if (v._team == null || v._team == self._team || !IsDefenseBotTeam(v._team))
                     continue;

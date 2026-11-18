@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text.RegularExpressions;
 
 using InfServer.Bots;
@@ -101,6 +102,57 @@ namespace InfServer.Script.GameType_Eol
             }
             if (cleared > 0)
                 Log.write(TLog.Normal, "[Eol] {0} flag(s) in closed sectors lost their owner (not in play).", cleared);
+        }
+
+        /// <summary>
+        /// (2026-11-19, owner: "make it so no flags are showing on the map in sector B/C.. i had a complaint someone said its
+        /// confusing. so it looks like only sector A is alive") a flag lying in a closed sector (not carried) is taken off the
+        /// map - inactive, no owner - and every client is sent the flag list again without it (the engine has no packet that
+        /// hides just one flag: the clients' flags are cleared and the visible ones resent). It comes back when its sector
+        /// opens (PollMissingFlags spawns it then). Only once the sector layout is set. Returns how many were hidden.
+        /// </summary>
+        int HideFlagsInClosedSectors()
+        {
+            if (_arena == null || _arena._flags == null || _eol == null || !_eol.MatchSectorPlayReady)
+                return 0;
+            int n = 0;
+            foreach (Arena.FlagState fs in _arena._flags.Values)
+            {
+                if (fs == null || fs.flag == null || !fs.bActive || fs.carrier != null)
+                    continue;
+                if (_eol.IsInAnyActiveSector(fs.posX, fs.posY))
+                    continue;
+                fs.bActive = false;
+                fs.team = null;
+                fs.oldTeam = null;
+                n++;
+            }
+            if (n > 0)
+            {
+                List<Arena.FlagState> shown = new List<Arena.FlagState>();
+                foreach (Arena.FlagState fs in _arena._flags.Values)
+                    if (fs != null && fs.bActive)
+                        shown.Add(fs);
+                Helpers.Object_FlagsReset(_arena.Players);
+                if (shown.Count > 0)
+                    Helpers.Object_Flags(_arena.Players, shown);
+            }
+            return n;
+        }
+
+        /// <summary>Any part of the flag's spawn area (its centre or a corner) in an open sector.</summary>
+        bool FlagAreaTouchesOpenSector(Arena.FlagState fs)
+        {
+            if (_eol == null || !_eol.MatchSectorPlayReady || fs?.flag == null)
+                return true;
+            int lx = _arena._server._assets.Level.OffsetX * 16, ly = _arena._server._assets.Level.OffsetY * 16;
+            int cx = fs.flag.GeneralData.OffsetX - lx, cy = fs.flag.GeneralData.OffsetY - ly;
+            int hw = fs.flag.GeneralData.Width / 2, hh = fs.flag.GeneralData.Height / 2;
+            int[][] pts = { new[] { cx, cy }, new[] { cx - hw, cy - hh }, new[] { cx + hw, cy - hh }, new[] { cx - hw, cy + hh }, new[] { cx + hw, cy + hh } };
+            foreach (int[] p in pts)
+                if (_eol.IsInAnyActiveSector((short)Math.Max(0, Math.Min(short.MaxValue, p[0])), (short)Math.Max(0, Math.Min(short.MaxValue, p[1]))))
+                    return true;
+            return false;
         }
 
         static bool TeamOwnsArenaFlag(Team team, Arena.FlagState fs)

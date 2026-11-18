@@ -49,9 +49,14 @@ namespace InfServer.Script.GameType_Eol
 
         /// <summary>HQ chassis id — physical anchor for base bots (469). No leveling/bounty script layer.</summary>
         public int _hqVehId = 469;
+        /// <summary>(2026-11-19, owner: "the HQ should not have that mounted MG on top, it looks odd ... if real humans create HQ,
+        /// its should be the same HQ") the HQ (469, players' and bot bases' alike) has no gun and no MG drawn on top any more
+        /// (zone .veh: its turret sprite removed) - bots attack it all the same (EolBotBrain.FindHostileTurret).</summary>
+        public bool IsHqVehId(int id) { return id == _hqVehId; }
         /// <summary>Per-player payout when the killer team destroys a defense bot HQ (469).</summary>
-        public const int EolBotHqDestroyCashPerPlayer = 34500;   // (2026-11-17, owner: 34,500 cash / 6,250 xp; was 80k / 12k)
-        public const int EolKothCash = 32500, EolKothExp = 8500;   // (2026-11-17, owner) KOTH win, flat, before the lifetime scale
+        public const int EolBotHqDestroyCashPerPlayer = 22500;   // (2026-11-17, owner: 34,500 cash / 6,250 xp; was 80k / 12k) (2026-11-19, owner: cash 22,500)
+        // (2026-11-19, owner: "Koth reward should be slightly lower on the cash side. maybe by 30%") cash 32,500 -> 22,750; "please drop xp reward to 5,250 for koth" exp 8,500 -> 5,250
+        public const int EolKothCash = 22750, EolKothExp = 5250;   // (2026-11-17, owner) KOTH win, flat, before the lifetime scale
         public const int EolBotHqDestroyExpPerPlayer = 6250;
         public const int EolBotHqDestroyPointsPerPlayer = 5000;   // (2026-11-17, owner: was 750; the Alien Queen uses this too)
         /// <summary>Lifetime <see cref="InfServer.Game.Player.ExperienceTotal"/> below this gets a 1.5× cash/exp/points bonus.</summary>
@@ -1742,6 +1747,7 @@ namespace InfServer.Script.GameType_Eol
                 _defenseBaseVehicles[team] = list;
             }
             list.Add(v);
+            RecordBaseLayoutPiece(team, v);   // (2026-11-19) the layout, for the engineer's rebuilds (Script_Eol.BaseRebuild.cs)
         }
 
         void ClearAllDefenseBaseVehicleLists()
@@ -1804,7 +1810,7 @@ namespace InfServer.Script.GameType_Eol
                 return list;
             foreach (Vehicle v in _arena.Vehicles)
             {
-                if (v == null || v._type == null || v.IsDead || v._type.Id != _hqVehId)
+                if (v == null || v._type == null || v.IsDead || !IsHqVehId(v._type.Id))
                     continue;
                 if (v.bCondemned || IsVehicleDespawnQueued(v))
                     continue;
@@ -1998,6 +2004,7 @@ namespace InfServer.Script.GameType_Eol
             PollAlienSwarm(now);    // the Alien Swarm nest (Script_Eol.AlienSwarm.cs)
             PollEliteSquads(now);   // local: two elite roaming squads
             PollStrikeTeams(now);   // local: three human-class strike teams
+            PollBaseRaids(now);     // (2026-11-19) roamer squads raid a player base holding roamer flags (Script_Eol.BaseRaids.cs)
             PollBotDropshipRespawns(now);
             SyncIngameBountyStats();
             PollBountyHunt(now);
@@ -2211,7 +2218,7 @@ namespace InfServer.Script.GameType_Eol
             Vehicle hqVehicle = null;
             try
             {
-                hqVehicle = createVehicleAtObjectState(469, 0, 0, team, pylonBase);
+                hqVehicle = createVehicleAtObjectState(_hqVehId, 0, 0, team, pylonBase);
             }
             catch (Exception ex)
             {
@@ -2242,7 +2249,7 @@ namespace InfServer.Script.GameType_Eol
                                 createVehicleAtObjectState(467, -133, 20, team, pylonBase);
                                 createVehicleAtObjectState(457, -264, 84, team, pylonBase);
                                 createVehicleAtObjectState(457, 245, 84, team, pylonBase);
-                                createVehicleAtObjectState(467, 0, 50, team, pylonBase);
+                                createVehicleAtObjectState(466, 0, 50, team, pylonBase);   // (2026-11-19: was a 2nd Rocket - the set has 1 Rocket, 1 Sentry)
                                 createVehicleAtObjectState(460, 0, 132, team, pylonBase);
                                 createVehicleAtObjectState(823, 229, -156, team, pylonBase);
                                 break;
@@ -2370,6 +2377,7 @@ namespace InfServer.Script.GameType_Eol
                                 PlaceObjectiveBaseTurrets(team, pylonBase);
                                 break;
                         }
+                        EnsureBaseTurretSet(team, pylonBase);   // (2026-11-19) every base: the full turret set (Script_Eol.ObjectiveBases.cs)
                     #endregion
 
             pick.Value.setExists(false);
@@ -2523,7 +2531,7 @@ namespace InfServer.Script.GameType_Eol
                     continue;
                 if (IsVehicleDespawnQueued(v))
                     continue;
-                if (v._type.Id == _hqVehId && v._team == team)
+                if (IsHqVehId(v._type.Id) && v._team == team)
                     return true;
             }
             return false;
@@ -2542,7 +2550,7 @@ namespace InfServer.Script.GameType_Eol
             {
                 if (v == null || v._type == null || v.IsDead || v._state == null)
                     continue;
-                if (v._type.Id != _hqVehId)
+                if (!IsHqVehId(v._type.Id))
                     continue;
                 long dx = (long)v._state.positionX - anchorX;
                 long dy = (long)v._state.positionY - anchorY;
@@ -5640,6 +5648,7 @@ namespace InfServer.Script.GameType_Eol
             killerCash = ApplyEolLifetimeRewardScale(killer, baseCash);
             killerExp = ApplyEolLifetimeRewardScale(killer, baseExp);
             killerPoints = ApplyEolLifetimeRewardScale(killer, basePoints);
+            ApplyStandardCarrierKillBonus(killer, ref killerCash, ref killerExp, ref killerPoints);
 
             //Inform the killer
             Helpers.Player_RouteKill(killer, update, victim, killerCash, killerPoints, killerPoints, killerExp);
@@ -5969,6 +5978,21 @@ namespace InfServer.Script.GameType_Eol
             return best;
         }
 
+        /// <summary>
+        /// (2026-11-19, owner: "Holding flag while killing others should give about 15% increase rewards. i.e the xp, cash and
+        /// points") the killer carrying a standard (Citizens, Mercenaries, Elite Unit) gets 15 % more cash, exp and points
+        /// from each kill - player or bot. The killer's own reward only (the team's shares stay as they are).
+        /// </summary>
+        public const double StandardCarrierKillRewardMult = 1.15;
+        static void ApplyStandardCarrierKillBonus(InfServer.Game.Player killer, ref int cash, ref int exp, ref int points)
+        {
+            if (StandardCarrierBountyFactor(killer) <= 1.0)
+                return;
+            cash = (int)Math.Round(cash * StandardCarrierKillRewardMult);
+            exp = (int)Math.Round(exp * StandardCarrierKillRewardMult);
+            points = (int)Math.Round(points * StandardCarrierKillRewardMult);
+        }
+
         int _tickMissingFlags;
 
         /// <summary>
@@ -5983,7 +6007,10 @@ namespace InfServer.Script.GameType_Eol
                 return;
             _tickMissingFlags = now;
             if (_arena.PlayerCount < 1)
+            {
+                HideFlagsInClosedSectors();
                 return;
+            }
             int spawned = 0;
             foreach (Arena.FlagState fs in _arena._flags.Values)
             {
@@ -5991,27 +6018,33 @@ namespace InfServer.Script.GameType_Eol
                     continue;
                 if (_arena.PlayerCount < fs.flag.FlagData.MinPlayerCount || _arena.PlayerCount > fs.flag.FlagData.MaxPlayerCount)
                     continue;
+                if (!FlagAreaTouchesOpenSector(fs))
+                    continue;   // (2026-11-19) its whole spawn area is in a closed sector: it waits until that opens
                 _arena.flagSpawn(fs);
                 if (fs.bActive)
                     spawned++;
             }
-            if (spawned > 0)
-                Log.write(TLog.Normal, "[Eol] {0} flags were not on the map (the zone started empty) - spawned now.", spawned);
+            // (2026-11-19) one that landed in a closed part of its area is hidden again at once (same pass, no flicker)
+            int hidden = HideFlagsInClosedSectors();
+            if (spawned - hidden > 0)
+                Log.write(TLog.Normal, "[Eol] {0} flags were not on the map (the zone started empty) - spawned now.", spawned - hidden);
         }
         static void EolFlagRewardMinimum(LioInfo.Flag flag, out int cash, out int exp)
         {
             if (flag == null || flag.FlagData.FlagCarriable == 0)
             { cash = 2000; exp = 1000; return; }
             // (2026-11-17, owner) the Citizens Standard pays 2.5k exp, the Elite Unit Standard 3.5k (Mercenaries 3k)
+            // (2026-11-19, owner: "make roamers flags, 2,500 cash and 1,250xp ... citizens standard xp 1,500 ... merc standard
+            // 1,750 and ... elite standard 2,100 xp") Elite 5k / 2.1k, Mercenaries 5k / 1.75k, Citizens 3k / 1.5k, roamers 2.5k / 1.25k
             string name = flag.GeneralData.Name ?? "";
             if (name.IndexOf("Elite Unit Standard", StringComparison.OrdinalIgnoreCase) >= 0)
-            { cash = 5000; exp = 3500; return; }
+            { cash = 5000; exp = 2100; return; }
             if (name.IndexOf("Citizens Standard", StringComparison.OrdinalIgnoreCase) >= 0)
-            { cash = 3000; exp = 2500; return; }
+            { cash = 3000; exp = 1500; return; }
             string logic = flag.FlagData.SkillLogic ?? "";
             if (System.Text.RegularExpressions.Regex.IsMatch(logic, @"(^|[^\d%@#-])(7|9|10)([^\d]|$)"))
-            { cash = 5000; exp = 3000; return; }
-            cash = 3000; exp = 2000;
+            { cash = 5000; exp = 1750; return; }
+            cash = 2500; exp = 1250;
         }
 
         static double GetEolFlagHoldMultiplier(int flagsOwned)
@@ -6463,6 +6496,7 @@ namespace InfServer.Script.GameType_Eol
             killerCash = ApplyEolLifetimeRewardScale(killer, baseCash);
             killerExp = ApplyEolLifetimeRewardScale(killer, baseExp);
             killerPoints = ApplyEolLifetimeRewardScale(killer, basePoints);
+            ApplyStandardCarrierKillBonus(killer, ref killerCash, ref killerExp, ref killerPoints);
 
             killerCash = addCash(killer, killerCash);
             killer.Experience += killerExp;
@@ -7298,7 +7332,7 @@ namespace InfServer.Script.GameType_Eol
             }
 
             //Are they trying to create a headquarters?
-            if (created._type.Id == _hqVehId)
+            if (IsHqVehId(created._type.Id))
             {
                 // The engine adds the new vehicle to _arena.Vehicles BEFORE firing this event, so a plain
                 // TeamHasLiveHqVehicle(team) check would match the HQ we're creating right now and wrongly
@@ -7332,7 +7366,7 @@ namespace InfServer.Script.GameType_Eol
                 return true;   // the Alien Swarm's nest (Script_Eol.AlienSwarm.cs)
 
             //Did they just kill an HQ?!
-            if (dead._type.Id == _hqVehId)
+            if (IsHqVehId(dead._type.Id))
             {
                 if (dead._state != null && IsDefenseBotTeam(dead._team))
                 {

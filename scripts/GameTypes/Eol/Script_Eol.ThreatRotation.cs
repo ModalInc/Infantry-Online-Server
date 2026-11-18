@@ -256,7 +256,7 @@ namespace InfServer.Script.GameType_Eol
                 {
                     if (v == null || v._type == null || v.IsDead)
                         continue;
-                    if (v._type.Id == _hqVehId && v._team != null && IsDefenseBotTeam(v._team))
+                    if (IsHqVehId(v._type.Id) && v._team != null && IsDefenseBotTeam(v._team))
                         EnqueueVehicleDespawn(v);
                 }
             }

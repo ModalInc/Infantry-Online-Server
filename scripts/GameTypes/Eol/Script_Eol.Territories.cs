@@ -101,6 +101,8 @@ namespace InfServer.Script.GameType_Eol
         {
             if (NearNewPlayerBuffer(x, y))
                 return false;
+            if (b != null && IsRaidingBot(b))
+                return true;   // (2026-11-19) a squad raiding a player base goes wherever the base is
             if (b == null || b._state == null || !InNw(b._state.positionX, b._state.positionY))
                 return true;   // (not in NW: no territory yet)
             BotTerritory mine = TerritoryOf(b), there = TerritoryAt(x, y);
@@ -185,9 +187,12 @@ namespace InfServer.Script.GameType_Eol
             EolBotBrain.BufferEdge = _bufferEdgeFn;
             if (_heldFn == null) _heldFn = b => ShipSummonHold(b) != null;
             EolBotBrain.HeldBySummon = _heldFn;
+            if (_raidPoiFn == null) _raidPoiFn = RaidPointsOfInterest;
+            EolBotBrain.ExtraPointsOfInterest = _raidPoiFn;
         }
         Func<Bot, short, short, bool> _territoryFn;
         Func<Bot, bool> _heldFn;
+        Func<List<KeyValuePair<short, short>>> _raidPoiFn;
         Func<Bot, Random, Helpers.ObjectState> _territoryPointFn;
         static readonly Func<short, short, double> _bufferEdgeFn = (x, y) => BufferEdgeDistance(x, y);
     }

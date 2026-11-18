@@ -90,6 +90,38 @@ namespace InfServer.Script.GameType_Eol
             if (_baseScript.PollEngineerBuild(this, now))
                 return base.poll();
 
+            // (2026-11-19, owner: "the bots when you summon them in the dropship, they start shooting others. the drop ship is a
+            // safe zone so they should not do that. they should basically follow you outside the dropship. not shooting")
+            // in the dropship: no target, no fighting - round the player who summoned it until they leave (then out through
+            // the portal behind them, Deploy.cs), and that check now comes BEFORE the fight check (it used to come after)
+            // (2026-11-19) carrying a flag stolen in a base raid: run it to the drop spot, no fighting (Script_Eol.BaseRaids.cs)
+            Helpers.ObjectState stolenTo = _baseScript.StolenFlagDropFor(this);
+            if (stolenTo != null)
+            {
+                ClearActivePlayerTarget();
+                bool forceSt = now - _tickEliteNav > 2000;
+                if (forceSt) _tickEliteNav = now;
+                ApplyNavigationApproach(stolenTo, EolHqPatrol.MakeLineClearPendingSeek(this, () => stolenTo), new BotNavigateOptions
+                {
+                    RequeueMinMs = 1200,
+                    PathStartIndex = 0,
+                    ForceRequeue = forceSt,
+                    Priority = PathPriority.Combat,
+                });
+                return base.poll();
+            }
+
+            Helpers.ObjectState shipHold = _baseScript.ShipSummonHold(this);
+            if (shipHold != null || _baseScript.BotInDropshipSafeZone(this))
+            {
+                ClearActivePlayerTarget();
+                if (shipHold != null)
+                    DriftAround(shipHold.positionX, shipHold.positionY, now, followCentre: true);
+                else
+                    DriftAround(_state.positionX, _state.positionY, now);
+                return base.poll();
+            }
+
             // (2026-11-17) a medic called with H runs to that player even mid-fight (heals pulse once in reach)
             if (_baseScript.IsSquadMedic(this) && _baseScript.SquadHealCaller(_team, now) != null)
             {
@@ -175,11 +207,11 @@ namespace InfServer.Script.GameType_Eol
                 return base.poll();
             }
 
-            // (2026-11-17) summoned into the dropship / new player zone: wait round that player until they leave it
-            Helpers.ObjectState shipHold = _baseScript.ShipSummonHold(this);
-            if (shipHold != null)
+            // (2026-11-17) summoned into the new player zone: wait round that player until they leave it (the dropship: above)
+            Helpers.ObjectState zoneHold = _baseScript.ShipSummonHold(this);
+            if (zoneHold != null)
             {
-                DriftAround(shipHold.positionX, shipHold.positionY, now, followCentre: true);
+                DriftAround(zoneHold.positionX, zoneHold.positionY, now, followCentre: true);
                 return base.poll();
             }
 
@@ -246,6 +278,28 @@ namespace InfServer.Script.GameType_Eol
                 }
                 else
                     DriftAround(hold.positionX, hold.positionY, now);
+                return base.poll();
+            }
+
+            // (2026-11-19, owner: "the roamer bots running around to start attacking that base to kill the HQ and to grab the
+            // flags") raiding a player base: the leader marches on its HQ / the nearest roamer flag it holds, fights round it
+            Helpers.ObjectState raidGoal = _baseScript.RaidGoalFor(this);
+            if (raidGoal != null && (leader == null || leader == this))
+            {
+                if (Helpers.distanceTo(_state, raidGoal) > 300)
+                {
+                    bool forceR = now - _tickEliteNav > 3000;
+                    if (forceR) _tickEliteNav = now;
+                    ApplyNavigationApproach(raidGoal, EolHqPatrol.MakeLineClearPendingSeek(this, () => raidGoal), new BotNavigateOptions
+                    {
+                        RequeueMinMs = 1500,
+                        PathStartIndex = 0,
+                        ForceRequeue = forceR,
+                        Priority = PathPriority.Combat,
+                    });
+                }
+                else
+                    EolBotBrain.Hunt(this, _baseScript, now, raidGoal);
                 return base.poll();
             }
 

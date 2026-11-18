@@ -39,7 +39,7 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>Where the Queen came up - she wanders round it and never strays far.</summary>
         public Helpers.ObjectState SwarmHome { get; private set; }
         public const int SwarmDefenders = 12;   // (2026-11-17, owner: "have the alien base team 12 instead"; was 10)
-        public const int SwarmRewardCash = 31200, SwarmRewardExp = 6500,   /* (2026-11-17, owner; was 95k / 12k) */ SwarmRewardPoints = EolBotHqDestroyPointsPerPlayer;   // (2026-11-16f, owner: was 90k / 13k)
+        public const int SwarmRewardCash = 24525, SwarmRewardExp = 6500,   /* (2026-11-17, owner; was 95k / 12k) (2026-11-19, owner: cash 31,200 -> 24,525) */ SwarmRewardPoints = EolBotHqDestroyPointsPerPlayer;   // (2026-11-16f, owner: was 90k / 13k)
         const int SwarmReturnMs = 5 * 60 * 1000;
         const int SwarmFirstDelayMs = 60 * 1000;      // first nest a minute after the match is running
         const int SwarmOpeningSpawnMs = 1200;         // the first 10 come quickly
@@ -74,7 +74,7 @@ namespace InfServer.Script.GameType_Eol
             if (_arena == null)
                 return false;
             foreach (Vehicle v in _arena.Vehicles)
-                if (v != null && v._type != null && v._type.Id == _hqVehId && !v.IsDead && !v.bCondemned && v._state != null
+                if (v != null && v._type != null && IsHqVehId(v._type.Id) && !v.IsDead && !v.bCondemned && v._state != null
                     && InSwarmA6(v._state.positionX, v._state.positionY))
                     return true;
             return false;

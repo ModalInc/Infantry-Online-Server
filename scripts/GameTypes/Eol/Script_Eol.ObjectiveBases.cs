@@ -149,6 +149,97 @@ namespace InfServer.Script.GameType_Eol
             Log.write(TLog.Normal, "[Eol] Objective base at {0},{1}: {2} turrets placed (random layout, mutual cover).", hq.positionX / 16, hq.positionY / 16, taken.Count);
         }
 
+        // (2026-11-19, owner: "there should always be 1 rocket ap, 2 mgs, 1 maser, 1 sentry, 1 hq, and 2 plasma. spread out
+        // protecting the hq and each other ... this should be in all base locations") the full set every bot base must have
+        static readonly int[][] BaseTurretSet = {
+            new[] { 467, 1 },   // Rocket
+            new[] { 457, 2 },   // MG
+            new[] { 823, 1 },   // Maser
+            new[] { 466, 1 },   // Sentry
+            new[] { 460, 2 },   // Plasma
+        };
+
+        /// <summary>
+        /// After any base layout (the hand-made ones and the random rings): every turret of <see cref="BaseTurretSet"/> the
+        /// base is missing is added round the HQ - a spot that sees the HQ or a turret already there (cover), away from the
+        /// others (spread), on open ground. A cramped site relaxes step by step (smaller footprint, closer spacing, no sight
+        /// rule, further out) so a turret is never just left out.
+        /// </summary>
+        void EnsureBaseTurretSet(Team team, Helpers.ObjectState hq)
+        {
+            if (team == null || hq == null || _arena == null)
+                return;
+            List<KeyValuePair<int, int>> taken = new List<KeyValuePair<int, int>>();
+            Dictionary<int, int> have = new Dictionary<int, int>();
+            List<Vehicle> mine = GetDefenseBaseVehiclesForTeam(team);
+            if (mine != null)
+                foreach (Vehicle v in mine)
+                {
+                    if (v == null || v.IsDead || v._type == null || v._state == null || !(v is Computer))
+                        continue;
+                    if (Helpers.distanceTo(v._state.positionX, v._state.positionY, hq.positionX, hq.positionY) > 900)
+                        continue;   // (not this base)
+                    int n; have.TryGetValue(v._type.Id, out n); have[v._type.Id] = n + 1;
+                    taken.Add(new KeyValuePair<int, int>(v._state.positionX, v._state.positionY));
+                }
+            int added = 0, failed = 0;
+            foreach (int[] want in BaseTurretSet)
+            {
+                int n; have.TryGetValue(want[0], out n);
+                for (; n < want[1]; n++)
+                {
+                    int x, y;
+                    if (!FindCoverSpot(hq, taken, out x, out y)) { failed++; continue; }
+                    taken.Add(new KeyValuePair<int, int>(x, y));
+                    createVehicleAtObjectState(want[0], x - hq.positionX, y - hq.positionY, team, hq);
+                    added++;
+                }
+            }
+            if (added > 0 || failed > 0)
+                Log.write(TLog.Normal, "[Eol] Base at {0},{1}: {2} missing turret(s) added to complete the set{3}.", hq.positionX / 16, hq.positionY / 16,
+                    added, failed > 0 ? string.Format(", {0} found no room at all", failed) : "");
+        }
+
+        /// <summary>The best open spot round the HQ for one more turret, relaxing the rules tier by tier; false = no room.</summary>
+        bool FindCoverSpot(Helpers.ObjectState hq, List<KeyValuePair<int, int>> taken, out int bx, out int by)
+        {
+            // tiers: footprint, spacing to the others (and the HQ), must see the HQ / a turret, farthest ring
+            int[][] tiers = { new[] { 24, 80, 1, 260 }, new[] { 16, 64, 1, 320 }, new[] { 16, 56, 0, 380 }, new[] { 8, 40, 0, 460 } };
+            foreach (int[] t in tiers)
+            {
+                int bestScore = int.MinValue; bx = by = 0;
+                for (int rad = 104; rad <= t[3]; rad += 24)
+                    for (int k = 0; k < 24; k++)
+                    {
+                        double a = k * Math.PI / 12 + rad * 0.01;
+                        int x = hq.positionX + (int)Math.Round(Math.Cos(a) * rad), y = hq.positionY + (int)Math.Round(Math.Sin(a) * rad);
+                        if (!AreaOpen(x, y, t[0]) || NearNewPlayerBuffer((short)x, (short)y) || !InPlayArea((short)x, (short)y, 0))
+                            continue;
+                        if (!IsOpenConnectedGround((short)x, (short)y))
+                            continue;   // (not boxed in behind walls)
+                        long nearest = long.MaxValue; bool close = false;
+                        int sees = LineClear(x, y, hq.positionX, hq.positionY) ? 1 : 0;
+                        foreach (KeyValuePair<int, int> o in taken)
+                        {
+                            long dsq = (long)(o.Key - x) * (o.Key - x) + (long)(o.Value - y) * (o.Value - y);
+                            if (dsq < (long)t[1] * t[1]) { close = true; break; }
+                            if (dsq < nearest) nearest = dsq;
+                            if (dsq < 320L * 320 && LineClear(x, y, o.Key, o.Value)) sees++;
+                        }
+                        if (close || (t[2] == 1 && sees == 0))
+                            continue;
+                        // cover first, then spread (room to the nearest turret, up to 200 px), then open ground, closer in a little better
+                        int spread = nearest == long.MaxValue ? 200 : (int)Math.Min(200, Math.Sqrt(nearest));
+                        int score = sees * 40 + spread + OpenScore(x, y) - rad / 8;
+                        if (score > bestScore) { bestScore = score; bx = x; by = y; }
+                    }
+                if (bestScore != int.MinValue)
+                    return true;
+            }
+            bx = by = 0;
+            return false;
+        }
+
         /// <summary>No blocked tile on the straight line between two points (16 px steps).</summary>
         bool LineClear(int x0, int y0, int x1, int y1)
         {
