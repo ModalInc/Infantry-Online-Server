@@ -12,9 +12,9 @@ namespace InfServer.Script.GameType_Eol
     /// <summary>
     /// Human-class roaming squads (local change 2026-11-14), built on the real PLAYER classes so they wear the same
     /// skins as human players. Part of the 60-bot roster (see Script_Eol.Roster.cs):
-    ///   - "Storm Rangers Bots": human roamers, 5-8, normal skill mix;
+    ///   - 'Storm Rangers Bots': human roamers, 5-8, normal skill mix;
     ///   - three mixed teams of 3-8 that make up the rest of the 60, each with its own skill (ace .. normal mix);
-    ///   - "Ghost Reapers Bots" (botTeam8): an elite vehicle squad of 3 - Deathboard, Shimmerboard, Drop Pack.
+    ///   - 'Ghost Reapers Bots' (botTeam8): an elite vehicle squad of 3 - Deathboard, Shimmerboard, Drop Pack.
     /// Every class is kept on the field (each new bot takes the class with the fewest bots out) and every class
     /// draws from its own weapon pools, so loadouts vary. Every bot carries the Suit SuperCharger; about a third
     /// carry grenades; some riflemen open with a clip of the Kamenev AP mk2. They use the roaming-squad brain
@@ -33,7 +33,7 @@ namespace InfServer.Script.GameType_Eol
         static readonly int[] StrikeMemberClasses =
         {
             ClsInfantry, ClsHeavy, ClsJumpTrooper, ClsInfiltrator, ClsMedic, ClsEngineer, ClsBioChem, ClsMPAC,   // Partisan / Paramedic (Paramilitary) removed 2026-11-14
-            ClsNeuroTAC, ClsSciOps,   // (2026-11-17, owner: "have no conscripts" - only the F11 classes) Combat Tech removed (local 2026-11-14) ClsDropTrooper, ClsMarine, ClsFieldSurgeon, ClsChiefEngineer, ClsBlackOps,
+            ClsNeuroTAC, ClsSciOps,   // (2026-11-17, owner: 'have no conscripts' - only the F11 classes) Combat Tech removed (local 2026-11-14) ClsDropTrooper, ClsMarine, ClsFieldSurgeon, ClsChiefEngineer, ClsBlackOps,
         };
         // Colonel (151) and Grand Marshal aren't ready yet (local 2026-11-14) - not fielded
         static readonly int[] StrikeOfficerClasses = { ClsSquadLeader, ClsSergeant, ClsLieutenant, ClsCaptain };
@@ -43,7 +43,7 @@ namespace InfServer.Script.GameType_Eol
         // elite vehicle squad (personal vehicles)
         const int VehDeathboard = 108, VehShimmerboard = 131, VehDropPack = 109;
         static readonly int[] VehicleSquadVehIds = { VehDeathboard, VehShimmerboard, VehDropPack, VehHoverboard };   // (+ the board medic, 2026-11-17)
-        const int ItmDeathboardSlash = 1047, ItmVehicleShimmer = 174, ItmDropPackBolt = 3008;   // "DropPack Blaster" - its own twin bolts
+        const int ItmDeathboardSlash = 1047, ItmVehicleShimmer = 174, ItmDropPackBolt = 3008;   // 'DropPack Blaster' - its own twin bolts
 
         // items (Pioneer Station .itm)
         const int ItmSuperCharger = 14;
@@ -64,7 +64,7 @@ namespace InfServer.Script.GameType_Eol
         static readonly int[] PoolGauss = { 1031, 1038, 1141, 1114, 1533 };
         static readonly int[] PoolLaser = { 1103, 1157, 1607 };
         static readonly int[] PoolProjector = { 1146, 1126, 1000 };
-        /// <summary>(2026-11-17, owner: "blackops sometimes have proton sphere") Black Ops energy weapon (skill 13 = BlackOps).</summary>
+        /// <summary>(2026-11-17, owner: 'blackops sometimes have proton sphere') Black Ops energy weapon (skill 13 = BlackOps).</summary>
         const int ItmProtonSphere = 1623;
         /// <summary>Stealth utilities: Improved Cloak (Infiltrator), Blackout Field (Black Ops suit), Cloaking Unit (SciOps).</summary>
         const int ItmImprovedCloak = 43, ItmBlackoutField = 79, ItmCloakingUnit = 5;
@@ -89,9 +89,9 @@ namespace InfServer.Script.GameType_Eol
         }
 
         /// <summary>
-        /// (2026-11-16e, owner: "join without pressing enter") a joinable squad uses the zone .cfg's own team of that
+        /// (2026-11-16e, owner: 'join without pressing enter') a joinable squad uses the zone .cfg's own team of that
         /// name (TeamInfo8-13 renamed to the squads): the client treats .cfg teams as public and joins them with one
-        /// click, while a team the script makes up is "private" to it and asks for a password first. Not in the
+        /// click, while a team the script makes up is 'private' to it and asks for a password first. Not in the
         /// .cfg (old zone files): made up as before.
         /// </summary>
         Team SquadTeam(string name)
@@ -126,12 +126,12 @@ namespace InfServer.Script.GameType_Eol
         public const int SquadMaxSize = 6;   // (2026-11-16c, owner: 5-6 man teams)
 
         /// <summary>
-        /// (2026-11-16b, owner: "a real team") every human squad fields these first, in this order - a commander
+        /// (2026-11-16b, owner: 'a real team') every human squad fields these first, in this order - a commander
         /// (one of the officer classes), medic, heavy weapons, marine, infantry, engineer - then fighters of any
         /// other class for the 7th / 8th place.
         /// </summary>
-        // (2026-11-17, owner: "medic, command and engy always there, the other 3 a class at random ... so it feels much
-        // more alive") the three fixed roles; the rest of the squad is drawn from SquadRandomClasses, no class twice
+        // (2026-11-17, owner: 'medic, command and engy always there, the other 3 a class at random ... so it feels much
+        // more alive') the three fixed roles; the rest of the squad is drawn from SquadRandomClasses, no class twice
         static readonly int[] SquadCoreRoles = { -1, ClsMedic, ClsChiefEngineer };
         static readonly int[] SquadRandomClasses =
         {
@@ -152,7 +152,7 @@ namespace InfServer.Script.GameType_Eol
             foreach (int role in SquadCoreRoles)
                 if (!members.Exists(m => MemberHasRole(m, role)))
                     return role == -1 ? PickLeastFieldedClass(StrikeOfficerClasses) : role;
-            // (2026-11-17) the classes the players picked ("change squad ...", Script_Eol.SquadClasses.cs) come first
+            // (2026-11-17) the classes the players picked ('change squad ...', Script_Eol.SquadClasses.cs) come first
             int chosen = NextChosenClass(team, members);
             if (chosen != 0)
                 return chosen;
@@ -210,7 +210,7 @@ namespace InfServer.Script.GameType_Eol
 
         /// <summary>
         /// Bots on a squad: out in the field (or walking in through the dropship), plus - with
-        /// <paramref name="countPending"/> - dead ones waiting to come back through the dropship.
+        /// <paramref name='countPending'/> - dead ones waiting to come back through the dropship.
         /// </summary>
         public int SquadStrength(Team t, bool countPending)
         {
@@ -239,7 +239,7 @@ namespace InfServer.Script.GameType_Eol
         }
 
         /// <summary>
-        /// Kick bots out of a squad until bots + players (+ <paramref name="joining"/>) fit in its full strength
+        /// Kick bots out of a squad until bots + players (+ <paramref name='joining'/>) fit in its full strength
         /// (2026-11-16b: was always the cap, so a squad of 6 plus a player stayed at 7). Never the leader while
         /// another bot can go.
         /// </summary>
@@ -270,7 +270,7 @@ namespace InfServer.Script.GameType_Eol
                 roamBots[team] = EliteSquadMembers(team).Count;
         }
 
-        /// <summary>The nearest live bot-base HQ that is not on <paramref name="self"/>'s team (null = none).</summary>
+        /// <summary>The nearest live bot-base HQ that is not on <paramref name='self'/>'s team (null = none).</summary>
         public Helpers.ObjectState NearestEnemyBaseHq(Bots.Bot self)
         {
             if (self == null || _arena == null || self._state == null)
@@ -606,7 +606,7 @@ namespace InfServer.Script.GameType_Eol
         }
 
         /// <summary>Boards slash (the Shimmerboard runs its shimmer field); the Drop Pack fires its plasma bolts.</summary>
-        /// <summary>(2026-11-17, owner: "sciops is a flightpack") the vehicle squad's 4th: a SciOps on a Flight Pack (106) - the pink Proton Beamer and the Plasma Bomb.</summary>
+        /// <summary>(2026-11-17, owner: 'sciops is a flightpack') the vehicle squad's 4th: a SciOps on a Flight Pack (106) - the pink Proton Beamer and the Plasma Bomb.</summary>
         const int ItmProtonBeamer = 1125, ItmPlasmaBomb = 120, VehFlightPack = 106;
         const int ItmCombatSword = 1080;
         /// <summary>Energy guns for the Flight Pack SciOps's third slot: Proton Accelerator, Particle Accelerators, WaveTech MR2 / MR1, FusionCorp IRLSMG.</summary>
@@ -633,8 +633,8 @@ namespace InfServer.Script.GameType_Eol
             {
                 int gun = veh == VehDropPack ? ItmDropPackBolt : ItmDeathboardSlash;
                 if (sciOpsPack)
-                {   // (2026-11-17, owner: "the pink gun he has now as a main gun, and secondary is plasma bomb, and third maybe
-                    // some other cool gun in energy") main = Proton Beamer (far slot), secondary = Plasma Bomb (close slot, also
+                {   // (2026-11-17, owner: 'the pink gun he has now as a main gun, and secondary is plasma bomb, and third maybe
+                    // some other cool gun in energy') main = Proton Beamer (far slot), secondary = Plasma Bomb (close slot, also
                     // thrown on its timer below), third = a SciOps-legal energy gun in the misc rotation
                     EquipCloseFar(bot, ItmPlasmaBomb, ItmProtonBeamer);
                     int eg = PickSciOpsEnergyGun();
