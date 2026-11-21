@@ -45,7 +45,7 @@ namespace InfServer.Script.GameType_Eol
                     _state.health = (short)Math.Min(max, _state.health + QueenRegenHp);
             }
 
-            Helpers.ObjectState home = _baseScript.SwarmHome ?? new Helpers.ObjectState { positionX = _state.positionX, positionY = _state.positionY };
+            Helpers.ObjectState home = _baseScript.SwarmHomeOf(this) ?? new Helpers.ObjectState { positionX = _state.positionX, positionY = _state.positionY };
             double dHome = Helpers.distanceTo(_state, home);
             if (dHome > QueenLeashRaw) _queenReturning = true;
             else if (dHome < QueenBackRaw) _queenReturning = false;

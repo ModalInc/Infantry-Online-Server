@@ -49,6 +49,13 @@ namespace InfServer.Script.GameType_Eol
             return SectorNameOfIndex(SectorIndexAt(x, y));
         }
 
+        /// <summary>(2026-11-21) True when the point (raw) lies in that sector of the sector map.</summary>
+        public bool IsInSector(string sectorName, int x, int y)
+        {
+            int want = SectorIndexOfName(sectorName);
+            return want != 0 && SectorIndexAt(x, y) == want;
+        }
+
         int SectorIndexAt(int x, int y)
         {
             if (!EnsureSectorMap())

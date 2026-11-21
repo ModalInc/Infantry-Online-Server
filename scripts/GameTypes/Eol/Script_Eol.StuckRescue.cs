@@ -60,7 +60,7 @@ namespace InfServer.Script.GameType_Eol
                     continue;
                 StuckSample s;
                 if (!_mapStuck.TryGetValue(b, out s) || Helpers.distanceTo(x, y, s.X, s.Y) >= StuckMoveRaw
-                    || IsDeploying(b) || _swarmDeploying.ContainsKey(b) || ShipSummonHold(b) != null
+                    || IsDeploying(b) || SwarmBugDeploying(b) || ShipSummonHold(b) != null
                     || _eol != null && _eol.IsInPioneerDropshipSafeZone(x, y))
                 {   // moving (or in the dropship / its walk out, which have their own rules): new sample
                     _mapStuck[b] = new StuckSample { X = x, Y = y, Since = now };

@@ -100,8 +100,9 @@ namespace InfServer.Script.GameType_Eol
         /// radiation outside the open sectors; null = the engine's own fallback.</summary>
         string NoKillerName(short x, short y)
         {
-            if (_swarmNest != null && !_swarmNest.IsDead && _swarmNest._state != null && Helpers.distanceTo(_swarmNest._state, new Helpers.ObjectState { positionX = x, positionY = y }) < 700)
-                return "Alien Queen";
+            string nestName = SwarmNestNameNear(x, y, 700);   // (Alien Queen or Alien King)
+            if (nestName != null)
+                return nestName;
             if (_eol != null && !_eol.IsInAnyActiveSector(x, y))
                 return "Radiation";
             return null;
