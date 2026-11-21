@@ -417,7 +417,9 @@ namespace InfServer.Game
         {	//Quick check to make sure that the weapon is even damaging before we do math
             if (IsDamageImmune)
                 return;
-            int maxRadius = Helpers.getMaxBlastRadius(wep);
+            // (2026-11-22) the stun radius counts too - a round whose stun reaches further than its damage (or has only a
+            // stun) still stuns what it reaches
+            int maxRadius = Math.Max(Helpers.getMaxBlastRadius(wep), wep.antiEffectsRadius);
             if (maxRadius == 0)
                 return;
 
@@ -555,7 +557,8 @@ namespace InfServer.Game
             double f = 0.35 + _botHitRng.NextDouble() * 0.65;   // 1 = dead centre
             // (2026-11-18, owner: "the stun from the medic should effect bots aswell") a bot's direct hit carries the
             // round's anti effects (stunner: no fire / no turning / crawl) like a player's
-            if (wep.antiEffectsRadius > 0)
+            // (2026-11-22, owner: stuns must work for everyone) any stun on the round - not only ones with a stun radius
+            if (wep.antiEffectsRadius > 0 || wep.antiEffectsFire > 0 || wep.antiEffectsRecharge > 0 || wep.antiEffectsRotate > 0 || wep.antiEffectsThrust > 0)
             {
                 int tnow = Environment.TickCount;
                 if (wep.antiEffectsFire > 0) _tickAntiFire = tnow + wep.antiEffectsFire * 10;

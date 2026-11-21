@@ -272,7 +272,7 @@ namespace InfServer.Protocol
 				snap = new List<ItemInfo.UtilityItem>(src);
 			if (snap.Count == 0)
 				return null;
-			if (b.LastShotTick != 0 && Environment.TickCount - b.LastShotTick < BotCloakBreakMs)
+			if (!b.KeepCloakOn && b.LastShotTick != 0 && Environment.TickCount - b.LastShotTick < BotCloakBreakMs)
 				snap.RemoveAll(u => u != null && (u.cloakDistance > 0 || u.stealthDistance > 0));
 			return snap.Count > 0 ? snap : null;
 		}
