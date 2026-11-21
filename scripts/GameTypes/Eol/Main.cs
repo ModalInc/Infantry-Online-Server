@@ -1107,7 +1107,16 @@ namespace InfServer.Script.GameType_Eol
             }
 
             if (_tickKOTHGameStarting != 0)
+            {
+                // (2026-11-21, owner: 'the koth is not working in sector C ... stuck on starting') the 15 s countdown starts the
+                // round from its ticker callback; if that ticker was replaced the round never began - start it from here
+                if (now - _tickKOTHGameStarting >= 15 * 1000 + 2000)
+                {
+                    Log.write(TLog.Warning, "[Eol] KOTH countdown callback never came - starting the round from the poll.");
+                    startKOTH();
+                }
                 return;
+            }
 
             if (_tickNextKothEligible != 0 && now < _tickNextKothEligible)
             {
@@ -4610,7 +4619,8 @@ namespace InfServer.Script.GameType_Eol
             }
             // One paced arena-wide crown packet — giveCrown used to broadcast per player (N² reliable).
             QueueKothCrownBroadcast(true, crownPlayers);
-            KothBotsStart();   // bots wear crowns too (local 2026-11-14)
+            try { KothBotsStart(); }   // bots wear crowns too (local 2026-11-14)
+            catch (Exception e) { Log.write(TLog.Warning, "[Eol] KOTH: bot crowns failed ({0}) - the round goes on with players only.", e.Message); }
             Log.write(TLog.Normal, "[Eol] KOTH started ({0} players with crowns).", crownPlayers.Count);
         }
 

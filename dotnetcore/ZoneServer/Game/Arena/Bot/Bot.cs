@@ -1452,7 +1452,7 @@ namespace InfServer.Bots
                         }
                         catch { }
                     }
-                    ItemInfo item = dropId != 0 ? _arena._server._assets.getItemByID(dropId) : null;
+                    ItemInfo item = dropId > 0 ? _arena._server._assets.getItemByID(dropId) : null;   // (negative = no drop: DeathDropResolver -1)
                     if (item != null)
                         _arena.itemSpawn(item, (ushort)Math.Max(1, qty), _state.positionX, _state.positionY, null);
                 }
