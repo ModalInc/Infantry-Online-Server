@@ -77,6 +77,78 @@ namespace InfServer.Script.GameType_Eol
         {
             if (_sectorChangePending && _pendingSector != null && now - _sectorChangeDueAt >= 2000)
                 RunPendingSectorChange();
+            PollHiddenSectorVote(now);
+        }
+
+        // ---------- (2026-11-21, owner: "can we also get a vote back for sectors please. ?vote sector ... i.e ?vote sector A";
+        // "have it hidden though so no one knows about it unless told") a HIDDEN player vote: no help text, no arena
+        // announcement, a bare or wrong ?vote is ignored silently. Voters only hear back privately. 2 minutes from the
+        // first vote; most votes wins, a tie is up to chance; the change itself is the normal *sector countdown. One vote an hour.
+        const int SectorVoteMs = 120000;
+        const int SectorVoteCooldownMs = 60 * 60 * 1000;   // (2026-11-21, owner: "make it so you can only vote every hour") from the end of the last vote, whatever it picked
+        bool _sectorVoteRunning;
+        int _sectorVoteEndsAt, _lastSectorVoteChange = int.MinValue / 2;
+        readonly Dictionary<string, string> _sectorVotes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);   // alias -> a/b/c
+        static readonly string[] SectorVoteOptions = { "a", "b", "c" };
+
+        /// <summary>?vote sector a|b|c; true = handled (anything else after ?vote is swallowed silently).</summary>
+        bool TrySectorVoteCommand(InfServer.Game.Player player, string cmd, string payload)
+        {
+            if (cmd != "vote")
+                return false;
+            string[] parts = (payload ?? "").Trim().ToLowerInvariant().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length != 2 || parts[0] != "sector" || !SectorVoteOptions.Contains(parts[1]))
+                return true;   // (hidden: no hint)
+            string arg = parts[1];
+            int now = Environment.TickCount;
+            if (!_sectorVoteRunning)
+            {
+                if (_sectorChangePending)
+                {
+                    player.sendMessage(-1, "&A sector change is already on its way.");
+                    return true;
+                }
+                if (now - _lastSectorVoteChange < SectorVoteCooldownMs)
+                {
+                    int min = (SectorVoteCooldownMs - (now - _lastSectorVoteChange)) / 60000 + 1;
+                    player.sendMessage(-1, "&One vote an hour - the next in " + min + " min.");
+                    return true;
+                }
+                _sectorVoteRunning = true;
+                _sectorVoteEndsAt = now + SectorVoteMs;
+                _sectorVotes.Clear();
+            }
+            _sectorVotes[player._alias] = arg;
+            player.sendMessage(0, "&Your vote: Sector " + arg.ToUpperInvariant() + " (" + SectorVoteTally() + ", "
+                + Math.Max(1, (_sectorVoteEndsAt - now) / 1000) + "s left).");
+            return true;
+        }
+
+        string SectorVoteTally()
+        {
+            return string.Join(" ", SectorVoteOptions.Select(o => o.ToUpperInvariant() + ":" + _sectorVotes.Values.Count(v => v == o)));
+        }
+
+        void PollHiddenSectorVote(int now)
+        {
+            if (!_sectorVoteRunning || now - _sectorVoteEndsAt < 0)
+                return;
+            _sectorVoteRunning = false;
+            int best = SectorVoteOptions.Max(o => _sectorVotes.Values.Count(v => v == o));
+            List<string> top = SectorVoteOptions.Where(o => _sectorVotes.Values.Count(v => v == o) == best).ToList();
+            if (_rand == null)
+                _rand = new Random(Environment.TickCount);
+            string win = top[_rand.Next(top.Count)];   // (a tie: up to chance)
+            string tally = SectorVoteTally();
+            List<string> voters = new List<string>(_sectorVotes.Keys);
+            _sectorVotes.Clear();
+            string err = StartSectorChange(win, "the vote");   // (the normal countdown message - no mention of a vote)
+            _lastSectorVoteChange = now;   // (the next vote in an hour, whatever this one picked)
+            string note = "&Vote result (" + tally + "): Sector " + win.ToUpperInvariant() + (top.Count > 1 ? " (tie - chance picked)" : "")
+                + (err == null ? "." : " - " + err);
+            foreach (InfServer.Game.Player p in _arena.Players)
+                if (p != null && voters.Contains(p._alias))
+                    p.sendMessage(0, note);   // (only the voters hear it)
         }
 
         /// <summary>null = the change is on its way; else why not.</summary>

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 
 using InfServer.Game;
 using InfServer.Protocol;
+using Assets;
 
 namespace InfServer.Script.GameType_Eol
 {
@@ -201,6 +202,26 @@ namespace InfServer.Script.GameType_Eol
         /// A random open spot for a player inside a sector's spawn zone (the dropship landing); null = the sector has
         /// no zone landing / no open spot found.
         /// </summary>
+        /// <summary>The indoor floor terrain (building floors: Flr01082, Floor Grid / Tile) - players never land on it.</summary>
+        const int BuildingFloorTerrain = 5;
+        /// <summary>Players land at least this far (raw) from any flag and any turret / HQ.</summary>
+        const int LandingClearRaw = 320;
+
+        /// <summary>A flag on the map, or a computer (turret, HQ, vendor), within r (raw) of the spot.</summary>
+        bool LandingNearFlagOrTurret(short x, short y, int r)
+        {
+            long r2 = (long)r * r;
+            if (_arena._flags != null)
+                foreach (Arena.FlagState fs in _arena._flags.Values)
+                    if (fs != null && fs.bActive && (long)(fs.posX - x) * (fs.posX - x) + (long)(fs.posY - y) * (fs.posY - y) < r2)
+                        return true;
+            foreach (Vehicle v in _arena.Vehicles)
+                if (v != null && v._type != null && v._type.Type == VehInfo.Types.Computer && !v.IsDead && v._state != null
+                    && (long)(v._state.positionX - x) * (v._state.positionX - x) + (long)(v._state.positionY - y) * (v._state.positionY - y) < r2)
+                    return true;
+            return false;
+        }
+
         public Helpers.ObjectState PickPlayerSpawnInZone(string sector)
         {
             if (_arena == null || !DropshipLandsInZone(sector))
@@ -225,17 +246,26 @@ namespace InfServer.Script.GameType_Eol
             if (tiles.Count == 0)
                 return null;
 
-            for (int tries = 0; tries < 80; tries++)
-            {
-                int t = tiles[_rand.Next(tiles.Count)];
-                int tx = t % s_zoneW, ty = t / s_zoneW;
-                short x = (short)(tx * 16 + 8), y = (short)(ty * 16 + 8);
-                if (!TileOpenAround(x, y))
-                    continue;
-                if (_eol != null && !_eol.IsInAnyActiveSector(x, y))
-                    continue;
-                return new Helpers.ObjectState { positionX = x, positionY = y };
-            }
+            // (2026-11-21, owner: "make it so you can't spawn in that base in F6, if there is a spawn it has to be in the street
+            // there ... so people dont spawn on the flag and on the turrets") never on a building floor (terrain 5 - the F6
+            // base building and every other indoor floor), and clear of every flag and every turret / HQ; the clearance shrinks
+            // if a busy zone has no such spot, the building floor rule never does
+            foreach (int clear in new[] { LandingClearRaw, LandingClearRaw / 2, 0 })
+                for (int tries = 0; tries < 120; tries++)
+                {
+                    int t = tiles[_rand.Next(tiles.Count)];
+                    int tx = t % s_zoneW, ty = t / s_zoneW;
+                    short x = (short)(tx * 16 + 8), y = (short)(ty * 16 + 8);
+                    if (_arena.getTerrainID(x, y) == BuildingFloorTerrain)
+                        continue;
+                    if (!TileOpenAround(x, y))
+                        continue;
+                    if (_eol != null && !_eol.IsInAnyActiveSector(x, y))
+                        continue;
+                    if (clear > 0 && LandingNearFlagOrTurret(x, y, clear))
+                        continue;
+                    return new Helpers.ObjectState { positionX = x, positionY = y };
+                }
             return null;
         }
         readonly Dictionary<int, List<int>> _zoneTiles = new Dictionary<int, List<int>>();
