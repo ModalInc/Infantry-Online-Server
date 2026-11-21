@@ -31,16 +31,24 @@ namespace InfServer.Script.GameType_Eol
         bool BotCanWearCrown(Bot b)
         {
             return b != null && !b.IsDead && !b.bCondemned && b._team != null
-                && IsManagedEolBotFactionTeam(b._team) && !IsAlienBotTeam(b._team);
+                && IsManagedEolBotFactionTeam(b._team) && !IsAlienBotTeam(b._team)
+                && Arena.ShouldBotAppearOnNamelist(b);   // (2026-11-21: only bots every client knows - a crown for a hidden bot can crash a client)
         }
+
+        /// <summary>(2026-11-21, owner: KOTH stuck / crashing in Sector C - more bots there) crowns go out in small packets:
+        /// one packet for 100+ bots was the biggest reliable packet the zone sends.</summary>
+        const int BotCrownsPerPacket = 32;
 
         void SendBotCrowns(bool crown, List<short> ids)
         {
             if (ids == null || ids.Count == 0 || _arena == null)
                 return;
-            SC_PlayerCrowns pkt = new SC_PlayerCrowns { bCrown = crown, players = ids };
-            foreach (InfServer.Game.Player p in _arena.Players)
-                p?._client?.sendReliable(pkt);
+            for (int i = 0; i < ids.Count; i += BotCrownsPerPacket)
+            {
+                SC_PlayerCrowns pkt = new SC_PlayerCrowns { bCrown = crown, players = ids.GetRange(i, Math.Min(BotCrownsPerPacket, ids.Count - i)) };
+                foreach (InfServer.Game.Player p in _arena.Players)
+                    p?._client?.sendReliable(pkt);
+            }
         }
 
         /// <summary>Round start: crown every eligible bot.</summary>
