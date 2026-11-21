@@ -7001,6 +7001,8 @@ namespace InfServer.Script.GameType_Eol
         [Scripts.Event("Player.ChatCommand")]
         public bool playerChatCommand(InfServer.Game.Player player, InfServer.Game.Player recipient, string command, string payload)
         {
+            if (TrySectorVoteCommand(player, (command ?? "").ToLowerInvariant(), payload))
+                return true;   // (2026-11-21) hidden ?vote sector a|b|c - Script_Eol.SectorVote.cs
             if (command.ToLower().Equals("crown"))
             {   //Give them their crown time if KOTH is enabled
                 if (_minPlayers <= 0)
