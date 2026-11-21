@@ -18,12 +18,14 @@ namespace InfServer.Script.GameType_Eol
     {
         public const bool DropshipDeployEnabled = true;
         /// <summary>Centre of the dropship's "MapPortal" (lio portal 1, 80 x 80 at 27008,2864).</summary>
-        public const short DropshipPortalX = 27048, DropshipPortalY = 2904;
+        public static short DropshipPortalX { get { return EolMap.DropshipPortalX; } }
+        public static short DropshipPortalY { get { return EolMap.DropshipPortalY; } }
         const int DeployPortalReachRaw = 72;
         /// <summary>Stuck in the dropship this long: sent through anyway.</summary>
         const int DeployTimeoutMs = 30000;
         /// <summary>Bots appear here (the dropship floor south of the portal, where players stand).</summary>
-        const short DeploySpawnX = 27016, DeploySpawnY = 3368;
+        static short DeploySpawnX { get { return EolMap.DeploySpawnX; } }
+        static short DeploySpawnY { get { return EolMap.DeploySpawnY; } }
         const int DeploySpawnRadius = 220;
         public const int BotSpawnProtectMs = 3000;
         /// <summary>(2026-11-16, owner: "50% armor increase bots"; 2026-11-17 "reduce the 50% armor increase ... to 35%. bots are too tanky") damage taken = 1 / 1.35.</summary>
@@ -56,7 +58,7 @@ namespace InfServer.Script.GameType_Eol
                 return null;
             if (_dropshipSpots == null)
                 _dropshipSpots = BuildStraightSpots(DropshipSafeBoxMinX, DropshipSafeBoxMaxX, DropshipSafeBoxMinY, DropshipSafeBoxMaxY,
-                    DropshipPortalX, DropshipPortalY, 180, 1100, (x, y) => _eol.IsInPioneerDropshipSafeZone(x, y));
+                    DropshipPortalX, DropshipPortalY, 180, 1100, (x, y) => x >= DropshipSafeBoxMinX && x <= DropshipSafeBoxMaxX && y >= DropshipSafeBoxMinY && y <= DropshipSafeBoxMaxY);   // (the BOT dropship: combined level = Pioneer's for both halves)
             return FacingPortal(PickSpreadSpot(_dropshipSpots, _deployStartTick.Keys), DropshipPortalX, DropshipPortalY);
         }
 
@@ -69,7 +71,10 @@ namespace InfServer.Script.GameType_Eol
         }
 
         // the dropship box (EolBoundaries' safe zone)
-        const short DropshipSafeBoxMinX = 26048, DropshipSafeBoxMaxX = 28080, DropshipSafeBoxMinY = 2160, DropshipSafeBoxMaxY = 3824;
+        static short DropshipSafeBoxMinX { get { return EolMap.BotSafeMinX; } }
+        static short DropshipSafeBoxMaxX { get { return EolMap.BotSafeMaxX; } }
+        static short DropshipSafeBoxMinY { get { return EolMap.BotSafeMinY; } }
+        static short DropshipSafeBoxMaxY { get { return EolMap.BotSafeMaxY; } }
         List<Helpers.ObjectState> _dropshipSpots;
 
         /// <summary>
@@ -311,8 +316,9 @@ namespace InfServer.Script.GameType_Eol
                 if (b is RoamingAttacker && (IsRoamingSquadTeam(b._team) || IsRoamBotTeam(b._team))
                     && _eol.IsInPioneerDropshipSafeZone(x, y) && !IsDeploying(b) && ShipSummonHold(b) == null)   // (not one summoned in by its player)
                     BeginDeploy(b, now);
-                else if (b is AlienHorde && IsSwarmTeam(b._team) && !_swarmDeploying.ContainsKey(b)
-                    && x >= 1617 * 16 && x <= 1716 * 16 && y >= 394 * 16 && y <= 438 * 16)
+                else if (b is AlienHorde && IsSwarmTeam(b._team) && !SwarmBugDeploying(b)
+                    && x >= CaveTX(1617) * 16 && x <= CaveTX(1716) * 16 && y >= CaveTY(394) * 16 && y <= CaveTY(438) * 16
+                    && UseSwarmOf(b._team))
                     BeginSwarmDeploy(b, now);
             }
         }

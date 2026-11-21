@@ -20,7 +20,7 @@ namespace InfServer.Script.GameType_Eol
         const int SpawnZoneCell = 4;
 
         /// <summary>Sectors whose dropship landing is inside their spawn zone.</summary>
-        static readonly string[] DropshipZoneSectors = { "Sector A" };
+        static readonly string[] DropshipZoneSectors = { "Sector A", "Sector B", "Sector C" };   // (2026-11-21, owner: "make the spawn points we mentioned before in boundary.png" - B and C too)
 
         static readonly string[] SpawnZoneA =
         {
@@ -149,9 +149,19 @@ namespace InfServer.Script.GameType_Eol
                 }
         }
 
+        /// <summary>(2026-11-21, owner: "remove all bot friendly zones, they can shoot anywhere and go anywhere") false = the
+        /// spawn zones only decide where players land from the dropship; bots roam, chase, fight and spawn in them too.</summary>
+        public const bool BotNoGoZones = false;
+
         public static bool InNewPlayerBuffer(int x, int y)
         {
-            return BufferEdgeDistance(x, y) < 0;
+            return BotNoGoZones && BufferEdgeDistance(x, y) < 0;
+        }
+
+        /// <summary>What the bots' brain sees as the distance to a no-go zone (far away when there are none).</summary>
+        public static double BotBufferEdgeDistance(int x, int y)
+        {
+            return BotNoGoZones ? BufferEdgeDistance(x, y) : 30000;
         }
 
         /// <summary>Distance (raw) from a point to the nearest spawn zone's edge (negative inside).</summary>
@@ -167,7 +177,7 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>Too close to a spawn zone for a bot to roam to or spawn at.</summary>
         public static bool NearNewPlayerBuffer(int x, int y)
         {
-            return BufferEdgeDistance(x, y) < NwBufferKeepClearRaw;
+            return BotNoGoZones && BufferEdgeDistance(x, y) < NwBufferKeepClearRaw;
         }
 
         static int ZoneIdOfSector(string sector)

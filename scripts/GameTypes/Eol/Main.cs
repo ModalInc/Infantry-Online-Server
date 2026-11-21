@@ -1987,7 +1987,10 @@ namespace InfServer.Script.GameType_Eol
                 _playAreaFn = (px, py) => InPlayArea(px, py, 150);
             EolBotBrain.PlayArea = _playAreaFn;   // bots stay out of the toxic zones (re-set: survives script reloads)
             WireTerritoryHooks();                 // NW territories + the new player buffer (Script_Eol.Territories.cs)
-            Bots.Bot.DeathDropResolver = _helmetDropFn;   // pirate / class helmets on death
+            // pirate / class helmets on death; (2026-11-21, owner) a vehicle-squad bot that only lost its board / pack drops
+            // nothing and gets no killfeed line - its rider on foot drops the helmet when it dies
+            Bots.Bot.DeathDropResolver = b => IsVehicleStageBot(b) ? -1 : PirateHelmetFor(b);
+            Bots.Bot.SuppressKillfeed = b => IsVehicleStageBot(b);
             PrepareNewBots(now);    // 35 % more armour + spawn protection (Script_Eol.Deploy.cs)
             PollSquadCommands(now); // squad team-chat orders S / X / @ (Script_Eol.SquadCommands.cs)
             PollNoSpawnBuildings(now); // bots that come alive inside a no-spawn building go outside (Script_Eol.NoSpawnBuildings.cs)
@@ -1996,7 +1999,9 @@ namespace InfServer.Script.GameType_Eol
             PollBotMedikits(now);   // (2026-11-17) bots patch each other up with medikits
             PollEngineerCharge(now); // squad Chief Engineers charge low-energy team mates (Script_Eol.EngineerOrders.cs)
             PollPackJumps(now);      // pack bots jump walls / jump away when hurt (Script_Eol.PackJumps.cs)
-            PollMissingFlags(now);   // flags skipped while the zone was empty come up once players are in
+            PollMissingFlags(now);
+            PollSectorVote(now);   // (2026-11-21) sector votes
+            PollSpawnZoneDiag(now);   // (2026-11-21) eol-diag.log   // flags skipped while the zone was empty come up once players are in
             PollOffSectorFlags(now); // (2026-11-18) flags left lying in a closed sector lose their owner (Script_Eol.BotFlagClaim.cs)
             PollNoSummonFlags(now);  // (2026-11-18) standard carriers can't be summoned (Script_Eol.FlagSummonBlock.cs)
             PollChokeRescue(now);    // bots wedged in a known choke (146,411) are moved out (Script_Eol.ChokeRescue.cs)
@@ -2199,7 +2204,9 @@ namespace InfServer.Script.GameType_Eol
                     slotCandidates = elsewhere;
             }
 
-            KeyValuePair<int, pylonObject> pick = slotCandidates[_rand.Next(slotCandidates.Count)];
+            // (2026-11-21, owner: "have the bot bases do the same so its spread out on the fixed flags") the slot farthest from
+            // every live HQ - one of the two farthest, at random - so the bases spread over the map's fixed objectives
+            KeyValuePair<int, pylonObject> pick = PickSpreadHqSlot(slotCandidates);
 
             Team team = teamNeedingHq;
 
@@ -6623,7 +6630,7 @@ namespace InfServer.Script.GameType_Eol
             if (killer == null && dead != null)
                 _arena.TryTakeLastBotDamager(dead, out killerBot);
 
-            if (dead != null)
+            if (dead != null && !vehicleLost)   // (only the vehicle died: no death for the rider)
             {
                 EolBotFieldAccess.IncrementDeaths(dead);
                 string key = BotNameModule.GetDisplayName(dead);
@@ -6631,11 +6638,14 @@ namespace InfServer.Script.GameType_Eol
                     TryUpdateBotStatsByRegistryName(key, 0, 1);
             }
 
-            KothOnBotDeath(dead, killer, killerBot);   // crowns (bots play KOTH too)
-            OnBotDiedBounty(dead, killerBot);          // (2026-11-17) bot bounty: passed on to a killer bot, then gone
+            if (!vehicleLost)
+            {
+                KothOnBotDeath(dead, killer, killerBot);   // crowns (bots play KOTH too)
+                OnBotDiedBounty(dead, killerBot);          // (2026-11-17) bot bounty: passed on to a killer bot, then gone (the rider keeps it)
+            }
             ResetBotMedikits(dead);                    // (fresh medikits next life)
 
-            if (killerBot != null)
+            if (killerBot != null && !vehicleLost)
             {
                 EolBotFieldAccess.IncrementKills(killerBot);
                 string killerKey = BotNameModule.GetDisplayName(killerBot);
@@ -6754,6 +6764,8 @@ namespace InfServer.Script.GameType_Eol
         public bool playerModCommand(InfServer.Game.Player player, InfServer.Game.Player recipient, string command, string payload)
         {
             string cmd = command.ToLowerInvariant();
+            if (TrySectorModCommand(player, cmd, payload))
+                return true;   // (2026-11-21) *sector a|b|c - Script_Eol.SectorVote.cs
             if (cmd.Equals("swarm"))
             {   // (2026-11-16c) bring the Alien Swarm nest up now
                 if (!IsEolModerator(player))
@@ -8028,6 +8040,15 @@ namespace InfServer.Script.GameType_Eol
         [Scripts.Event("Player.WarpItem")]
         public bool playerWarpItem(InfServer.Game.Player player, ItemInfo.WarpItem item, ushort targetPlayerID, short posX, short posY)
         {
+            // (2026-11-21, owner: "the HQ recall does not work on the new HQs we did, make sure it finds that new one")
+            // the HQ Teleport (itm 208, lio warp group 70 = "HQWarp", relative id 69) is done here: the engine put the player
+            // on the HQ's exact centre (a 0 x 0 warp box - inside the HQ building now). Lands on open ground round the team's
+            // own live HQ (469, or a 473 Player headquarters); a message when the team has none.
+            if (player != null && item != null && (item.id == HqTeleportItemId || item.warpGroup == HqWarpGroup))
+            {
+                TryHqTeleport(player);
+                return false;
+            }
             // (2026-11-17, owner: "you can store recall if you want ... b please") Store Recall works while carrying a
             // flag, but the flags stay behind: they drop where the carrier stood (no flags in the store / safe zone)
             if (player != null && item != null && _arena != null && _arena._flags != null

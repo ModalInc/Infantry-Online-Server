@@ -30,8 +30,8 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>Alien horde — leave after this many deaths.</summary>
         public const int BotMaxDeathsAlien = 4;
         /// <summary>Pioneer Station (map search origin / legacy recall coords).</summary>
-        public const short BotDropshipRecallX = 27008;
-        public const short BotDropshipRecallY = 3360;
+        public static short BotDropshipRecallX { get { return EolMap.BotRecallX; } }
+        public static short BotDropshipRecallY { get { return EolMap.BotRecallY; } }
         public const int BotDropshipRecallWarpRadius = 300;
 
         struct BotAnchorRespawnState
@@ -88,7 +88,7 @@ namespace InfServer.Script.GameType_Eol
             if (bot is AlienHorde)
             {
                 if (IsSwarmTeam(bot._team))
-                    return _swarmActive && _swarmNest != null && !_swarmNest.IsDead;   // back through the bug cave
+                    return SwarmAliveFor(bot._team);   // back through the bug cave (its own Queen / King up)
                 return IsAlienBotTeam(bot._team) && _alienWaveActive && AlienCrashShipAlive();
             }
             return false;
@@ -231,7 +231,7 @@ namespace InfServer.Script.GameType_Eol
             // the Alien Swarm in its bug cave
             if ((bot is RoamingAttacker || bot is RoamingCaptain) && (IsRoamingSquadTeam(bot._team) || IsRoamBotTeam(bot._team)))
                 return PickDropshipSpawn() ?? PickEliteSpawnPoint();
-            if (bot is AlienHorde && IsSwarmTeam(bot._team))
+            if (bot is AlienHorde && UseSwarmOf(bot._team))
                 return PickSwarmCaveSpot();
 
             short anchorX;
@@ -494,7 +494,7 @@ namespace InfServer.Script.GameType_Eol
                 bot._state.health = HumanBotHealth;   // (human-class bots' 100 HP, as at spawn)
             if (_eol != null && _eol.IsInPioneerDropshipSafeZone(spawn.positionX, spawn.positionY))
                 BeginDeploy(bot, Environment.TickCount);
-            else if (bot is AlienHorde && IsSwarmTeam(bot._team))
+            else if (bot is AlienHorde && UseSwarmOf(bot._team))
                 BeginSwarmDeploy(bot, Environment.TickCount);
 
             // Re-list if death dropped them while the team was under max.

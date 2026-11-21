@@ -16,13 +16,20 @@ namespace InfServer.Script.GameType_Eol
     /// </summary>
     public partial class Script_Eol
     {
-        public const int EolBotTotalTarget = 79;   // (2026-11-17: swarm 10 -> 12) // (2026-11-17: human + pirate squads of 6, vehicle squad 4; was 70)   // (2026-11-16c, owner: "around 70")
-        public const int RosterBaseTeams = 2;
+        /// <summary>(2026-11-21, owner: "3 bot bases team like eol classic", "both swarms out", "if sector C is chosen please add
+        /// another 3 6man teams") 79 + the third base 10 + the King's swarm 12, + 18 while Sector C is open.</summary>
+        public static int EolBotTotalTarget { get { return 101 + (s_sectorCOpen ? SectorCExtraSquads * SquadMaxSize : 0); } }
+        /// <summary>Extra mixed squads while Sector C is open (the last ones of MixedTeamNames).</summary>
+        public const int SectorCExtraSquads = 3;
+        static bool s_sectorCOpen;
+        /// <summary>Mixed squads that fill right now.</summary>
+        int MixedTeamsActive { get { return RosterMixedTeamCount - (s_sectorCOpen ? 0 : SectorCExtraSquads); } }
+        public const int RosterBaseTeams = 3;   // (2026-11-21: a third base, like Eol Classic - Steel Wardens)
         public const int RosterBaseSize = EolMaxConcurrentBaseDefenseBots;   // 10
         public const int RosterAlienMainSize = 8;
         public const int RosterVehicleSquadSize = 5;   // (2026-11-17: + the board medic on a Hoverboard) // (2026-11-17, owner: Deathboard, Shimmerboard, Drop Pack + a SciOps on a Flight Pack)
         /// <summary>(2026-11-16c) Storm Rangers + 5 mixed teams = 6 joinable human squads of 5-6.</summary>
-        public const int RosterMixedTeamCount = 5;
+        public const int RosterMixedTeamCount = 8;   // (2026-11-21: 5 + 3 that only fill while Sector C is open)
         /// <summary>(2026-11-16c, owner) a joinable squad is 5 to 6 strong, players + bots.</summary>
         public const int SquadMinSize = 5;
 
@@ -46,12 +53,11 @@ namespace InfServer.Script.GameType_Eol
             _rosterPirateRoamers = SquadMaxSize;   // (2026-11-17, owner: "yes 6")
             // (2026-11-16c) the crash-ship alien packs are gone: their places are the Alien Swarm's 10 bugs
             _rosterAlienElite = EolAlienWavesEnabled ? 4 : 0;
-            int aliens = EolAlienWavesEnabled ? _rosterAlienElite + RosterAlienMainSize : SwarmDefenders;
+            int aliens = EolAlienWavesEnabled ? _rosterAlienElite + RosterAlienMainSize : SwarmDefenders * SwarmRunCount;   // (2026-11-21: the Queen's and the King's swarm)
             _rosterHumanRoamers = SquadMaxSize;   // (2026-11-17, owner: "lets make teams of 6" - every human squad has its engineer)
             for (int i = 0; i < RosterMixedTeamCount; i++)
                 _rosterMixedSize[i] = SquadMaxSize;
-            int rest = EolBotTotalTarget - (RosterBaseTeams * RosterBaseSize + _rosterPirateRoamers + _rosterHumanRoamers
-                + aliens + RosterVehicleSquadSize + RosterMixedTeamCount * SquadMaxSize);   // 0 (2026-11-17: 20 + 6 + 6 + 30 + 12 + 5 = 79)
+            int rest = 0;   // (2026-11-21: every squad is 6 already - the totals are worked out in EolBotTotalTarget)   // 0 (2026-11-17: 20 + 6 + 6 + 30 + 12 + 5 = 79)
             for (int guard = 0; rest > 0 && guard < 1000; guard++)
             {
                 int i = r.Next(RosterMixedTeamCount + 1);
@@ -110,7 +116,7 @@ namespace InfServer.Script.GameType_Eol
 
         /// <summary>(2026-11-16, owner: 26 bots on one team) hard caps for every spawn path.</summary>
         public const int EolMaxBotsPerTeam = 10;
-        public const int EolMaxBotsTotal = 81;   // (2026-11-17: 78 -> 80 with the swarm of 12)   // (roster 70 + a little room for bots changing over)
+        public static int EolMaxBotsTotal { get { return EolBotTotalTarget + 2; } }   // (roster + a little room for bots changing over)   // (2026-11-17: 78 -> 80 with the swarm of 12)   // (roster 70 + a little room for bots changing over)
 
         /// <summary>
         /// True when one more bot may join <paramref name="team"/>: under 10 live (or about-to-revive) bots on that
@@ -125,12 +131,12 @@ namespace InfServer.Script.GameType_Eol
             {
                 if (b == null || b.bCondemned || (b.IsDead && !b.bDropshipRespawnPending))
                     continue;
-                if (b._team == team && b != _swarmNest)   // (2026-11-17: the moving Queen isn't one of the 12)
+                if (b._team == team && !IsSwarmNest(b))   // (2026-11-17: the moving Queen isn't one of the 12)
                     onTeam++;
                 if (!IsAssassinTeam(b._team))
                     total++;
             }
-            if (onTeam >= (team == botTeamSwarm ? SwarmDefenders : EolMaxBotsPerTeam))   // (the alien base team: 12)
+            if (onTeam >= (IsSwarmTeam(team) ? SwarmDefenders : EolMaxBotsPerTeam))   // (the alien base team: 12)
                 return false;
             return IsAssassinTeam(team) || total < EolMaxBotsTotal;
         }

@@ -194,6 +194,6 @@ namespace InfServer.Script.GameType_Eol
         Func<Bot, bool> _heldFn;
         Func<List<KeyValuePair<short, short>>> _raidPoiFn;
         Func<Bot, Random, Helpers.ObjectState> _territoryPointFn;
-        static readonly Func<short, short, double> _bufferEdgeFn = (x, y) => BufferEdgeDistance(x, y);
+        static readonly Func<short, short, double> _bufferEdgeFn = (x, y) => BotBufferEdgeDistance(x, y);   // (2026-11-21: no bot no-go zones - see SpawnZones.BotNoGoZones)
     }
 }

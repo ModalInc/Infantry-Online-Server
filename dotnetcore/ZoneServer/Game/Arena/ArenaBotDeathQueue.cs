@@ -118,6 +118,9 @@ namespace InfServer.Game
                 dead._state.positionY,
                 (byte)dead._state.yaw);
 
+            bool quiet = false;
+            try { quiet = Bot.SuppressKillfeed != null && Bot.SuppressKillfeed(dead); } catch { }
+            if (!quiet)
             _botDeathKillfeedQueue.Enqueue(new BotDeathKillfeedEvent
             {
                 deadTeam = dead._team,

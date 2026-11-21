@@ -77,7 +77,8 @@ namespace InfServer.Script.GameType_Eol
         readonly Dictionary<Team, int> _strikeNextSpawnTick = new Dictionary<Team, int>();
         int _tickStrikePoll;
 
-        static readonly string[] MixedTeamNames = { "Nova Commandos Bots", "Rogue Jackals Bots", "Iron Wolves Bots", "Desert Vipers Bots", "Night Owls Bots" };
+        static readonly string[] MixedTeamNames = { "Nova Commandos Bots", "Rogue Jackals Bots", "Iron Wolves Bots", "Desert Vipers Bots", "Night Owls Bots",
+            "Thunder Hawks Bots", "Crimson Lancers Bots", "Black Mambas Bots" };   // (the last 3: Sector C only)
 
         void CreateStrikeTeams()
         {
@@ -313,11 +314,12 @@ namespace InfServer.Script.GameType_Eol
             }
 
             // mixed teams top the field up to 60 (not past it while the assassins are out)
+            s_sectorCOpen = _eol != null && _eol._activeSectors != null && _eol._activeSectors.Contains("Sector C");
             int live = CountLiveRosterBots();
             for (int i = 0; i < _mixedTeams.Count; i++)
             {
                 Team t = _mixedTeams[i];
-                _strikeTargetSize[t] = _rosterMixedSize[i];
+                _strikeTargetSize[t] = i < MixedTeamsActive ? _rosterMixedSize[i] : 0;   // (the Sector C squads: 0 while C is shut)
                 _strikeSkill[t] = _rosterMixedSkill[i];
                 if (live >= EolBotTotalTarget)
                     break;

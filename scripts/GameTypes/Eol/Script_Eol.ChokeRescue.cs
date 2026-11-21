@@ -16,7 +16,7 @@ namespace InfServer.Script.GameType_Eol
     public partial class Script_Eol
     {
         /// <summary>Choke spots in tiles, and how far round each counts as "in it".</summary>
-        static readonly short[][] BotChokeTiles = { new short[] { 146, 411 } };
+        static short[][] BotChokeTiles { get { return EolMap.BotChokeTiles; } }
         const int BotChokeRadius = 5 * 16;
         const int BotChokeStuckMs = 2000;
         int _tickChokeRescue;

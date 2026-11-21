@@ -67,9 +67,45 @@ namespace InfServer.Script.GameType_Eol
             return slots;
         }
 
+        /// <summary>(2026-11-21) Of the free HQ slots, one of the two farthest from every live HQ (spread out); random when
+        /// there is no live HQ yet.</summary>
+        KeyValuePair<int, pylonObject> PickSpreadHqSlot(List<KeyValuePair<int, pylonObject>> slots)
+        {
+            List<Vehicle> live = new List<Vehicle>();
+            foreach (Vehicle v in _arena.Vehicles)
+                if (v != null && v._type != null && IsHqVehId(v._type.Id) && !v.IsDead && !v.bCondemned && v._state != null)
+                    live.Add(v);
+            if (live.Count == 0 || slots.Count < 2)
+                return slots[_rand.Next(slots.Count)];
+            List<KeyValuePair<int, pylonObject>> byFar = new List<KeyValuePair<int, pylonObject>>(slots);
+            Func<KeyValuePair<int, pylonObject>, double> nearest = kv =>
+            {
+                double m = double.MaxValue;
+                foreach (Vehicle v in live)
+                    m = Math.Min(m, Helpers.distanceTo(kv.Value.getX(), kv.Value.getY(), v._state.positionX, v._state.positionY));
+                return m;
+            };
+            byFar.Sort((a, b) => nearest(b).CompareTo(nearest(a)));
+            return byFar[_rand.Next(Math.Min(2, byFar.Count))];
+        }
+
         /// <summary>Open ground ObjectiveHqDistanceRaw from the flag (8 directions, then a bit further out).</summary>
         Helpers.ObjectState FindHqSpotNextTo(short fx, short fy)
         {
+            // (2026-11-21, owner: "the baes in i9 had the turrets outside, they should be near the flag around 658,661")
+            short[] pin;
+            if (HqSpotOverrides.TryGetValue(fx / 16 * 10000 + fy / 16, out pin))
+                return new Helpers.ObjectState { positionX = (short)(pin[0] * 16 + 8), positionY = (short)(pin[1] * 16 + 8) };
+            // (2026-11-21, owner: "turrets and bases should always be INside the building") a flag indoors: the HQ on the
+            // building floor round it, never out in the street
+            HashSet<int> area = FlagIsIndoors(fx, fy) ? IndoorArea(fx, fy) : null;
+            if (area != null)
+            {
+                Helpers.ObjectState inside = FindIndoorHqSpot(area, fx, fy);
+                if (inside != null)
+                    return inside;
+                Log.write(TLog.Warning, "[Eol] Objective base: no room for the HQ inside the building at {0},{1} - old placement.", fx / 16, fy / 16);
+            }
             int[] dists = { ObjectiveHqDistanceRaw, ObjectiveHqDistanceRaw + 48, ObjectiveHqDistanceRaw + 112, ObjectiveHqDistanceRaw + 192 };
             foreach (int d in dists)
                 for (int i = 0; i < 8; i++)
@@ -81,6 +117,112 @@ namespace InfServer.Script.GameType_Eol
                         continue;
                     return new Helpers.ObjectState { positionX = (short)x, positionY = (short)y };
                 }
+            return null;
+        }
+
+        /// <summary>HQ spots the owner placed by hand: flag tile (x * 10000 + y) -> HQ tile.</summary>
+        static readonly Dictionary<int, short[]> HqSpotOverrides = new Dictionary<int, short[]>
+        {
+            { 636 * 10000 + 659, new short[] { 658, 661 } },   // I9 / H9 (Major Resource Point id 64): on the red floor inside
+        };
+
+        const int IndoorAreaMaxTiles = 30;
+
+        bool TileOpen(int tx, int ty) { return tx > 0 && ty > 0 && tx < _arena._levelWidth - 1 && ty < _arena._levelHeight - 1 && !_arena.getTile(tx * 16 + 8, ty * 16 + 8).Blocked; }
+        int TileTerrain(int tx, int ty) { return _arena.getTerrainID(tx * 16 + 8, ty * 16 + 8); }
+
+        /// <summary>Indoors = most of the open ground within 3 tiles of the flag is a building floor (not terrain 0).</summary>
+        bool FlagIsIndoors(int fx, int fy)
+        {
+            int tx = fx / 16, ty = fy / 16, inside = 0, open = 0;
+            for (int dy = -3; dy <= 3; dy++)
+                for (int dx = -3; dx <= 3; dx++)
+                    if (TileOpen(tx + dx, ty + dy)) { open++; if (TileTerrain(tx + dx, ty + dy) != 0) inside++; }
+            return open > 0 && inside * 2 > open;
+        }
+
+        /// <summary>
+        /// The building floor round a point: from the nearest open building tile, every open tile of the same floor kind
+        /// (terrain) reachable without crossing a wall, within IndoorAreaMaxTiles. A small patch: any building floor instead.
+        /// null = no building floor there. Tile index = y * level width + x.
+        /// </summary>
+        HashSet<int> IndoorArea(int px, int py)
+        {
+            int W = _arena._levelWidth, sx = px / 16, sy = py / 16, seed = -1, best = int.MaxValue;
+            for (int dy = -6; dy <= 6; dy++)
+                for (int dx = -6; dx <= 6; dx++)
+                    if (TileOpen(sx + dx, sy + dy) && TileTerrain(sx + dx, sy + dy) != 0 && dx * dx + dy * dy < best)
+                    { best = dx * dx + dy * dy; seed = (sy + dy) * W + sx + dx; }
+            if (seed < 0)
+                return null;
+            int want = TileTerrain(seed % W, seed / W);
+            HashSet<int> area = FloodFloor(seed, sx, sy, t => t == want);
+            if (area.Count < 120)
+                area = FloodFloor(seed, sx, sy, t => t != 0);
+            return area;
+        }
+
+        HashSet<int> FloodFloor(int seed, int cx, int cy, Func<int, bool> floorOk)
+        {
+            int W = _arena._levelWidth;
+            HashSet<int> area = new HashSet<int> { seed };
+            Queue<int> q = new Queue<int>(); q.Enqueue(seed);
+            int[] ddx = { 1, -1, 0, 0 }, ddy = { 0, 0, 1, -1 };
+            while (q.Count > 0)
+            {
+                int i = q.Dequeue(), x = i % W, y = i / W;
+                for (int k = 0; k < 4; k++)
+                {
+                    int nx = x + ddx[k], ny = y + ddy[k], ni = ny * W + nx;
+                    if (Math.Abs(nx - cx) > IndoorAreaMaxTiles || Math.Abs(ny - cy) > IndoorAreaMaxTiles || area.Contains(ni))
+                        continue;
+                    if (!TileOpen(nx, ny) || !floorOk(TileTerrain(nx, ny)))
+                        continue;
+                    area.Add(ni); q.Enqueue(ni);
+                }
+            }
+            return area;
+        }
+
+        /// <summary>The indoor area of a base whose HQ stands on a building floor; null for an outdoor base.</summary>
+        HashSet<int> HqIndoorArea(Helpers.ObjectState hq)
+        {
+            if (hq == null || TileTerrain(hq.positionX / 16, hq.positionY / 16) == 0)
+                return null;
+            return IndoorArea(hq.positionX, hq.positionY);
+        }
+
+        /// <summary>Every tile within r (raw) of (x,y) is in the area (no area = anywhere).</summary>
+        bool InArea(HashSet<int> area, int x, int y, int r)
+        {
+            if (area == null)
+                return true;
+            int W = _arena._levelWidth;
+            for (int dx = -r; dx <= r; dx += 16)
+                for (int dy = -r; dy <= r; dy += 16)
+                    if (!area.Contains(((y + dy) / 16) * W + (x + dx) / 16))
+                        return false;
+            return true;
+        }
+
+        /// <summary>The HQ inside the building: the area spot closest to about 8 tiles from the flag, with room round it.</summary>
+        Helpers.ObjectState FindIndoorHqSpot(HashSet<int> area, int fx, int fy)
+        {
+            int W = _arena._levelWidth;
+            foreach (int clear in new[] { ObjectiveHqClearRaw, 32 })
+            {
+                int bestI = -1; double bestD = double.MaxValue;
+                foreach (int i in area)
+                {
+                    int x = (i % W) * 16 + 8, y = (i / W) * 16 + 8;
+                    double d = Math.Abs(Helpers.distanceTo(x, y, fx, fy) - ObjectiveHqDistanceRaw);
+                    if (d >= bestD || !AreaOpen(x, y, clear) || !InArea(area, x, y, clear) || !_eol.IsInAnyActiveSector((short)x, (short)y))
+                        continue;
+                    bestD = d; bestI = i;
+                }
+                if (bestI >= 0)
+                    return new Helpers.ObjectState { positionX = (short)((bestI % W) * 16 + 8), positionY = (short)((bestI / W) * 16 + 8) };
+            }
             return null;
         }
 
@@ -119,6 +261,7 @@ namespace InfServer.Script.GameType_Eol
                 new { veh = 457, a = start + step * 2.5,    radii = new[] { 208, 224, 192 } },   // MG
             };
             List<KeyValuePair<int, int>> taken = new List<KeyValuePair<int, int>>();
+            HashSet<int> area = HqIndoorArea(hq);   // (indoor base: every turret inside the building)
             foreach (var piece in plan)
             {
                 int bestX = 0, bestY = 0, bestScore = -1;
@@ -127,7 +270,7 @@ namespace InfServer.Script.GameType_Eol
                     {
                         int x = hq.positionX + (int)Math.Round(Math.Cos(piece.a + jitter) * rad);
                         int y = hq.positionY + (int)Math.Round(Math.Sin(piece.a + jitter) * rad);
-                        if (!AreaOpen(x, y, 24) || NearNewPlayerBuffer((short)x, (short)y))
+                        if (!AreaOpen(x, y, 24) || NearNewPlayerBuffer((short)x, (short)y) || !InArea(area, x, y, 24))
                             continue;
                         bool close = false; int sees = LineClear(x, y, hq.positionX, hq.positionY) ? 1 : 0;
                         foreach (KeyValuePair<int, int> t in taken)
@@ -205,6 +348,7 @@ namespace InfServer.Script.GameType_Eol
         {
             // tiers: footprint, spacing to the others (and the HQ), must see the HQ / a turret, farthest ring
             int[][] tiers = { new[] { 24, 80, 1, 260 }, new[] { 16, 64, 1, 320 }, new[] { 16, 56, 0, 380 }, new[] { 8, 40, 0, 460 } };
+            HashSet<int> area = HqIndoorArea(hq);   // (indoor base: inside the building)
             foreach (int[] t in tiers)
             {
                 int bestScore = int.MinValue; bx = by = 0;
@@ -213,7 +357,7 @@ namespace InfServer.Script.GameType_Eol
                     {
                         double a = k * Math.PI / 12 + rad * 0.01;
                         int x = hq.positionX + (int)Math.Round(Math.Cos(a) * rad), y = hq.positionY + (int)Math.Round(Math.Sin(a) * rad);
-                        if (!AreaOpen(x, y, t[0]) || NearNewPlayerBuffer((short)x, (short)y) || !InPlayArea((short)x, (short)y, 0))
+                        if (!AreaOpen(x, y, t[0]) || NearNewPlayerBuffer((short)x, (short)y) || !InPlayArea((short)x, (short)y, 0) || !InArea(area, x, y, t[0]))
                             continue;
                         if (!IsOpenConnectedGround((short)x, (short)y))
                             continue;   // (not boxed in behind walls)

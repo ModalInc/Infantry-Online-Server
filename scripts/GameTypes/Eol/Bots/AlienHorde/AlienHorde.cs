@@ -286,7 +286,7 @@ namespace InfServer.Script.GameType_Eol
                 // own pack's ship first (elite packs land their own - local 2026-11-14), then the main one
                 _cachedCrashShip = null;
                 if (_baseScript != null && _baseScript.IsSwarmTeam(_team))
-                    _cachedCrashShip = _baseScript.SwarmNest;   // the swarm defends its nest
+                    _cachedCrashShip = _baseScript.SwarmNestOf(_team);   // the swarm defends its nest
                 else if (_arena != null && _baseScript != null)
                 {
                     List<Vehicle> ships = _arena.getVehiclesInRange(_state.positionX, _state.positionY, 16000,

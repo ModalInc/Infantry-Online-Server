@@ -60,9 +60,15 @@ namespace InfServer.Script.GameType_Eol
             Log.write(TLog.Normal, "[Eol] no-bot-spawn buildings: {0} tiles", total);
         }
 
+        /// <summary>(2026-11-21, owner: "remove all bot friendly zones"; "there is a base right in F5 outside? it should be on the
+        /// flag") false = no building is closed to bots: bases go right at their flag (F5's is inside the 361,348 building).</summary>
+        public const bool NoBotSpawnBuildingsOn = false;
+
         /// <summary>True when this spot (raw coords) is inside a building no bot may spawn in.</summary>
         public bool InNoBotSpawnBuilding(int x, int y)
         {
+            if (!NoBotSpawnBuildingsOn)
+                return false;
             if (!_noSpawnBuilt)
                 BuildNoSpawnBuildings();
             if (_noSpawnTiles == null)

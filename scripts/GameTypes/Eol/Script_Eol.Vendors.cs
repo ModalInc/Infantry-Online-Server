@@ -26,6 +26,50 @@ namespace InfServer.Script.GameType_Eol
         const int VendorRespawnMs = 180000;          // 3 min after one is destroyed
         const int VendorPollMs = 5000;
         const int VendorSpotSearchRadius = 120;
+        /// <summary>Supply vendors in each open sector (2026-11-21, owner: 5 each, at random).</summary>
+        const int VendorsPerSector = 5;
+        /// <summary>Vendors of one sector stay at least this far apart (raw), relaxed if the sector has no room for it.</summary>
+        const int VendorMinSpacing = 1600;
+
+        /// <summary>A random spot in the sector: open outdoor ground (terrain 0, no wall 2 tiles round), apart from the
+        /// sector's other vendors.</summary>
+        bool PickRandomVendorSpot(string sector, out short x, out short y)
+        {
+            x = y = 0;
+            short minX, maxX, minY, maxY;
+            if (_eol == null || !_eol.TryGetSectorBounds(sector, out minX, out maxX, out minY, out maxY))
+                return false;
+            if (_rand == null)
+                _rand = new Random(Environment.TickCount);
+            for (int attempt = 0; attempt < 600; attempt++)
+            {
+                int spacing = attempt < 300 ? VendorMinSpacing : attempt < 450 ? VendorMinSpacing / 2 : 0;
+                int px = _rand.Next(minX, maxX + 1), py = _rand.Next(minY, maxY + 1);
+                if (!_eol.IsInSector(sector, px, py) || !VendorGroundClear(px, py))
+                    continue;
+                bool near = false;
+                foreach (KeyValuePair<string, VendorSlot> kv in _vendorSlots)
+                    if (kv.Key.StartsWith(sector + "#") && Math.Abs(kv.Value.X - px) < spacing && Math.Abs(kv.Value.Y - py) < spacing)
+                    { near = true; break; }
+                if (near)
+                    continue;
+                x = (short)px; y = (short)py;
+                return true;
+            }
+            return false;
+        }
+
+        bool VendorGroundClear(int x, int y)
+        {
+            for (int dy = -32; dy <= 32; dy += 16)
+                for (int dx = -32; dx <= 32; dx += 16)
+                {
+                    int ax = x + dx, ay = y + dy;
+                    if (ax < 0 || ay < 0 || _arena.getTile(ax, ay).Blocked || _arena.getTerrainID(ax, ay) != 0)
+                        return false;
+                }
+            return true;
+        }
 
         /// <summary>
         /// Supply vendor spots, in TILES (the zone owner's outdoor spots, 2026-11-15 - next to flags they stood indoors).
@@ -122,18 +166,31 @@ namespace InfServer.Script.GameType_Eol
             if (VehicleGone(_helmetTrader) && !IsVehicleDespawnQueued(_helmetTrader))
                 _helmetTrader = PlaceTraderVehicle(HelmetTraderVehId, HelmetTraderX, HelmetTraderY, peaceful, exact: true, yaw: HelmetTraderYaw);
 
-            // slots wanted: the zone owner's outdoor spots (VendorTiles) that lie in an open sector
+            // slots wanted: (2026-11-21, owner: "the ammo vendor spawns randomly around in each sector when active, lets do 5
+            // in each") VendorsPerSector random open outdoor spots in every open sector, picked when the sector opens and kept
+            // while it stays open (a sector change picks new ones). (VendorTiles, the old fixed spots, are no longer used.)
             HashSet<string> wanted = new HashSet<string>();
-            foreach (KeyValuePair<short, short> tile in VendorTiles)
-            {
-                short x = (short)(tile.Key * 16 + 8), y = (short)(tile.Value * 16 + 8);
-                if (!_eol.IsInAnyActiveSector(x, y))
-                    continue;
-                string key = tile.Key + "," + tile.Value;
-                wanted.Add(key);
-                if (!_vendorSlots.ContainsKey(key))
-                    _vendorSlots[key] = new VendorSlot { X = x, Y = y, Name = "tile " + key };
-            }
+            if (_eol._activeSectors != null)
+                foreach (string sector in _eol._activeSectors)
+                {
+                    if (string.IsNullOrEmpty(sector))
+                        continue;
+                    for (int i = 0; i < VendorsPerSector; i++)
+                    {
+                        string key = sector + "#" + i;
+                        VendorSlot have;
+                        if (_vendorSlots.TryGetValue(key, out have))
+                        {
+                            wanted.Add(key);
+                            continue;
+                        }
+                        short x, y;
+                        if (!PickRandomVendorSpot(sector, out x, out y))
+                            continue;   // (no room found this poll - tried again next poll)
+                        wanted.Add(key);
+                        _vendorSlots[key] = new VendorSlot { X = x, Y = y, Name = string.Format("{0} random {1} (tile {2},{3})", sector, i + 1, x / 16, y / 16) };
+                    }
+                }
 
             // sectors that closed: their vendors go (sector rotation usually took them already)
             List<string> stale = null;

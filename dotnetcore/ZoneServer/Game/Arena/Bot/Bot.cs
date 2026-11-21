@@ -1063,6 +1063,10 @@ namespace InfServer.Bots
         /// <summary>Script hook: item id this bot drops on death (0 = the vehicle's own DropItemId).</summary>
         public static Func<Bot, int> DeathDropResolver;
 
+        /// <summary>Script hook (2026-11-21): true = this death sends no killfeed line (e.g. only a bot's vehicle was lost and
+        /// its rider carries on on foot). The death graphic still plays.</summary>
+        public static Func<Bot, bool> SuppressKillfeed;
+
         int _extraArmorIgnore, _extraArmorPercent;
         /// <summary>Extra armour on every channel: damage ignored per hit (item damage units, 1000 = 1 HP).</summary>
         public int ExtraArmorIgnore
