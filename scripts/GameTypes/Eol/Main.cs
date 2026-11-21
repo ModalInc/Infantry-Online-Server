@@ -806,6 +806,11 @@ namespace InfServer.Script.GameType_Eol
             // Bot-only weapon swaps (local 2026-11-14): the Pirate PA (a particle accelerator - does nothing at the
             // close range bots fight at) -> Pirate AC, like the other Defenders carry
             InfServer.Bots.BotWeaponUtil.BotWeaponSubstitutes[1162] = 3057;
+            // (2026-11-21, owner: fix the pirate bots that shoot the cannons - stand still and commit like the human bots do with
+            // an MPAC) the pirates' autocannon and machine gun have no charge-up in the .itm, so they fired on the move: they
+            // plant, charge up, burst 1.5-2.5 s, then dodge - the engine's stand-still gun gate (the Pirate Flamer already has it)
+            InfServer.Bots.WeaponController.ForcedStationaryPrefireMs[3057] = 800;   // Pirate AC (as the Auto Cannon-Main, 80)
+            InfServer.Bots.WeaponController.ForcedStationaryPrefireMs[1430] = 400;   // Pirate MG
 
             botTeam1 = CreateAndRegisterBotTeam(botTeamName1);
             botTeam2 = CreateAndRegisterBotTeam(botTeamName2);
