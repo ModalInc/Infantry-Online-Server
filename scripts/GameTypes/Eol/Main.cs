@@ -180,6 +180,9 @@ namespace InfServer.Script.GameType_Eol
         public const double c_cashMultiplier = 1;
         public const double c_expMultiplier = 0.5;
         public const int c_percentOfVictim = 50;
+        /// <summary>(2026-11-21, owner: reduce the victim share of bounty from 50 to 25 %) the bounty a kill adds from the victim's bounty;
+        /// the kill rewards (cash / exp / points) still use c_percentOfVictim.</summary>
+        public const int c_percentOfVictimBounty = 25;
         public const int c_percentOfOwn = 3;
         public const int c_percentOfOwnIncrease = 5;
 
@@ -5667,7 +5670,8 @@ namespace InfServer.Script.GameType_Eol
             victim.DeathPoints += killerPoints;
 
             //Update his bounty
-            killer.Bounty += (int)Math.Round((killerBountyIncrease + victimBounty) * StandardCarrierBountyFactor(killer));
+            int victimBountyGain = Convert.ToInt32(((double)victim.Bounty / 100) * c_percentOfVictimBounty);   // (2026-11-21: 25 % of the victim's bounty)
+            killer.Bounty += (int)Math.Round((killerBountyIncrease + victimBountyGain) * StandardCarrierBountyFactor(killer));
 
             //Check for players in the share radius
             List<InfServer.Game.Player> sharedCash = victim._arena.getPlayersInRange(update.positionX, update.positionY, cfg.cash.shareRadius).ToList();
@@ -6508,7 +6512,8 @@ namespace InfServer.Script.GameType_Eol
             killerCash = addCash(killer, killerCash);
             killer.Experience += killerExp;
             killer.KillPoints += killerPoints;
-            killer.Bounty += (int)Math.Round((killerBountyIncrease + botBountyShare) * StandardCarrierBountyFactor(killer));
+            int botBountyGain = Convert.ToInt32(BotBountyOf(victim) / 100.0 * c_percentOfVictimBounty);   // (2026-11-21: 25 % of the bot's bounty)
+            killer.Bounty += (int)Math.Round((killerBountyIncrease + botBountyGain) * StandardCarrierBountyFactor(killer));
 
             //Inform the killer..
             string victimName = BotNameModule.GetDisplayName(victim);
