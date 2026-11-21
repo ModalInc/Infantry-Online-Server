@@ -83,9 +83,9 @@ namespace InfServer.Script.GameType_Eol
         // ---------- (2026-11-21, owner: "can we also get a vote back for sectors please. ?vote sector ... i.e ?vote sector A";
         // "have it hidden though so no one knows about it unless told") a HIDDEN player vote: no help text, no arena
         // announcement, a bare or wrong ?vote is ignored silently. Voters only hear back privately. 2 minutes from the
-        // first vote; most votes wins, a tie is up to chance; the change itself is the normal *sector countdown.
+        // first vote; most votes wins, a tie is up to chance; the change itself is the normal *sector countdown. One vote an hour.
         const int SectorVoteMs = 120000;
-        const int SectorVoteCooldownMs = 20 * 60 * 1000;
+        const int SectorVoteCooldownMs = 60 * 60 * 1000;   // (2026-11-21, owner: "make it so you can only vote every hour") from the end of the last vote, whatever it picked
         bool _sectorVoteRunning;
         int _sectorVoteEndsAt, _lastSectorVoteChange = int.MinValue / 2;
         readonly Dictionary<string, string> _sectorVotes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);   // alias -> a/b/c
@@ -111,7 +111,7 @@ namespace InfServer.Script.GameType_Eol
                 if (now - _lastSectorVoteChange < SectorVoteCooldownMs)
                 {
                     int min = (SectorVoteCooldownMs - (now - _lastSectorVoteChange)) / 60000 + 1;
-                    player.sendMessage(-1, "&Too soon after the last change - try again in " + min + " min.");
+                    player.sendMessage(-1, "&One vote an hour - the next in " + min + " min.");
                     return true;
                 }
                 _sectorVoteRunning = true;
@@ -143,8 +143,7 @@ namespace InfServer.Script.GameType_Eol
             List<string> voters = new List<string>(_sectorVotes.Keys);
             _sectorVotes.Clear();
             string err = StartSectorChange(win, "the vote");   // (the normal countdown message - no mention of a vote)
-            if (err == null)
-                _lastSectorVoteChange = now;
+            _lastSectorVoteChange = now;   // (the next vote in an hour, whatever this one picked)
             string note = "&Vote result (" + tally + "): Sector " + win.ToUpperInvariant() + (top.Count > 1 ? " (tie - chance picked)" : "")
                 + (err == null ? "." : " - " + err);
             foreach (InfServer.Game.Player p in _arena.Players)
