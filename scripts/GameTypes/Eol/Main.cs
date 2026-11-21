@@ -6046,7 +6046,20 @@ namespace InfServer.Script.GameType_Eol
                     continue;
                 if (!FlagAreaTouchesOpenSector(fs))
                     continue;   // (2026-11-19) its whole spawn area is in a closed sector: it waits until that opens
+                // (2026-11-22, owner: the Eol Roamer carry timer goes 60 -> 55 and resets) a flag that landed in the closed part
+                // of its box used to be hidden right away - and hiding one flag clears and resends every flag to every client,
+                // which restarts the drop timer of a carried flag every 5 s. Now: an open spot in the box is found first (none:
+                // not spawned at all), and if the engine's random spot is in a closed sector the flag is moved there - only that
+                // flag is sent, nothing is hidden.
+                short openX, openY;
+                if (!FindOpenSpotInFlagBox(fs, out openX, out openY))
+                    continue;
                 _arena.flagSpawn(fs);
+                if (fs.bActive && _eol != null && !_eol.IsInAnyActiveSector(fs.posX, fs.posY))
+                {
+                    fs.posX = openX; fs.posY = openY; fs.oldPosX = openX; fs.oldPosY = openY;
+                    Helpers.Object_Flags(_arena.Players, fs);
+                }
                 if (fs.bActive)
                     spawned++;
             }
