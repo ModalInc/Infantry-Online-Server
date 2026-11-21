@@ -47,6 +47,9 @@ namespace InfServer.Bots
         /// Who last hurt this bot (a Player, a Bot or a turret Computer) and when (local change 2026-11-13) - lets
         /// scripts react like players: retaliate, or protect a teammate who is taking damage.
         /// </summary>
+        /// <summary>(2026-11-22, owner: the shimmer board bot keeps turning its shimmer off - leave it on) true = this bot's
+        /// cloak / stealth / shimmer stays on: not hidden after it fires, not switched off at low energy.</summary>
+        public bool KeepCloakOn;
         public object LastHurtBy;
         public int LastHurtTick;
         public void NoteHurtBy(object who)
@@ -995,6 +998,8 @@ namespace InfServer.Bots
                 ItemInfo.UtilityItem u = AssetManager.Manager?.getItemByID(Loadout.GetItemId(i)) as ItemInfo.UtilityItem;
                 if (u == null || u.rechargeRate >= 0)
                     continue;
+                if (KeepCloakOn && (u.cloakDistance > 0 || u.stealthDistance > 0))
+                    continue;   // (stays on)
                 if (!on)
                 {
                     _energyItemWasOn[i] = Loadout.IsActive(i);

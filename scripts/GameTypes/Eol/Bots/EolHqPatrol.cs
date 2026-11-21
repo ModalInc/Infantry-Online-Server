@@ -69,6 +69,21 @@ namespace InfServer.Script.GameType_Eol
         public const int HomeLeashRaw = 1100;
         public const int HomeBackRaw = 700;
         public const int HomeInvestigateRaw = 950;
+        /// <summary>Hurt this recently: fight back instead of walking home.</summary>
+        public const int HurtCommitMs = 8000;
+        /// <summary>...but never further than this from the HQ (bot and attacker).</summary>
+        public const int HurtChaseMaxRaw = 2600;
+
+        static Helpers.ObjectState AttackerState(object who)
+        {
+            InfServer.Game.Player p = who as InfServer.Game.Player;
+            if (p != null)
+                return p.IsDead || p.IsSpectator ? null : p._state;
+            Vehicle v = who as Vehicle;
+            if (v != null)
+                return v.IsDead || v.bCondemned ? null : v._state;
+            return null;
+        }
 
         /// <summary>Leash with hysteresis: true while the bot must head home (set past HomeLeashRaw, cleared inside HomeBackRaw).</summary>
         public static bool UpdateHomeLeash(Bot bot, Vehicle hq, ref bool leashed)
@@ -76,6 +91,15 @@ namespace InfServer.Script.GameType_Eol
             if (bot?._state == null || hq?._state == null)
                 return leashed = false;
             double d = Helpers.distanceTo(bot._state, hq._state);
+            // (2026-11-22, owner: base bots go back and forth between defending and attacking whoever shoots them) a bot hurt
+            // in the last HurtCommitMs by someone still alive is not called home: it fights back (and turns round if it was
+            // walking home) - as long as it and the attacker are within HurtChaseMaxRaw of the HQ
+            if (bot.LastHurtTick != 0 && Environment.TickCount - bot.LastHurtTick < HurtCommitMs && d < HurtChaseMaxRaw)
+            {
+                Helpers.ObjectState at = AttackerState(bot.LastHurtBy);
+                if (at != null && Helpers.distanceTo(at, hq._state) < HurtChaseMaxRaw)
+                    return leashed = false;
+            }
             if (d > HomeLeashRaw) leashed = true;
             else if (d < HomeBackRaw) leashed = false;
             return leashed;

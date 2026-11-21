@@ -629,6 +629,8 @@ namespace InfServer.Script.GameType_Eol
 
         void ApplyVehicleSquadLoadout(Bots.Bot bot, int veh, bool sciOpsPack = false)
         {
+            if (bot != null && veh == VehShimmerboard)
+                bot.KeepCloakOn = true;   // (2026-11-22, owner: the shimmer board bot leaves its shimmer on)
             try
             {
                 int gun = veh == VehDropPack ? ItmDropPackBolt : ItmDeathboardSlash;
