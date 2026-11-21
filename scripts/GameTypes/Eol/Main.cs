@@ -182,7 +182,7 @@ namespace InfServer.Script.GameType_Eol
         public const int c_percentOfVictim = 50;
         /// <summary>(2026-11-21, owner: reduce the victim share of bounty from 50 to 25 %) the bounty a kill adds from the victim's bounty;
         /// the kill rewards (cash / exp / points) still use c_percentOfVictim.</summary>
-        public const int c_percentOfVictimBounty = 25;
+        public const int c_percentOfVictimBounty = 20;   // (2026-11-22, owner: 25 -> 20 %)
         public const int c_percentOfOwn = 3;
         public const int c_percentOfOwnIncrease = 5;
 
