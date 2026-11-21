@@ -117,11 +117,26 @@ namespace InfServer.Bots
 			}
 		}
 
+		/// <summary>
+		/// Script hook (2026-11-21): bot-only guns that must be fired standing still although their item has no charge-up
+		/// (item id -> charge-up in ms). They then plant and commit like the player heavy weapons (StationaryFireGate).
+		/// </summary>
+		public static readonly System.Collections.Generic.Dictionary<int, int> ForcedStationaryPrefireMs = new System.Collections.Generic.Dictionary<int, int>();
+
+		bool ForcedStationary(out int ms)
+		{
+			ms = 0;
+			return _primaryItem != null && ForcedStationaryPrefireMs.TryGetValue(_primaryItem.id, out ms);
+		}
+
 		/// <summary>Configured prefire delay converted from 10 ms ticks.</summary>
 		public int PrefireDelayMs
 		{
 			get
 			{
+				int forced;
+				if (ForcedStationary(out forced))
+					return forced;
 				if (_primaryItem is ItemInfo.Projectile projectile)
 					return Math.Max(0, projectile.prefireDelay * 10);
 				if (_primaryItem is ItemInfo.MultiUse multiUse)
@@ -133,7 +148,7 @@ namespace InfServer.Bots
 		/// <summary>Whether this weapon must be stationary for its prefire to succeed.</summary>
 		public bool RequiresStationaryFire
 		{
-			get { return MovementCancelsPrefire && PrefireDelayMs > 0; }
+			get { int forced; return ForcedStationary(out forced) || (MovementCancelsPrefire && PrefireDelayMs > 0); }
 		}
 
 		/// <summary>Movement lock used after committing a stationary shot.</summary>
