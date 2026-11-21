@@ -140,6 +140,37 @@ namespace InfServer.Script.GameType_Eol
             return n;
         }
 
+        /// <summary>(2026-11-22) A random spot in the flag's spawn box that is in an open sector, not blocked, on ground the flag
+        /// may sit on (its droppable terrains). False = none found (the box's open part is too small - don't spawn it).</summary>
+        bool FindOpenSpotInFlagBox(Arena.FlagState fs, out short x, out short y)
+        {
+            x = y = 0;
+            if (fs?.flag == null || _arena == null)
+                return false;
+            int lx = _arena._server._assets.Level.OffsetX * 16, ly = _arena._server._assets.Level.OffsetY * 16;
+            int cx = fs.flag.GeneralData.OffsetX - lx, cy = fs.flag.GeneralData.OffsetY - ly;
+            int hw = fs.flag.GeneralData.Width / 2, hh = fs.flag.GeneralData.Height / 2;
+            if (_eol == null || !_eol.MatchSectorPlayReady)
+            {   // (no sector layout yet: wherever the engine puts it)
+                x = (short)cx; y = (short)cy;
+                return true;
+            }
+            int maxX = _arena._levelWidth * 16 - 17, maxY = _arena._levelHeight * 16 - 17;
+            for (int i = 0; i < (hw == 0 && hh == 0 ? 1 : 300); i++)
+            {
+                int px = Math.Max(16, Math.Min(maxX, cx + (hw > 0 ? _arena._rand.Next(-hw, hw + 1) : 0)));
+                int py = Math.Max(16, Math.Min(maxY, cy + (hh > 0 ? _arena._rand.Next(-hh, hh + 1) : 0)));
+                if (!_eol.IsInAnyActiveSector((short)px, (short)py) || _arena.getTile(px, py).Blocked)
+                    continue;
+                int terr = _arena.getTerrainID(px, py);
+                if (terr < 0 || terr > 15 || fs.flag.FlagData.FlagDroppableTerrains[terr] != 1)
+                    continue;
+                x = (short)px; y = (short)py;
+                return true;
+            }
+            return false;
+        }
+
         /// <summary>Any part of the flag's spawn area (its centre or a corner) in an open sector.</summary>
         bool FlagAreaTouchesOpenSector(Arena.FlagState fs)
         {
