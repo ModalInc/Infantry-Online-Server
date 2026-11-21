@@ -87,7 +87,8 @@ namespace InfServer.Script.GameType_Eol
         const int SectorVoteMs = 120000;
         const int SectorVoteCooldownMs = 60 * 60 * 1000;   // (2026-11-21, owner: "make it so you can only vote every hour") from the end of the last vote, whatever it picked
         bool _sectorVoteRunning;
-        int _sectorVoteEndsAt, _lastSectorVoteChange = int.MinValue / 2;
+        int _sectorVoteEndsAt, _lastSectorVoteChange;
+        bool _hadSectorVote;   // (2026-11-21 fix: the old int.MinValue / 2 start overflowed against a large server TickCount - every vote was blocked with a huge wait)
         readonly Dictionary<string, string> _sectorVotes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);   // alias -> a/b/c
         static readonly string[] SectorVoteOptions = { "a", "b", "c" };
 
@@ -108,7 +109,7 @@ namespace InfServer.Script.GameType_Eol
                     player.sendMessage(-1, "&A sector change is already on its way.");
                     return true;
                 }
-                if (now - _lastSectorVoteChange < SectorVoteCooldownMs)
+                if (_hadSectorVote && unchecked(now - _lastSectorVoteChange) < SectorVoteCooldownMs)
                 {
                     int min = (SectorVoteCooldownMs - (now - _lastSectorVoteChange)) / 60000 + 1;
                     player.sendMessage(-1, "&One vote an hour - the next in " + min + " min.");
@@ -144,6 +145,7 @@ namespace InfServer.Script.GameType_Eol
             _sectorVotes.Clear();
             string err = StartSectorChange(win, "the vote");   // (the normal countdown message - no mention of a vote)
             _lastSectorVoteChange = now;   // (the next vote in an hour, whatever this one picked)
+            _hadSectorVote = true;
             string note = "&Vote result (" + tally + "): Sector " + win.ToUpperInvariant() + (top.Count > 1 ? " (tie - chance picked)" : "")
                 + (err == null ? "." : " - " + err);
             foreach (InfServer.Game.Player p in _arena.Players)
