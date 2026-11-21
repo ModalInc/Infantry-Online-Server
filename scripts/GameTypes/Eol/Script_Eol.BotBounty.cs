@@ -55,7 +55,7 @@ namespace InfServer.Script.GameType_Eol
             lock (_botBounty)
             {
                 int own = BotBountyOf(killer);
-                now = own + (int)Math.Round(own / 100.0 * c_percentOfOwnIncrease) + (int)Math.Round(Math.Max(0, victimBounty) / 100.0 * c_percentOfVictim);
+                now = own + (int)Math.Round(own / 100.0 * c_percentOfOwnIncrease) + (int)Math.Round(Math.Max(0, victimBounty) / 100.0 * c_percentOfVictimBounty);
                 _botBounty[killer] = now;
             }
             killer.DisplayBounty = now;   // shown next to its name (engine pose packets)
