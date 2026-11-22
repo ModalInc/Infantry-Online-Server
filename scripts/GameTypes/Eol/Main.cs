@@ -156,7 +156,7 @@ namespace InfServer.Script.GameType_Eol
         private bool _flagReward1MinNoticeDone;
         /// <summary>Successful 10-minute flag payouts since the last flag reset (reset after <see cref="FlagRewardsBeforeReset"/>).</summary>
         private int _flagRewardsSinceReset;
-        private const int FlagRewardsBeforeReset = 3;
+        private const int FlagRewardsBeforeReset = 1;   // (2026-11-22, owner: flags reset every reward - no holding them all the time; never the roamers) was 3
 
         //Flag Checks for roaming captains
         public List<Arena.FlagState> _flags;
@@ -5580,7 +5580,7 @@ namespace InfServer.Script.GameType_Eol
                 if (willResetFlags)
                 {
                     format = String.Format(
-                        "&Reward (Cash={0} Experience={1} Points={2}) [{3} flags, ×{4:0.##}] Flags reset. Next reward in {5} minutes.",
+                        "&Reward (Cash={0} Experience={1} Points={2}) [{3} flags, ×{4:0.##}] Flags reset (roamers stay). Next reward in {5} minutes.",
                         cashReward, expReward, pointReward, flagsOwned,
                         EolFlagRewardGlobalMult * holdMult, 10);
                 }
@@ -5614,8 +5614,9 @@ namespace InfServer.Script.GameType_Eol
                 _flagRewardsSinceReset++;
                 if (_flagRewardsSinceReset >= FlagRewardsBeforeReset)
                 {
-                    _arena.flagReset();
-                    _arena.flagSpawn();
+                    // (2026-11-22, owner) every flag but the Eol Roamers resets - one flag at a time, so a carried roamer's
+                    // drop timer is never restarted (the engine's flagReset clears every flag on every client)
+                    ResetFlagsExceptRoamers();
                     _flagRewardsSinceReset = 0;
                     Log.write(TLog.Normal, "[Eol] Flag periodic payout: {0} team(s) rewarded; flags reset after {1} rewards.", teamsPaid, FlagRewardsBeforeReset);
                 }
@@ -7840,6 +7841,14 @@ namespace InfServer.Script.GameType_Eol
         [Scripts.Event("Player.FlagAction")]
         public bool playerFlagAction(InfServer.Game.Player player, bool bPickup, bool bInPlace, LioInfo.Flag flag)
         {
+            // (2026-11-22, owner: carry more than 1 roamer - all of them in theory) the zone lets a player carry several flags
+            // (cfg CarryCount); any number of Eol Roamers, but still only one other flag (a Standard) at a time
+            if (bPickup && player != null && flag != null && !IsRoamerFlag(flag) && _arena?._flags != null)
+            {
+                foreach (Arena.FlagState fs in _arena._flags.Values)
+                    if (fs != null && fs.carrier == player && fs.flag != null && fs.flag != flag && !IsRoamerFlag(fs.flag))
+                        return false;
+            }
             return true;
         }
 

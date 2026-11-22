@@ -140,6 +140,48 @@ namespace InfServer.Script.GameType_Eol
             return n;
         }
 
+        /// <summary>(2026-11-22) An Eol Roamer flag (Alpha / Beta / Cappa / Delta, every sector's copy).</summary>
+        static bool IsRoamerFlag(LioInfo.Flag f)
+        {
+            string n = f == null ? null : f.GeneralData.Name;
+            return n != null && n.IndexOf("Roamer", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>(2026-11-22, owner: flags reset every reward, the roamers never) each flag that is not a roamer goes back to
+        /// no owner and respawns on an open spot of its box, sent on its own - the roamers and their carriers' drop timers are
+        /// left alone. A flag with no open spot (or that can't spawn now) stays where it is, unowned.</summary>
+        void ResetFlagsExceptRoamers()
+        {
+            if (_arena == null || _arena._flags == null)
+                return;
+            foreach (Arena.FlagState fs in new List<Arena.FlagState>(_arena._flags.Values))
+            {
+                if (fs == null || fs.flag == null || IsRoamerFlag(fs.flag))
+                    continue;
+                bool wasActive = fs.bActive;
+                fs.oldTeam = null;
+                fs.team = null;
+                fs.carrier = null;
+                fs.lastOperation = 0;
+                short openX, openY;
+                if (FindOpenSpotInFlagBox(fs, out openX, out openY))
+                {
+                    fs.bActive = false;
+                    _arena.flagSpawn(fs);
+                    if (fs.bActive && _eol != null && _eol.MatchSectorPlayReady && !_eol.IsInAnyActiveSector(fs.posX, fs.posY))
+                    {
+                        fs.posX = openX; fs.posY = openY; fs.oldPosX = openX; fs.oldPosY = openY;
+                        Helpers.Object_Flags(_arena.Players, fs);
+                    }
+                    if (fs.bActive || !wasActive)
+                        continue;
+                    fs.bActive = true;   // (couldn't spawn now: left where it was)
+                }
+                if (fs.bActive)
+                    Helpers.Object_Flags(_arena.Players, fs);
+            }
+        }
+
         /// <summary>(2026-11-22) A random spot in the flag's spawn box that is in an open sector, not blocked, on ground the flag
         /// may sit on (its droppable terrains). False = none found (the box's open part is too small - don't spawn it).</summary>
         bool FindOpenSpotInFlagBox(Arena.FlagState fs, out short x, out short y)
