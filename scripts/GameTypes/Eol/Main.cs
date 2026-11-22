@@ -156,6 +156,7 @@ namespace InfServer.Script.GameType_Eol
         private bool _flagReward1MinNoticeDone;
         /// <summary>Successful 10-minute flag payouts since the last flag reset (reset after <see cref="FlagRewardsBeforeReset"/>).</summary>
         private int _flagRewardsSinceReset;
+        private int _tickCrownDsPoll;   // (2026-11-22) last crown poll - the dropship double drain
         private const int FlagRewardsBeforeReset = 1;   // (2026-11-22, owner: flags reset every reward - no holding them all the time; never the roamers) was 3
 
         //Flag Checks for roaming captains
@@ -1564,8 +1565,15 @@ namespace InfServer.Script.GameType_Eol
             // Expire crowns on timer only — never use CTF `_victoryTeam` (that was wiping crowns
             // after a KOTH win announcement and then declaring "no winner").
             bool crownStateChanged = false;
+            // (2026-11-22, owner: a crown goes down twice as fast in the dropship - no sitting in the DS) each poll, a crowned
+            // player in the Pioneer dropship loses the time since the last poll a second time
+            int dsElapsed = _tickCrownDsPoll == 0 ? 0 : Math.Max(0, Math.Min(2000, now - _tickCrownDsPoll));
+            _tickCrownDsPoll = now;
             foreach (var p in _playerCrownStatus)
             {
+                if (dsElapsed > 0 && p.Value.crown && p.Key != null && !p.Key.IsDead && !p.Key.IsSpectator && _eol != null
+                    && _eol.IsInPioneerDropshipSafeZone(p.Key._state.positionX, p.Key._state.positionY))
+                    p.Value.expireTime -= dsElapsed;
                 if (p.Value.crown && now > p.Value.expireTime)
                 {
                     p.Value.crown = false;
