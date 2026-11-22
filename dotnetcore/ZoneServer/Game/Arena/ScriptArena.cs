@@ -1768,6 +1768,12 @@ namespace InfServer.Game
         }
         #endregion
 
+        /// <summary>(2026-11-22) Within an enemy's teleport disruptor (a player's, a bot's or a computer's anti-warp).</summary>
+        public bool isTeleportDisrupted(Player p)
+        {
+            return p != null && (checkBotAntiwarp(p) != null || checkVehAntiWarp(p) != null || p.checkAntiWarp() != null);
+        }
+
         #region handlePlayerWarp
         /// <summary>
         /// Triggered when a player attempts to use a warp item
@@ -2047,27 +2053,10 @@ namespace InfServer.Game
                             return;
                         }
 
-                        //Is target being AntiWarped?
-                        Bot targetAntiWarpBot = checkBotAntiwarp(target);
-                        if (targetAntiWarpBot != null)
+                        //Is target being AntiWarped? (2026-11-22, owner: a player under a teleport disruptor can't be summoned)
+                        if (isTeleportDisrupted(target))
                         {
-                            player.sendMessage(-1, "The specified player is being antiwarped by a " + targetAntiWarpBot._type.Name);
-                            return;
-                        }
-
-                        //By a computer vehicle?
-                        Computer targetAntiWarpVeh = checkVehAntiWarp(target);
-                        if (targetAntiWarpVeh != null)
-                        {
-                            player.sendMessage(-1, "The specified player is being antiwarped by a " + targetAntiWarpVeh._type.Name);
-                            return;
-                        }
-
-                        //How about a player?
-                        Player targetAntiWarp = target.checkAntiWarp();
-                        if (targetAntiWarp != null)
-                        {
-                            player.sendMessage(-1, String.Format("The specified player is being antiwarped by {0}", targetAntiWarp._alias));
+                            player.sendMessage(-1, "TD. Can't summon!");
                             return;
                         }
 
@@ -2077,16 +2066,22 @@ namespace InfServer.Game
 
                         if (item.areaEffectRadius > 0)
                         {
+                            bool tdSkipped = false;
                             foreach (Player p in getPlayersInRange(target._state.positionX, target._state.positionY, item.areaEffectRadius))
                             {
                                 //Is he dead, on the correct team, warpable or ignoring summons?
                                 if (!p.IsDead
                                     && target._team == p._team
                                     && p.ActiveVehicle._type.IsWarpable
-                                    && !p._summonIgnore.Contains(player._alias) 
+                                    && !p._summonIgnore.Contains(player._alias)
                                     && !p._summonIgnore.Contains("*"))
+                                {
+                                    if (p != player && isTeleportDisrupted(p)) { tdSkipped = true; continue; }
                                     p.warp(Helpers.ResetFlags.ResetNone, player._state, (short)item.accuracyRadius, -1, 0);
+                                }
                             }
+                            if (tdSkipped)
+                                player.sendMessage(-1, "TD. Can't summon!");
                         }
                         else
                             target.warp(Helpers.ResetFlags.ResetNone, player._state, (short)item.accuracyRadius, -1, 0);
@@ -2118,18 +2113,31 @@ namespace InfServer.Game
                             return;
                         }
 
+                        //(2026-11-22, owner) under a teleport disruptor: can't be summoned
+                        if (isTeleportDisrupted(target))
+                        {
+                            player.sendMessage(-1, "TD. Can't summon!");
+                            return;
+                        }
+
                         //Forward to our script
                         if (exists("Player.WarpItem") && !(bool)callsync("Player.WarpItem", false, player, item, targetPlayerID, posX, posY))
                             return;
 
                         if (item.areaEffectRadius > 0)
                         {
+                            bool tdSkipped = false;
                             foreach (Player p in getPlayersInRange(target._state.positionX, target._state.positionY, item.areaEffectRadius))
                             {
                                 //Is the player dead, warpable, or ignoring summons?
                                 if (!p.IsDead && p.ActiveVehicle._type.IsWarpable && !p._summonIgnore.Contains(player._alias) && !p._summonIgnore.Contains("*"))
+                                {
+                                    if (p != player && isTeleportDisrupted(p)) { tdSkipped = true; continue; }
                                     p.warp(Helpers.ResetFlags.ResetNone, player._state, (short)item.accuracyRadius, -1, 0);
+                                }
                             }
+                            if (tdSkipped)
+                                player.sendMessage(-1, "TD. Can't summon!");
                         }
                         else
                             target.warp(Helpers.ResetFlags.ResetNone, player._state, (short)item.accuracyRadius, -1, 0);
