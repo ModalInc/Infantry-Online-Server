@@ -37,6 +37,10 @@ namespace InfServer.Script.GameType_Eol
         public const int BountyHunterForceFieldItemId = 3164;
         /// <summary>Min ms between shield FX per bot (avoids reliable spam on multi-pellet weapons).</summary>
         public const int BountyHunterForceFieldCooldownMs = 180;
+        /// <summary>(2026-11-22, owner: the assassin is invincible and a dead body keeps appearing on him) off: anyone can hurt
+        /// and kill assassins. With it on, other players' hits were thrown away by the server after their own client had
+        /// already shown the kill, so the assassin looked dead, then reappeared.</summary>
+        public const bool AssassinHitShield = false;
 
         bool _bountyHunterWaveActive;
         readonly Dictionary<Team, int> _tickNextBountyHunterGruntSpawn = new Dictionary<Team, int>();
@@ -153,6 +157,8 @@ namespace InfServer.Script.GameType_Eol
         /// </summary>
         public bool TryRejectBountyHunterHit(Bot bot, InfServer.Game.Player attacker)
         {
+            if (!AssassinHitShield)
+                return false;
             if (bot == null || !IsBountyHunterBotTeam(bot._team))
                 return false;
             if (attacker == null)
