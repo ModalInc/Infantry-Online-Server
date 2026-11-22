@@ -65,6 +65,8 @@ namespace InfServer.Script.GameType_Eol
         public const int EolRewardScaleNormalCutoffExp = 100000;
         /// <summary>Global multiplier applied to periodic flag cash/exp/points after per-flag sum.</summary>
         public const int EolFlagRewardGlobalMult = 4;
+        /// <summary>(2026-11-22, owner: reduce all flag rewards by half - cash and xp) applied to the final flag cash and exp; points unchanged.</summary>
+        public const double EolFlagCashExpFactor = 0.5;
         /// <summary>Happy hour windows in US Eastern (hour inclusive start, exclusive end). ×<see cref="EolHappyHourRewardMult"/>.</summary>
         static readonly int[] EolHappyHourStartHoursEt = { 9, 11, 18 };
         static readonly int[] EolHappyHourEndHoursEt = { 10, 13, 19 };
@@ -5573,8 +5575,8 @@ namespace InfServer.Script.GameType_Eol
                 if (cashReward == 0 && expReward == 0 && pointReward == 0)
                     continue;
 
-                cashReward = ScaleEolFlagPeriodicReward(cashReward, flagsOwned);
-                expReward = ScaleEolFlagPeriodicReward(expReward, flagsOwned);
+                cashReward = (int)Math.Round(ScaleEolFlagPeriodicReward(cashReward, flagsOwned) * EolFlagCashExpFactor);
+                expReward = (int)Math.Round(ScaleEolFlagPeriodicReward(expReward, flagsOwned) * EolFlagCashExpFactor);
                 pointReward = ScaleEolFlagPeriodicReward(pointReward, flagsOwned);
 
                 teamsPaid++;
