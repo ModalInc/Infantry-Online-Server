@@ -55,6 +55,9 @@ namespace InfServer.Script.GameType_Eol
                     if (x < 32 || y < 32 || !HqLandingClear(x, y))
                         continue;
                     warp(player, new Helpers.ObjectState { positionX = (short)x, positionY = (short)y });
+                    // (2026-11-22, owner: a bought HQ Teleport was never used up - unlimited) the engine's warp code never takes
+                    // the charge from the server's inventory, so the next inventory sync gave it back: one is taken per teleport
+                    player.inventoryModify(HqTeleportItemId, -1);
                     return;
                 }
             player.sendMessage(-1, "&No open ground round your HQ to teleport to.");
