@@ -2025,6 +2025,7 @@ namespace InfServer.Script.GameType_Eol
             PollEngineerCharge(now); // squad Chief Engineers charge low-energy team mates (Script_Eol.EngineerOrders.cs)
             PollPackJumps(now);      // pack bots jump walls / jump away when hurt (Script_Eol.PackJumps.cs)
             PollMissingFlags(now);
+            PollLavaBots(now);       // (2026-11-22) bots standing in lava die (Script_Eol.LavaBots.cs)
             PollSectorVote(now);   // (2026-11-21) sector votes
             PollSpawnZoneDiag(now);   // (2026-11-21) eol-diag.log   // flags skipped while the zone was empty come up once players are in
             PollOffSectorFlags(now); // (2026-11-18) flags left lying in a closed sector lose their owner (Script_Eol.BotFlagClaim.cs)
