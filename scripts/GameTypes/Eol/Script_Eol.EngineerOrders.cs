@@ -155,7 +155,8 @@ namespace InfServer.Script.GameType_Eol
                 Computer comp = v as Computer;
                 if (comp == null || comp._team != player._team)
                     continue;
-                totalAmount++;
+                if (ScriptArena.CountsTowardTeamCap(comp))   // (2026-11-23) only turrets under the cap use it up
+                    totalAmount++;
                 if (comp._type.Name == newComp.Name)
                     totalType++;
             }
@@ -169,7 +170,14 @@ namespace InfServer.Script.GameType_Eol
                     densityType++;
             }
             if (newComp.MaxTypeByPlayerRegardlessOfTeam != -1 && playerTotal >= newComp.MaxTypeByPlayerRegardlessOfTeam)
-                return "you have the maximum allowed of this type";
+                return newComp.MaxTypeByPlayerRegardlessOfTeam == 0 ? "that turret can't be built" : "you have the maximum allowed of this type";
+            ScriptArena sa = _arena as ScriptArena;
+            string groupOwned = sa != null ? sa.OnePerPlayerGroupConflict(player._alias, vehinfo.Id) : null;
+            if (groupOwned != null)
+                return "you already have a " + groupOwned + " - only one of these per player";
+            string teamWhy = sa != null ? sa.TeamBuildConflict(player._team, vehinfo.Id) : null;
+            if (teamWhy != null)
+                return teamWhy;
             if (newComp.FrequencyMaxActive != -1 && totalAmount >= newComp.FrequencyMaxActive)
                 return "your team already has the maximum allowed computer vehicles";
             if (newComp.FrequencyMaxType != -1 && totalType >= newComp.FrequencyMaxType)
@@ -225,6 +233,7 @@ namespace InfServer.Script.GameType_Eol
             if (why != null)
             {
                 player.sendMessage(-1, "Squad: " + why + ".");
+                ScriptArena.SendComputerLimitHelp(player);
                 return;
             }
             Bot eng = null;
@@ -500,6 +509,7 @@ namespace InfServer.Script.GameType_Eol
             if (why != null)
             {
                 p.sendMessage(-1, "Squad: build stopped - " + why + ".");
+                ScriptArena.SendComputerLimitHelp(p);
                 _buildNext.Remove(p);
                 return false;
             }

@@ -18,10 +18,34 @@ namespace InfServer.Script.GameType_Eol
     /// </summary>
     public partial class Script_Eol
     {
-        /// <summary>Cell leader: Black Ops (local 2026-11-14 - assassins wear the dark player skins, was Captain Roamer).</summary>
+        /// <summary>Cell leader: Black Ops (local 2026-11-14 - assassins wear the dark player skins, was Captain Roamer).
+        /// (2026-11-23) now only the fallback - the leader is a random class too (AssassinClasses).</summary>
         public const int BountyHunterCaptainVehId = 150;
-        /// <summary>Operatives: Black Ops, Infiltrator, BioChem, NeuroTAC, DropTrooper (Black Ops twice = most common).</summary>
-        static readonly int[] AssassinOperativeClasses = { 150, 150, 14, 100, 112, 117 };
+        /// <summary>(2026-11-23, owner: "change their class to random classes instead of just blackops") leader and operatives
+        /// are drawn from the F11 fighting classes (as the squads' random places), no class twice in a cell while another is free.</summary>
+        static readonly int[] AssassinClasses =
+        {
+            ClsInfantry, ClsHeavy, ClsMarine, ClsJumpTrooper, ClsInfiltrator, ClsBioChem, ClsMPAC,
+            ClsNeuroTAC, ClsSciOps, ClsBlackOps, ClsDropTrooper,
+        };
+
+        /// <summary>A random assassin class not already alive on this cell (any, if all are taken).</summary>
+        int PickAssassinClass(Team team)
+        {
+            Random r = _rand ?? new Random();
+            HashSet<int> used = new HashSet<int>();
+            if (_arena != null && team != null)
+                foreach (Vehicle v in _arena.Vehicles)
+                    if (v is Bot && !v.IsDead && v._team == team && v._type != null)
+                        used.Add(v._type.Id);
+            List<int> free = new List<int>();
+            foreach (int c in AssassinClasses)
+                if (!used.Contains(c))
+                    free.Add(c);
+            if (free.Count == 0)
+                return AssassinClasses[r.Next(AssassinClasses.Length)];
+            return free[r.Next(free.Count)];
+        }
         /// <summary>No speed bonus: assassins move at their vehicle's own speeds (2026-11-15 - the +35% read as a strafe cheat).</summary>
         public const int AssassinAgilityBonusPercent = 0;
         /// <summary>Live assassins per cell (captain + operatives).</summary>
@@ -344,11 +368,9 @@ namespace InfServer.Script.GameType_Eol
             if (_rand == null)
                 _rand = new Random(Environment.TickCount);
 
-            // a new contract: any rogue survivors rejoin as assassins (shielded again, respawning)
+            // a new contract: any rogue survivors rejoin as assassins
+            // (2026-11-23: no corpse revive for assassins any more - see MakeAssassin; the cell is topped up instead)
             _assassinsReleased = false;
-            foreach (Vehicle v in _arena.Vehicles)
-                if (v is Bot rb && !rb.IsDead && IsAssassinTeam(rb._team))
-                    rb.bRespawn = true;
 
             if (IsBountyHunterMarkInField())
                 NoteBountyHunterMarkSighting(mark);
@@ -407,7 +429,12 @@ namespace InfServer.Script.GameType_Eol
                 ApplyHumanLoadout(b, b._type.Id, b._team);   // class weapons, SuperCharger, grenades, opener
             ApplyAssassinWeapons(b);
             b.AgilityBonusPercent = AssassinAgilityBonusPercent;
-            EnableBotDropshipRespawn(b, 0);
+            // (2026-11-23, owner: "there is dead bodies still spawning on the assassin team") no corpse revive for assassins:
+            // a revived assassin was warped to a new sector and re-shown, and clients drew a dead body there; and while
+            // it lay waiting it wasn't counted, so a replacement spawned and the cell grew past its size. Now a dead
+            // assassin leaves one body and is gone; the cell is topped up with a fresh one (new random class) after
+            // the respawn delay (NoteAssassinDeath).
+            b.bRespawn = false;
             if (_bots != null && !_bots.Contains(b))
                 _bots.Add(b);
         }
@@ -457,13 +484,29 @@ namespace InfServer.Script.GameType_Eol
             }
         }
 
+        /// <summary>(2026-11-23) An assassin died: its replacement comes after the cell's respawn delay, not at once.</summary>
+        void NoteAssassinDeath(Bot dead)
+        {
+            if (dead == null || dead._team == null || !IsBountyHunterBotTeam(dead._team))
+                return;
+            int now = Environment.TickCount;
+            if (dead is RoamingCaptain)
+                _tickNextBountyHunterCaptainSpawn[dead._team] = now + BountyHunterCaptainRespawnMs;
+            else if (dead is RoamingAttacker)
+            {
+                int due;
+                if (!_tickNextBountyHunterGruntSpawn.TryGetValue(dead._team, out due) || due - (now + BountyHunterGruntSpawnIntervalMs) < 0)
+                    _tickNextBountyHunterGruntSpawn[dead._team] = now + BountyHunterGruntSpawnIntervalMs;
+            }
+        }
+
         RoamingCaptain SpawnBountyHunterCaptainAt(Helpers.ObjectState spawn, int now, Team team)
         {
             if (spawn == null || team == null || _arena == null)
                 return null;
 
             RoamingCaptain captain = !CanSpawnBotOnTeam(team) ? null : _arena.newBot(
-                typeof(RoamingCaptain), (ushort)BountyHunterCaptainVehId, team, null, spawn, this) as RoamingCaptain;
+                typeof(RoamingCaptain), (ushort)PickAssassinClass(team), team, null, spawn, this) as RoamingCaptain;
             if (captain == null)
                 return null;
 
@@ -516,7 +559,7 @@ namespace InfServer.Script.GameType_Eol
                 return;
             }
 
-            int id = AssassinOperativeClasses[(_rand ?? new Random()).Next(AssassinOperativeClasses.Length)];
+            int id = PickAssassinClass(team);
 
             if (_bots == null)
                 _bots = new List<Bot>();

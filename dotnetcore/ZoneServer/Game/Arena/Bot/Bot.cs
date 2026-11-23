@@ -1013,6 +1013,25 @@ namespace InfServer.Bots
             }
         }
 
+        public override int FullHealth { get { return Math.Max(base.FullHealth, (int)_peakHealth); } }
+
+        public override bool EnergyBelowFull { get { return PlayerEnergy && _energy >= 0 && _energy < EnergyMaxNow(); } }
+
+        public override bool RestoreEnergy(int amount)
+        {
+            if (!PlayerEnergy || amount <= 0)
+                return false;
+            int max = EnergyMaxNow();
+            if (_energy < 0)
+                _energy = max;
+            if (_energy >= max)
+                return false;
+            _energy = Math.Min(max, _energy + amount);
+            if (_state != null)
+                _state.energy = (short)Math.Max(0, Math.Round(_energy));
+            return true;
+        }
+
         protected override double OnEnergyHit(double netDamage)
         {
             if (!PlayerEnergy || netDamage <= 0)
@@ -1034,9 +1053,14 @@ namespace InfServer.Bots
         /// One trigger finger (local 2026-11-14): the same weapon follows its own cooldown; a DIFFERENT weapon has
         /// to wait the last weapon's fireDelayOther, exactly like a player switching guns.
         /// </summary>
+        public bool IsFireStunned { get { return _tickAntiFire != 0 && Environment.TickCount - _tickAntiFire < 0; } }
+
         public bool CanFireWeaponNow(WeaponController w)
         {
             if (w == null)
+                return false;
+            // (2026-11-23) stunned: no firing on ANY path (the bot-vs-bot shot path never checked the stun)
+            if (IsFireStunned)
                 return false;
             if (_lastFiredItemId == 0 || w.ItemID == _lastFiredItemId)
                 return true;
@@ -1506,13 +1530,11 @@ namespace InfServer.Bots
 
                 //Allow our controller to update our vehicle state
                 byte yawBefore = _state.yaw;
+                // (2026-11-18 / 2026-11-23) stunned: crawl, can't turn - applied inside the move (real speed and turn),
+                // not only to the velocity sent to clients
+                _movement.StunThrustUntil = _tickAntiThrust;
+                _movement.StunRotateUntil = _tickAntiRotate;
                 _movement.updateState(delta);
-                // (2026-11-18, owner: "the stun from the medic should effect bots aswell") stunned: crawl, can't turn
-                if (_tickAntiThrust != 0 && tickCount - _tickAntiThrust < 0)
-                {
-                    _state.velocityX = (short)(_state.velocityX / 5);
-                    _state.velocityY = (short)(_state.velocityY / 5);
-                }
                 if (_tickAntiRotate != 0 && tickCount - _tickAntiRotate < 0)
                     _state.yaw = yawBefore;
 
@@ -1690,12 +1712,18 @@ namespace InfServer.Bots
         /// </summary>		
         public override void applyExplosion(Player attacker, int dmgX, int dmgY, ItemInfo.Projectile wep)
         {
+            // (2026-11-23) a teammate's healing round (Stim Dart, Gamma Heal rays...) heals the bot: the heal sits in the
+            // round's burst item (explodeItem, or the column Assets parses as projectileRadarMode)
+            if (attacker != null && wep != null && attacker._team == _team && TryHealFromRound(dmgX, dmgY, wep))
+                return;
             if (attacker != null)
                 NoteHurtBy(attacker);
             applyExplosionDamage(true, attacker, dmgX, dmgY, wep);
 
             if (IsDead || _movement == null || wep == null)
                 return;
+            if (BlastBlockedByWall(dmgX, dmgY))
+                return;   // (2026-11-23) no knockback through a wall either
 
             byte? blastYaw = attacker?._state != null ? attacker._state.yaw : (byte?)null;
             _movement.ApplyExplosionRecoil(dmgX, dmgY, wep, blastYaw);
@@ -1708,8 +1736,30 @@ namespace InfServer.Bots
         }
 
         /// <summary>
+        /// A friendly round whose burst item is a positive heal / recharge: heal this bot if the burst reached it.
+        /// Returns true when the round was a heal round (it then does no damage to a teammate).
+        /// </summary>
+        bool TryHealFromRound(int dmgX, int dmgY, ItemInfo.Projectile wep)
+        {
+            AssetManager am = AssetManager.Manager;
+            if (am == null)
+                return false;
+            ItemInfo.RepairItem fx = null;
+            if (wep.explodeItem > 0)
+                fx = am.getItemByID(wep.explodeItem) as ItemInfo.RepairItem;
+            if (fx == null && wep.projectileRadarMode > 0)
+                fx = am.getItemByID(wep.projectileRadarMode) as ItemInfo.RepairItem;
+            if (fx == null || fx.repairType == 1 || (fx.repairAmount <= 0 && fx.repairPercentage <= 0))
+                return false;
+            int reach = Math.Max(16, Math.Abs(fx.repairDistance)) + (_type != null ? _type.TriggerRadius : 0);
+            if (Helpers.distanceTo(dmgX, dmgY, _state.positionX, _state.positionY) <= reach)
+                healAsPlayer(fx);
+            return true;
+        }
+
+        /// <summary>
         /// Causes the zombie to cease movement for the specified period of time
-        /// </summary>		
+        /// </summary>
         public void freezeMovement(int duration)
         {
             _movement.freezeMovement(duration);
