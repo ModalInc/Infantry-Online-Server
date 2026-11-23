@@ -1527,11 +1527,49 @@ namespace InfServer.Game
             if (radius == 0)
                 warp(flags, energy, state.positionX, state.positionY, state.positionX, state.positionY, invulnTime);
             else
-            {	//Calculate coordinates
-                radius /= 2;
-                warp(flags, energy,
-                    (short)(state.positionX - radius), (short)(state.positionY - radius),
-                    (short)(state.positionX + radius), (short)(state.positionY + radius), invulnTime);
+            {
+                // (2026-11-23, owner: "any teleport / summoning done it should not be through any physics ... stand close to
+                // a red physics wall, summon and it goes into the building") the client picked any open spot in the box,
+                // also one behind a wall. Now the server picks the exact spot: open ground that a straight line from the
+                // anchor reaches without crossing any physics; none found = the anchor's own spot.
+                short x = state.positionX, y = state.positionY;
+                PickWarpSpotInReach(state.positionX, state.positionY, radius / 2, ref x, ref y);
+                warp(flags, energy, x, y, x, y, invulnTime);
+            }
+        }
+
+        static readonly Random _warpSpotRng = new Random();
+
+        /// <summary>
+        /// (2026-11-23) A random open spot within <paramref name="half"/> of (ax, ay) with no physics on the straight line
+        /// from the anchor (overhead roofs / bridges don't count). Leaves x / y at the anchor if none is found.
+        /// </summary>
+        void PickWarpSpotInReach(short ax, short ay, int half, ref short x, ref short y)
+        {
+            Arena arena = _arena;
+            LvlInfo level = arena?._server?._assets?.Level;
+            if (arena == null || level == null || half <= 0)
+                return;
+            int maxX = arena._levelWidth * 16 - 1, maxY = arena._levelHeight * 16 - 1;
+            if (ax < 0 || ay < 0 || ax > maxX || ay > maxY)
+                return;
+            Predicate<LvlInfo.Tile> open = delegate (LvlInfo.Tile t)
+            {
+                if (!t.Blocked)
+                    return true;
+                return level.PhysicsLow != null && t.Physics < level.PhysicsLow.Length && level.PhysicsLow[t.Physics] > 0;
+            };
+            for (int i = 0; i < 24; i++)
+            {
+                int tx = ax + _warpSpotRng.Next(-half, half + 1);
+                int ty = ay + _warpSpotRng.Next(-half, half + 1);
+                if (tx < 0 || ty < 0 || tx > maxX || ty > maxY)
+                    continue;
+                if (!Helpers.calcBresenhemsPredicate(arena, ax, ay, (short)tx, (short)ty, open))
+                    continue;
+                x = (short)tx;
+                y = (short)ty;
+                return;
             }
         }
 

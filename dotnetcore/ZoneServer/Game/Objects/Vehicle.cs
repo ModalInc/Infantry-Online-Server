@@ -271,6 +271,39 @@ namespace InfServer.Game
             }
         }
 
+        /// <summary>(2026-11-23) This vehicle's full health bar (bots: their spawn health can be above the class's).</summary>
+        public virtual int FullHealth { get { return _type != null ? _type.Hitpoints : 0; } }
+
+        /// <summary>(2026-11-23) Energy a recharge gives this vehicle (repairType 2); default none. Returns true if any was given.</summary>
+        public virtual bool RestoreEnergy(int amount) { return false; }
+
+        /// <summary>(2026-11-23) Is this vehicle's energy below full (bots with player-style energy)? Default: no.</summary>
+        public virtual bool EnergyBelowFull { get { return false; } }
+
+        /// <summary>
+        /// (2026-11-23, owner: "Healing does not work on bots ... same with the healing turret") heals a bot (or any
+        /// vehicle that is not a player) with a player heal item, the way the client heals a player: repairAmount plus
+        /// repairPercentage tenths of a percent of the full bar (Area Heal 100 = 10 %, Stim Pack M 150 = 15 %); recharge
+        /// items (repairType 2) give energy. Negative items (toxins) are skipped. Returns true if anything changed.
+        /// </summary>
+        public bool healAsPlayer(ItemInfo.RepairItem item)
+        {
+            if (item == null || IsDead || _state == null)
+                return false;
+            if (item.repairType == 2)
+                return item.repairAmount > 0 && RestoreEnergy(item.repairAmount);
+            int full = FullHealth;
+            if (full <= 0 || _state.health <= 0 || _state.health >= full)
+                return false;
+            double gain = Math.Max(0, item.repairAmount) + Math.Max(0, item.repairPercentage) / 1000.0 * full;
+            if (gain <= 0)
+                return false;
+            _state.health = (short)Math.Min(full, _state.health + Math.Max(1, (int)Math.Round(gain)));
+            if (this is Computer)
+                (this as Computer)._sendUpdate = true;
+            return true;
+        }
+
         /// <summary>
         /// Causes the vehicle to die
         /// </summary>
@@ -445,6 +478,12 @@ namespace InfServer.Game
                 }
             }
 
+            // (2026-11-23, owner: "all explosive / plasma damage etc should not do any damage through red physics ... people
+            // walling bots from the other side and milking xp") a wall between the blast and this vehicle stops it all
+            // (damage and stun)
+            if (BlastBlockedByWall(dmgX, dmgY))
+                return;
+
             //Find the radius at which we were closest to the blast
             double radius = getImpliedRadius(dmgX, dmgY, maxRadius + _type.TriggerRadius);
 
@@ -539,6 +578,40 @@ namespace InfServer.Game
                     kill(null, wep.id);
                 _state.health = 0;
             }
+        }
+
+        /// <summary>Physics at least this tall is a wall for blasts (orange 64, purple 124, red 496 on Pioneer Station;
+        /// green 16 / yellow 32 are low cover a blast goes over).</summary>
+        public static int BlastWallMinHeight = 33;
+
+        /// <summary>
+        /// (2026-11-23) Is there a ground wall between the blast point and this vehicle? The blast's own tile and the
+        /// vehicle's tile are not checked (a shell bursting against a wall reports a point on its face). Overhead
+        /// physics (roofs / bridges that don't start at the ground) doesn't count.
+        /// </summary>
+        public bool BlastBlockedByWall(int dmgX, int dmgY)
+        {
+            if (_arena == null || _state == null)
+                return false;
+            LvlInfo level = _arena._server?._assets?.Level;
+            if (level == null || level.PhysicsHigh == null || level.PhysicsLow == null)
+                return false;
+            if (dmgX < 0 || dmgY < 0 || dmgX / 16 >= _arena._levelWidth || dmgY / 16 >= _arena._levelHeight)
+                return false;
+            List<LvlInfo.Tile> tiles = Helpers.calcBresenhems(_arena, (short)dmgX, (short)dmgY, _state.positionX, _state.positionY);
+            if (tiles == null)
+                return false;
+            for (int i = 1; i < tiles.Count - 1; i++)
+            {
+                LvlInfo.Tile t = tiles[i];
+                if (!t.Blocked || t.Physics >= level.PhysicsHigh.Length || t.Physics >= level.PhysicsLow.Length)
+                    continue;
+                if (level.PhysicsLow[t.Physics] > 0)
+                    continue;   // overhead
+                if (level.PhysicsHigh[t.Physics] >= BlastWallMinHeight)
+                    return true;
+            }
+            return false;
         }
 
         /// <summary>

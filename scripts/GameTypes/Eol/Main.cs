@@ -738,6 +738,22 @@ namespace InfServer.Script.GameType_Eol
             if (_arena._bIsPublic)
                 _arena._bPersistent = true;
             _config = _arena._server._zoneConfig;
+            // (2026-11-23, owner: "1 maser OR 1 healer turret OR 1 energizer turret") one of these per player, in total
+            ScriptArena.OnePerPlayerComputerGroup = new HashSet<int> { 823, 822, 830 };   // Maser, Heal, Recharge
+            // (2026-11-23, owner: "autogun AT and Flak - need FCU 1 of ea per team ... on TOP of the current turret limit.
+            // they can only choose either AT or FLAK") one of Flak 412 / AT 413 per team, and the team needs a live FCU
+            ScriptArena.OnePerTeamComputerGroup = new HashSet<int> { 412, 413 };
+            HashSet<int> fcus = new HashSet<int> { 448, 420, 428 };   // FCU, FCU - Light Duty, FCU - Medium Duty
+            ScriptArena.ComputerNeedsTeamComputer = new Dictionary<int, HashSet<int>> { { 412, fcus }, { 413, fcus } };
+            // (2026-11-23, owner: on a turret limit, say what they CAN build) shown after every refused build
+            ScriptArena.ComputerLimitHelp = new string[]
+            {
+                "&Build limits - each player: 2 MG, 2 Plasma, 1 Rocket AP, 1 Sentry, 1 HQ (one base).",
+                "&Plus ONE of: Maser, Heal or Recharge turret.",
+                "&Each team: ONE Flak or ONE AT turret (needs an FCU), on top of the 10-turret team cap.",
+                "&Structures, 1 each: FCU, Factory, Field Converter, TerraFormer Titanium, TerraFormer Tsolvy.",
+                "&Walls, each team: 30 Tier 1, 30 Tier 2, 30 Tier 3.",
+            };
             _arena.setTicker(0, 2, 0, "");
             if (_arena.BotActionModule != null)
                 _arena.BotActionModule.SetObjectives(new EolObjectives(_arena, this));
@@ -6751,6 +6767,7 @@ namespace InfServer.Script.GameType_Eol
 
             if (dead != null)
             {
+                NoteAssassinDeath(dead);   // (2026-11-23) assassins don't revive - the replacement waits the respawn delay
                 // Deathmatch: after MaxDeaths kills, stop reviving and drop from the game.
                 if (dead.HasExhaustedDeaths)
                 {

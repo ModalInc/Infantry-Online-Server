@@ -104,6 +104,16 @@ namespace InfServer.Bots
 		public float AnalogRotate => _analogRotate;
 		/// <summary>True while a <see cref="freezeMovement"/> hold is in effect.</summary>
 		public bool IsMovementFrozen => _tickMovementFrozenUntil != 0 && _tickMovementFrozenUntil - Environment.TickCount > 0;
+
+		/// <summary>
+		/// (2026-11-23, owner: "the stunning on bots still does not impact them") stun ticks (0 = none), set by the bot
+		/// before each update: until StunThrustUntil the bot crawls at <see cref="StunSpeedShare"/> of its top speed,
+		/// until StunRotateUntil it can't turn. Done here, on the real velocity / direction - the old fix only cut the
+		/// velocity sent to clients after the move, so the bot still moved and turned at full speed.
+		/// </summary>
+		public int StunThrustUntil, StunRotateUntil;
+		public const double StunSpeedShare = 0.2;
+		bool StunActive(int until) { return until != 0 && until - Environment.TickCount > 0; }
 		// Member Functions
 		///////////////////////////////////////////////////
 		/// <summary>
@@ -237,8 +247,10 @@ namespace InfServer.Bots
             //Speeds for the terrain we're on (checked a few times a second)
             UpdateTerrainSpeeds();
 
-            //Apply our rotation
-            if (_useAnalogDrive)
+            //Apply our rotation (none while stunned)
+            if (StunActive(StunRotateUntil))
+            { }
+            else if (_useAnalogDrive)
             {
                 if (Math.Abs(_analogRotate) > AnalogDeadzone)
                 {
@@ -298,6 +310,9 @@ namespace InfServer.Bots
             //Clamp our resulting velocity
             if (_velocity.Length >= _rollTopSpeed / 1)
                 _velocity.Normalize(_rollTopSpeed / 1);
+            // stunned: crawl
+            if (StunActive(StunThrustUntil) && _velocity.Length > _rollTopSpeed * StunSpeedShare)
+                _velocity.Normalize(_rollTopSpeed * StunSpeedShare);
             // (never let a bad value through: Normalize of a zero vector gives NaN)
             if (double.IsNaN(_velocity.x) || double.IsNaN(_velocity.y) || double.IsInfinity(_velocity.x) || double.IsInfinity(_velocity.y))
             {

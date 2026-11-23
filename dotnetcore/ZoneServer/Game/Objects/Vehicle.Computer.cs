@@ -155,11 +155,16 @@ namespace InfServer.Game
                 double d = squaredDistanceTo(p);
                 if (d < bestD) { bestD = d; best = p; }
             }
-            if (!SupportIsEnergy)   // (bots have no energy to give - health only)
-                foreach (Vehicle v in _arena.getVehiclesInRange(_state.positionX, _state.positionY, range,
-                    v => v != null && v != this && v._bBotVehicle && !v.IsDead && !v.bCondemned))
+            // (2026-11-23) bots too, for heal AND recharge turrets (the recharge turret skipped bots: it fills a bot's
+            // player-style energy now)
+            foreach (Vehicle v in _arena.getVehiclesInRange(_state.positionX, _state.positionY, range,
+                v => v != null && v != this && v._bBotVehicle && !v.IsDead && !v.bCondemned))
                 {
-                    if (v._team == null || v._team != _team || v._state == null || !NeedsSupport(v._state, v._type) || !InRange(v))
+                    // (2026-11-23) a bot's full bar can be above its class's (100-HP bots in 75/80-HP classes): they read
+                    // as "not hurt" until below the class value and the heal stopped there
+                    if (v._team == null || v._team != _team || v._state == null || v._state.health <= 0 || !InRange(v))
+                        continue;
+                    if (SupportIsEnergy ? !v.EnergyBelowFull : v._state.health >= v.FullHealth)
                         continue;
                     if (!InTurretAngle(v._state.positionX, v._state.positionY) || (_type.ObeyLos != 0 && IsPositionOccluded(v._state.positionX, v._state.positionY)))
                         continue;
@@ -175,8 +180,13 @@ namespace InfServer.Game
                 _state.fireAngle = Helpers.computeLeadFireAngle(_state, at, Math.Max(1, (_primaryProjectile?.muzzleVelocity ?? 1000) / 1000));
             if (best != null)
                 best.heal(_supportItem, best, best._state.positionX, best._state.positionY);
-            else if (bestBot._inhabitant == null)   // (Vehicle.heal reads the healer for an occupied vehicle - bots have none)
-                bestBot.heal(null, _supportItem);
+            else
+            {
+                // (2026-11-23, owner: the healing turret must heal bots) the player heal amount (repairPercentage tenths of
+                // a percent of the full bar) - Vehicle.heal read Area Heal's 100 as "100 % of the CURRENT health", capped
+                // at the class bar
+                bestBot.healAsPlayer(_supportItem);
+            }
             return true;
         }
 

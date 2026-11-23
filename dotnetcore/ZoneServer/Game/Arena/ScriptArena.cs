@@ -2197,6 +2197,82 @@ namespace InfServer.Game
         /// <summary>
         /// Triggered when a player attempts to use a vehicle creator
         /// </summary>
+        /// <summary>
+        /// (2026-11-23) Computer vehicle ids of which a player may own only ONE in total (any one of them); empty = off.
+        /// A zone script sets it (Eol: Maser OR Heal OR Recharge turret).
+        /// </summary>
+        public static HashSet<int> OnePerPlayerComputerGroup = new HashSet<int>();
+
+        /// <summary>Null = may build; else the name of the group turret this player already has (live, not this type's
+        /// own per-player limit - another member of the group).</summary>
+        public string OnePerPlayerGroupConflict(string alias, int vehicleId)
+        {
+            if (alias == null || OnePerPlayerComputerGroup == null || !OnePerPlayerComputerGroup.Contains(vehicleId))
+                return null;
+            foreach (Vehicle v in Vehicles)
+                if (v is Computer && !v.IsDead && v._type != null && v._creator != null && v._creator._alias == alias
+                    && OnePerPlayerComputerGroup.Contains(v._type.Id))
+                    return v._type.Name;
+            return null;
+        }
+
+        /// <summary>(2026-11-23, owner: when someone hits a turret limit, tell them what they can build) lines sent after
+        /// every refused build; set by the zone script (empty = none).</summary>
+        public static string[] ComputerLimitHelp = new string[0];
+
+        public static void SendComputerLimitHelp(Player player)
+        {
+            if (player == null || ComputerLimitHelp == null)
+                return;
+            foreach (string line in ComputerLimitHelp)
+                if (!string.IsNullOrEmpty(line))
+                    player.sendMessage(0, line);
+        }
+
+        /// <summary>(2026-11-23) Computer vehicle ids of which a TEAM may have only one in total (Eol: Flak OR AT).</summary>
+        public static HashSet<int> OnePerTeamComputerGroup = new HashSet<int>();
+
+        /// <summary>(2026-11-23) Computer vehicle id -> computer ids the team must have one of (live) to build it
+        /// (Eol: Flak / AT need an FCU).</summary>
+        public static Dictionary<int, HashSet<int>> ComputerNeedsTeamComputer = new Dictionary<int, HashSet<int>>();
+
+        /// <summary>Null = the team may build this; else the reason it can't (team group / required computer).</summary>
+        public string TeamBuildConflict(Team team, int vehicleId)
+        {
+            if (team == null)
+                return null;
+            HashSet<int> needs;
+            if (ComputerNeedsTeamComputer != null && ComputerNeedsTeamComputer.TryGetValue(vehicleId, out needs) && needs != null && needs.Count > 0)
+            {
+                bool have = false;
+                string needName = null;
+                foreach (Vehicle v in Vehicles)
+                {
+                    if (!(v is Computer) || v.IsDead || v._type == null || !needs.Contains(v._type.Id))
+                        continue;
+                    if (v._team == team) { have = true; break; }
+                }
+                if (!have)
+                {
+                    foreach (int id in needs) { VehInfo vi = _server._assets.getVehicleByID(id); if (vi != null) { needName = vi.Name; break; } }
+                    return "your team needs a " + (needName ?? "control unit") + " first";
+                }
+            }
+            if (OnePerTeamComputerGroup != null && OnePerTeamComputerGroup.Contains(vehicleId))
+                foreach (Vehicle v in Vehicles)
+                    if (v is Computer && !v.IsDead && v._type != null && v._team == team && OnePerTeamComputerGroup.Contains(v._type.Id))
+                        return "your team already has a " + v._type.Name + " - only one of these per team";
+            return null;
+        }
+
+        /// <summary>(2026-11-23) Does this computer count toward the team's computer cap (FrequencyMaxActive)? Only types
+        /// that are under the cap themselves - structures, walls, Flak / AT (cap -1) no longer use up turret places.</summary>
+        public static bool CountsTowardTeamCap(Vehicle v)
+        {
+            VehInfo.Computer c = v?._type as VehInfo.Computer;
+            return c != null && c.FrequencyMaxActive != -1;
+        }
+
         public override void handlePlayerMakeVehicle(Player player, ItemInfo.VehicleMaker item, short posX, short posY)
         {	//What does he expect us to make?
             VehInfo vehinfo = _server._assets.getVehicleByID(item.vehicleID);
@@ -2238,7 +2314,8 @@ namespace InfServer.Game
                         {   //If the computer is on the same team as the one the player is trying to add increment the counter
                             if (comp._team == player._team)
                             {
-                                totalAmount++;
+                                if (CountsTowardTeamCap(comp))
+                                    totalAmount++;
                                 if (comp._type.Name == newComp.Name)
                                     totalType++;
                             }
@@ -2267,26 +2344,45 @@ namespace InfServer.Game
                 if (playerTotal >= newComp.MaxTypeByPlayerRegardlessOfTeam && newComp.MaxTypeByPlayerRegardlessOfTeam != -1)
                 {   //Exceeds the amount per player regardless of team.
                     player.sendMessage(-1, "You have the maximum allowed computer vehicles of this type");
+                    SendComputerLimitHelp(player);
+                    return;
+                }
+                string groupOwned = OnePerPlayerGroupConflict(player._alias, item.vehicleID);
+                if (groupOwned != null)
+                {
+                    player.sendMessage(-1, "You already have a " + groupOwned + " - only one of these per player.");
+                    SendComputerLimitHelp(player);
+                    return;
+                }
+                string teamWhy = TeamBuildConflict(player._team, item.vehicleID);
+                if (teamWhy != null)
+                {
+                    player.sendMessage(-1, char.ToUpper(teamWhy[0]) + teamWhy.Substring(1) + ".");
+                    SendComputerLimitHelp(player);
                     return;
                 }
                 if (totalAmount >= newComp.FrequencyMaxActive && newComp.FrequencyMaxActive != -1)
                 {   //Exceeds the total amount of computer vehicles for the team
                     player.sendMessage(-1, "Your team already has the maximum allowed computer vehicles");
+                    SendComputerLimitHelp(player);
                     return;
                 }
                 if (totalType >= newComp.FrequencyMaxType && newComp.FrequencyMaxType != -1)
                 {   //Exceeds the total amount of computer vehicles of this type for the team
                     player.sendMessage(-1, "Your team already has the maximum allowed computer vehicles of this type");
+                    SendComputerLimitHelp(player);
                     return;
                 }
                 if (densityAmount >= newComp.FrequencyDensityMaxActive && newComp.FrequencyDensityMaxActive != -1)
                 {   //Exceeds the total amount of computer vehicles for the team in the area
                     player.sendMessage(-1, "Your team already has the maximum allowed computer vehicles in the area");
+                    SendComputerLimitHelp(player);
                     return;
                 }
                 if (densityType >= newComp.FrequencyDensityMaxType && newComp.FrequencyDensityMaxType != -1)
                 {   //Exceeds the amount within the density radius for the specific type
                     player.sendMessage(-1, "Your team already has the maximum allowed computer vehicles of this type in the area");
+                    SendComputerLimitHelp(player);
                     return;
                 }
             }
@@ -2514,6 +2610,15 @@ namespace InfServer.Game
                                 Player target = _playersIngame.getObjByID(targetVehicle);
                                 if (target == null)
                                 {
+                                    // (2026-11-23) bots are on the client's player list under their vehicle id: heal the bot
+                                    Vehicle botTarget = _vehicles.getObjByID(targetVehicle);
+                                    if (botTarget != null && botTarget._bBotVehicle)
+                                    {
+                                        if (!botTarget.IsDead && botTarget._team == player._team
+                                            && Helpers.isInRange(item.repairDistance, botTarget._state, player._state))
+                                            botTarget.healAsPlayer(item);
+                                        return;
+                                    }
                                     Log.write(TLog.Warning, "Player {0} attempted to use a {1} to heal a non-existent player.", player._alias, item.name);
                                     return;
                                 }
@@ -2554,6 +2659,11 @@ namespace InfServer.Game
                                     //Heal!
                                     p.heal(item, player);
                                 }
+
+                                // (2026-11-23) and the friendly bots in the area
+                                foreach (Vehicle v in _vehicles.getObjsInRange(player._state.positionX, player._state.positionY, -item.repairDistance))
+                                    if (v != null && v._bBotVehicle && !v.IsDead && !v.bCondemned && v._team == player._team)
+                                        v.healAsPlayer(item);
                             }
                             else
                             {	//A self heal! Sure you can!
