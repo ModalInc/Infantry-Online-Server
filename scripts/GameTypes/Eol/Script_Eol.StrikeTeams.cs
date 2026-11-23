@@ -136,7 +136,7 @@ namespace InfServer.Script.GameType_Eol
         static readonly int[] SquadRandomClasses =
         {
             ClsInfantry, ClsHeavy, ClsMarine, ClsJumpTrooper, ClsInfiltrator, ClsBioChem, ClsMPAC,
-            ClsNeuroTAC, ClsSciOps, ClsBlackOps,   // (2026-11-17: no Conscripts, no Colonel / Partisan / Combat Tech - not on F11)
+            ClsNeuroTAC, ClsSciOps, ClsBlackOps, ClsDropTrooper,   // (2026-11-23 + Drop Trooper) (2026-11-17: no Conscripts, no Colonel / Partisan / Combat Tech - not on F11)
         };
 
         bool MemberHasRole(Bots.Bot b, int role)

@@ -30,7 +30,7 @@ namespace InfServer.Script.GameType_Eol
         readonly Dictionary<Team, int> _squadChangeNext = new Dictionary<Team, int>();
         readonly Dictionary<Team, int> _squadSwapLeft = new Dictionary<Team, int>();
 
-        const string SquadClassList = "Infantry, Heavy Weapons, Marine, Jump Trooper, Infiltrator, BioChem, MPAC, NeuroTAC, SciOps, BlackOps";
+        const string SquadClassList = "Infantry, Heavy Weapons, Marine, Jump Trooper, Drop Trooper, Infiltrator, BioChem Trooper, MPAC, NeuroTAC, SciOps, BlackOps";
 
         /// <summary>(owner: "make sure they type full name of class how it is in f11") the F11 names only - capitals and
         /// spaces don't matter ("Jump Trooper" = "jumptrooper"), no short forms.</summary>
@@ -39,21 +39,24 @@ namespace InfServer.Script.GameType_Eol
             { "jumptrooper", ClsJumpTrooper }, { "infantry", ClsInfantry }, { "heavyweapons", ClsHeavy }, { "marine", ClsMarine },
             { "infiltrator", ClsInfiltrator }, { "biochem", ClsBioChem }, { "mpac", ClsMPAC }, { "neurotac", ClsNeuroTAC },
             { "sciops", ClsSciOps }, { "blackops", ClsBlackOps },
+            // (2026-11-23, owner: "Drop Trooper can't be found when you change squad") Drop Trooper, and BioChem by its full F11 name
+            { "droptrooper", ClsDropTrooper }, { "biochemtrooper", ClsBioChem },
         };
         /// <summary>The core classes, so "change squad medic" gets a helpful answer.</summary>
         static readonly HashSet<string> SquadCoreNames = new HashSet<string>
-        { "combatmedic", "medic", "chiefengineer", "combatengineer", "engineer", "squadleader", "sergeant", "lieutenant", "captain", "commander" };
+        { "combatmedic", "medic", "fieldsurgeon", "chiefengineer", "combatengineer", "engineer", "squadleader", "sergeant", "lieutenant", "captain", "commander" };
 
         static string SquadClassDisplay(int cls)
         {
             switch (cls)
             {
                 case ClsJumpTrooper: return "Jump Trooper";
+                case ClsDropTrooper: return "Drop Trooper";
                 case ClsInfantry: return "Infantry";
                 case ClsHeavy: return "Heavy Weapons";
                 case ClsMarine: return "Marine";
                 case ClsInfiltrator: return "Infiltrator";
-                case ClsBioChem: return "BioChem";
+                case ClsBioChem: return "BioChem Trooper";
                 case ClsMPAC: return "MPAC";
                 case ClsNeuroTAC: return "NeuroTAC";
                 case ClsSciOps: return "SciOps";

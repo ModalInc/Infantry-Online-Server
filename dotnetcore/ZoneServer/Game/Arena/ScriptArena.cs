@@ -1232,6 +1232,81 @@ namespace InfServer.Game
         }
         #endregion
 
+        #region Player stun shots vs bots
+        /// <summary>Extra reach for a stun shot against a bot: the shooter sees the bot a little behind where it is.</summary>
+        public static int StunShotLagSlackPx = 32;
+
+        /// <summary>
+        /// (2026-11-23, owner: "i tried to zap glove a bot and they STILL did not get stunned ... make sure any stun weapons
+        /// make the bot get STUNNED, just like a real player") a stun only reached a bot through the shooter's explosion
+        /// report, and only if that point was inside the stun radius of the bot's SERVER position - Zap Glove 24 px,
+        /// Electro Stunner 20 px - which a strafing bot, seen slightly late by the shooter, is almost never. Now the server
+        /// traces every stun round a player fires (Zap Glove, Electro Stunner, Tranq, Stim Dart, a multi-use's stun
+        /// children): the first enemy bot on its path within its reach (no wall between) is stunned, and every enemy bot
+        /// within the stun radius of that hit. Only the stun - damage still comes from the explosion report as before.
+        /// </summary>
+        void ApplyPlayerStunShot(Player from, ItemInfo info, short x, short y, byte yaw)
+        {
+            if (from == null || info == null || _bots == null || _bots.Count == 0)
+                return;
+            List<ItemInfo.Projectile> rounds = new List<ItemInfo.Projectile>();
+            if (info is ItemInfo.Projectile p0)
+                rounds.Add(p0);
+            else if (info is ItemInfo.MultiUse mu && mu.childItems != null)
+                foreach (var c in mu.childItems)
+                    if (_server._assets.getItemByID(c.id) is ItemInfo.Projectile pc)
+                        rounds.Add(pc);
+            foreach (ItemInfo.Projectile p in rounds)
+                if (Vehicle.HasAntiEffects(p))
+                    TraceStunRound(from, p, x, y, yaw);
+        }
+
+        void TraceStunRound(Player from, ItemInfo.Projectile p, short x, short y, byte yaw)
+        {
+            // world units: map y / 0.7 (the game's y is squashed), velocity in px per 10 ms tick
+            double r = yaw * 1.5 * Math.PI / 180.0;
+            double dx = Math.Sin(r), dy = -Math.Cos(r);
+            double speed = Math.Max(0.1, p.muzzleVelocity / 1000.0);
+            int alive = Math.Abs(p.aliveTime);
+            double range = Math.Min(1200.0, speed * (alive > 0 ? alive : 100)) + p.proximityRadius;
+            double sx = x, sy = y / 0.7;
+
+            Bot first = null;
+            double firstT = double.MaxValue;
+            foreach (Bot b in _bots)
+            {
+                if (b == null || b.IsDead || b.bCondemned || b._state == null || b._team == from._team || b.IsDamageImmune)
+                    continue;
+                double bx = b._state.positionX - sx, by = b._state.positionY / 0.7 - sy;
+                double t = bx * dx + by * dy;   // along the shot
+                if (t < -8 || t > range + StunShotLagSlackPx)
+                    continue;
+                double perp = Math.Abs(bx * dy - by * dx);
+                int body = b._type != null ? b._type.TriggerRadius : 12;
+                if (perp > p.proximityRadius + Math.Max(p.antiEffectsRadius / 2, 4) + body + StunShotLagSlackPx)
+                    continue;
+                if (t < firstT) { firstT = t; first = b; }
+            }
+            if (first == null)
+                return;
+            if (first.BlastBlockedByWall(x, y))
+                return;   // a wall between the shooter and the bot stops the round
+
+            first.ApplyAntiEffects(p);
+            if (p.antiEffectsRadius > 0)
+                foreach (Bot b in _bots)
+                {
+                    if (b == null || b == first || b.IsDead || b.bCondemned || b._state == null || b._team == from._team || b.IsDamageImmune)
+                        continue;
+                    int body = b._type != null ? b._type.TriggerRadius : 12;
+                    double d = Math.Sqrt(Math.Pow(b._state.positionX - first._state.positionX, 2)
+                        + Math.Pow((b._state.positionY - first._state.positionY) / 0.7, 2));
+                    if (d <= p.antiEffectsRadius + body)
+                        b.ApplyAntiEffects(p);
+                }
+        }
+        #endregion
+
         #region handlePlayerUpdate
         /// <summary>
         /// Triggered when a player has sent an update packet
@@ -1314,7 +1389,10 @@ namespace InfServer.Game
                         update.itemID = 0;
 
                 if (update.itemID != 0)
+                {
                     NoteProjectileFired(from._team, from, update.positionX, update.positionY, update.yaw, update.itemID);
+                    ApplyPlayerStunShot(from, info, update.positionX, update.positionY, update.yaw);
+                }
 
                 //Update last movement with firing, don't want to spec people in stationary turrets;
                 from._lastMovement = now;

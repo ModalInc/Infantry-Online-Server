@@ -540,24 +540,9 @@ namespace InfServer.Game
                 netDamage += OnEnergyHit(ApplyArmorChannel(grossDamage, _type.Armors[5], 5));
             }
 
-            //anti effects
-            if (radius <= wep.antiEffectsRadius)
-            {
-                if (wep.antiEffectsFire > 0)
-                {
-                    _tickAntiFire = Environment.TickCount + (wep.antiEffectsFire * 10);
-                }
-                if (wep.antiEffectsRecharge > 0)
-                {
-                    _tickAntiRecharge = Environment.TickCount + (wep.antiEffectsRecharge * 10);
-                }
-                if (wep.antiEffectsRotate > 0)
-                {
-                    _tickAntiRotate = Environment.TickCount + (wep.antiEffectsRotate * 10);
-                }
-                if (wep.antiEffectsThrust > 0)
-                    _tickAntiThrust = Environment.TickCount + (wep.antiEffectsThrust * 10);
-            }
+            //anti effects (2026-11-23: a player-reported blast gets the lag allowance - the shooter sees the bot late)
+            if (radius <= wep.antiEffectsRadius + (attacker != null && _bBotVehicle ? 16 : 0))
+                ApplyAntiEffects(wep);
 
             //Apply the damage
             if (netDamage > 0)
@@ -578,6 +563,31 @@ namespace InfServer.Game
                     kill(null, wep.id);
                 _state.health = 0;
             }
+        }
+
+        /// <summary>(2026-11-23) Does this round stun (any anti effect)?</summary>
+        public static bool HasAntiEffects(ItemInfo.Projectile wep)
+        {
+            return wep != null && (wep.antiEffectsFire > 0 || wep.antiEffectsRecharge > 0 || wep.antiEffectsRotate > 0 || wep.antiEffectsThrust > 0);
+        }
+
+        /// <summary>(2026-11-23) The round's stun on this vehicle, as a player gets it: no firing / no recharge / no turning /
+        /// crawling for the listed times (10 ms units). A longer stun already running is kept.</summary>
+        public void ApplyAntiEffects(ItemInfo.Projectile wep)
+        {
+            if (!HasAntiEffects(wep) || IsDamageImmune)
+                return;
+            int now = Environment.TickCount;
+            if (wep.antiEffectsFire > 0) _tickAntiFire = Later(_tickAntiFire, now + wep.antiEffectsFire * 10, now);
+            if (wep.antiEffectsRecharge > 0) _tickAntiRecharge = Later(_tickAntiRecharge, now + wep.antiEffectsRecharge * 10, now);
+            if (wep.antiEffectsRotate > 0) _tickAntiRotate = Later(_tickAntiRotate, now + wep.antiEffectsRotate * 10, now);
+            if (wep.antiEffectsThrust > 0) _tickAntiThrust = Later(_tickAntiThrust, now + wep.antiEffectsThrust * 10, now);
+        }
+
+        static int Later(int current, int candidate, int now)
+        {
+            int c = candidate == 0 ? 1 : candidate;
+            return (current != 0 && current - now > 0 && current - c > 0) ? current : c;
         }
 
         /// <summary>Physics at least this tall is a wall for blasts (orange 64, purple 124, red 496 on Pioneer Station;
@@ -631,14 +641,7 @@ namespace InfServer.Game
             // (2026-11-18, owner: "the stun from the medic should effect bots aswell") a bot's direct hit carries the
             // round's anti effects (stunner: no fire / no turning / crawl) like a player's
             // (2026-11-22, owner: stuns must work for everyone) any stun on the round - not only ones with a stun radius
-            if (wep.antiEffectsRadius > 0 || wep.antiEffectsFire > 0 || wep.antiEffectsRecharge > 0 || wep.antiEffectsRotate > 0 || wep.antiEffectsThrust > 0)
-            {
-                int tnow = Environment.TickCount;
-                if (wep.antiEffectsFire > 0) _tickAntiFire = tnow + wep.antiEffectsFire * 10;
-                if (wep.antiEffectsRecharge > 0) _tickAntiRecharge = tnow + wep.antiEffectsRecharge * 10;
-                if (wep.antiEffectsRotate > 0) _tickAntiRotate = tnow + wep.antiEffectsRotate * 10;
-                if (wep.antiEffectsThrust > 0) _tickAntiThrust = tnow + wep.antiEffectsThrust * 10;
-            }
+            ApplyAntiEffects(wep);
             double net = 0;
             net += BotHitChannel(wep.kineticDamageInner, wep.kineticDamageOuter, wep.kineticDamageRadius, f, 0);
             net += BotHitChannel(wep.explosiveDamageInner, wep.explosiveDamageOuter, wep.explosiveDamageRadius, f, 1);
