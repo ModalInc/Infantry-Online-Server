@@ -60,6 +60,18 @@ namespace InfServer.Script.GameType_Eol
         bool IsOfficerClass(int cls) { return cls == ClsCaptain || cls == ClsColonel || cls == ClsLieutenant; }
         bool IsNcoOrOfficerClass(int cls) { return IsOfficerClass(cls) || cls == ClsSergeant || cls == ClsSquadLeader; }
 
+        /// <summary>(2026-11-23) Artificed / Reformulated armour, by name: their gate moved from experience (@700000 / @350000)
+        /// to Power (-18010 / -18006, owner), so the old logic text no longer finds them.</summary>
+        static bool IsArtificedArmour(ItemInfo it)
+        {
+            return it != null && ((it.name ?? "").IndexOf("Artificed", StringComparison.OrdinalIgnoreCase) >= 0 || (it.skillLogic ?? "").Contains("@700000"));
+        }
+
+        static bool IsReformulatedArmour(ItemInfo it)
+        {
+            return it != null && ((it.name ?? "").IndexOf("Reformulated", StringComparison.OrdinalIgnoreCase) >= 0 || (it.skillLogic ?? "").Contains("@350000"));
+        }
+
         /// <summary>Utility items of one category this class may wear. Exp-gated pieces (@) only for the right ranks, at a chance.</summary>
         List<int> ClassArmourChoices(int cls, string category)
         {
@@ -77,8 +89,8 @@ namespace InfServer.Script.GameType_Eol
                 if (u == null || ArmourNeverForBots.Contains(u.id) || !string.Equals((u.category ?? "").Trim('"', ' '), category, StringComparison.OrdinalIgnoreCase))
                     continue;
                 string logic = u.skillLogic ?? "";
-                if (logic.Contains("@700000") && !artificedRoll) continue;   // artificed: officers, sometimes
-                if (logic.Contains("@350000") && !reformRoll) continue;      // reformulated: sergeants and up, sometimes
+                if (IsArtificedArmour(u) && !artificedRoll) continue;     // artificed: officers, sometimes
+                if (IsReformulatedArmour(u) && !reformRoll) continue;     // reformulated: sergeants and up, sometimes
                 if (!ClassMayUse(logic, veh.ClassId, skills))
                     continue;
                 ok.Add(u.id);
@@ -86,7 +98,7 @@ namespace InfServer.Script.GameType_Eol
             // an officer who rolled artificed wears one if the class can
             if (artificedRoll && category == "Armor-Hard")
             {
-                List<int> art = ok.FindAll(id => (Itm(id)?.skillLogic ?? "").Contains("@700000"));
+                List<int> art = ok.FindAll(id => IsArtificedArmour(Itm(id)));
                 if (art.Count > 0) return art;
             }
             return ok;
@@ -153,7 +165,7 @@ namespace InfServer.Script.GameType_Eol
                     foreach (string c in BodyArmourCategories) bodies.AddRange(ClassArmourChoices(cls, c));
                     if (IsOfficerClass(cls))
                     {   // (keep the artificed pick if it rolled one)
-                        List<int> art = bodies.FindAll(id => (Itm(id)?.skillLogic ?? "").Contains("@700000"));
+                        List<int> art = bodies.FindAll(id => IsArtificedArmour(Itm(id)));
                         if (art.Count > 0) bodies = art;
                     }
                     body = PickOne(bodies);

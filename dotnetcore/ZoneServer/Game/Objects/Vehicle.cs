@@ -541,7 +541,8 @@ namespace InfServer.Game
             }
 
             //anti effects (2026-11-23: a player-reported blast gets the lag allowance - the shooter sees the bot late)
-            if (radius <= wep.antiEffectsRadius + (attacker != null && _bBotVehicle ? 16 : 0))
+            // (a player's round on a bot: the arena stuns only the bot it hit - ScriptArena.StunFromHitReport)
+            if (radius <= wep.antiEffectsRadius && !(attacker != null && _bBotVehicle))
                 ApplyAntiEffects(wep);
 
             //Apply the damage

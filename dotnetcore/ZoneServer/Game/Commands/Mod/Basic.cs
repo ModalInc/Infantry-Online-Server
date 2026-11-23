@@ -353,6 +353,9 @@ namespace InfServer.Game.Commands.Mod
                 level = (int)player.PermissionLevelLocal;
             else
                 level = (int)player.PermissionLevel;
+            // (2026-11-23) a local stand-alone server: *auth gives a temporary mod level - count it
+            if (player._server.IsStandalone)
+                level = Math.Max(level, (int)player.PermissionLevelLocal);
 
             if (player._arena._name.StartsWith("Arena", StringComparison.OrdinalIgnoreCase) && level < (int)Data.PlayerPermission.Level2)
             {
@@ -398,6 +401,9 @@ namespace InfServer.Game.Commands.Mod
                 level = (int)player.PermissionLevelLocal;
             else
                 level = (int)player.PermissionLevel;
+            // (2026-11-23) a local stand-alone server: *auth gives a temporary mod level - count it
+            if (player._server.IsStandalone)
+                level = Math.Max(level, (int)player.PermissionLevelLocal);
 
             if (player._arena._name.StartsWith("Arena", StringComparison.OrdinalIgnoreCase) && level < (int)Data.PlayerPermission.Level2)
             {
