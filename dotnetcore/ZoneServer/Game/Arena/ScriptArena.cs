@@ -1215,6 +1215,21 @@ namespace InfServer.Game
                 return;
             }
 
+            if (StunDebugLog && Vehicle.HasAntiEffects(usedWep))
+            {
+                string near = "none"; double nd = double.MaxValue;
+                foreach (Bot b in _bots)
+                {
+                    if (b == null || b.IsDead || b._state == null) continue;
+                    double d = Math.Sqrt(Math.Pow(b._state.positionX - update.positionX, 2) + Math.Pow(b._state.positionY - update.positionY, 2));
+                    if (d < nd) { nd = d; near = b._alias + " d=" + d.ToString("0"); }
+                }
+                Log.write(TLog.Normal, "[stun] {0} explosion report {1} (#{2}) at {3},{4}; nearest bot {5}; stun radius {6}", from._alias, usedWep.name, usedWep.id, update.positionX, update.positionY, near, usedWep.antiEffectsRadius);
+            }
+
+            if (Vehicle.HasAntiEffects(usedWep))
+                StunFromHitReport(from, usedWep, update.positionX, update.positionY);
+
             //Forward to our script
             if (!exists("Player.Explosion") || (bool)callsync("Player.Explosion", false, from, usedWep, update.positionX, update.positionY, update.positionZ))
             {	                //Find the largest blast radius of damage types of this weapon
@@ -1233,78 +1248,84 @@ namespace InfServer.Game
         #endregion
 
         #region Player stun shots vs bots
-        /// <summary>Extra reach for a stun shot against a bot: the shooter sees the bot a little behind where it is.</summary>
-        public static int StunShotLagSlackPx = 32;
+        /// <summary>(2026-11-23) Stun diagnostics: log every traced stun round (server log, "[stun]"); chat to the shooter too
+        /// when <see cref="StunDebugChat"/> (mod command *stundebug).</summary>
+        public static bool StunDebugLog = false, StunDebugChat = false;   // (diagnostics for local tests - off live)
 
-        /// <summary>
-        /// (2026-11-23, owner: "i tried to zap glove a bot and they STILL did not get stunned ... make sure any stun weapons
-        /// make the bot get STUNNED, just like a real player") a stun only reached a bot through the shooter's explosion
-        /// report, and only if that point was inside the stun radius of the bot's SERVER position - Zap Glove 24 px,
-        /// Electro Stunner 20 px - which a strafing bot, seen slightly late by the shooter, is almost never. Now the server
-        /// traces every stun round a player fires (Zap Glove, Electro Stunner, Tranq, Stim Dart, a multi-use's stun
-        /// children): the first enemy bot on its path within its reach (no wall between) is stunned, and every enemy bot
-        /// within the stun radius of that hit. Only the stun - damage still comes from the explosion report as before.
-        /// </summary>
-        void ApplyPlayerStunShot(Player from, ItemInfo info, short x, short y, byte yaw)
+        /// <summary>Does this round's stun reach that bot? The weapon's own team rule, as for a blast (Vehicle.applyExplosionDamage):
+        /// damage mode 2 = enemies only, 3 / 4 = own team only, anything else = everyone (Zap Glove / Electro Stunner are 5).</summary>
+        static bool StunReaches(ItemInfo.Projectile p, Player from, Bot b)
         {
-            if (from == null || info == null || _bots == null || _bots.Count == 0)
-                return;
-            List<ItemInfo.Projectile> rounds = new List<ItemInfo.Projectile>();
-            if (info is ItemInfo.Projectile p0)
-                rounds.Add(p0);
-            else if (info is ItemInfo.MultiUse mu && mu.childItems != null)
-                foreach (var c in mu.childItems)
-                    if (_server._assets.getItemByID(c.id) is ItemInfo.Projectile pc)
-                        rounds.Add(pc);
-            foreach (ItemInfo.Projectile p in rounds)
-                if (Vehicle.HasAntiEffects(p))
-                    TraceStunRound(from, p, x, y, yaw);
+            switch (p.damageMode)
+            {
+                case 2: return b._team != from._team;
+                case 3:
+                case 4: return b._team == from._team;
+                default: return true;
+            }
         }
 
-        void TraceStunRound(Player from, ItemInfo.Projectile p, short x, short y, byte yaw)
+        static void StunDiag(Player to, string msg)
         {
-            // world units: map y / 0.7 (the game's y is squashed), velocity in px per 10 ms tick
-            double r = yaw * 1.5 * Math.PI / 180.0;
-            double dx = Math.Sin(r), dy = -Math.Cos(r);
-            double speed = Math.Max(0.1, p.muzzleVelocity / 1000.0);
-            int alive = Math.Abs(p.aliveTime);
-            double range = Math.Min(1200.0, speed * (alive > 0 ? alive : 100)) + p.proximityRadius;
-            double sx = x, sy = y / 0.7;
+            if (StunDebugLog)
+                Log.write(TLog.Normal, "[stun] " + msg);
+            if (StunDebugChat && to != null)
+                to.sendMessage(0, "[stun] " + msg);
+        }
 
-            Bot first = null;
-            double firstT = double.MaxValue;
+        /// <summary>Lag allowance for a player's hit on a bot: the shooter's game shows the bot a little late.</summary>
+        public static int HitReportLagSlackPx = 24;
+
+        /// <summary>
+        /// (2026-11-23, owner: "the stunner is doing an AOE stun when it should only stun the person it hits. if someone is
+        /// stacked then it should stun others but it has to HIT the person just like a real player") the stun lands on the
+        /// bot the round HIT - the bot at the shooter's reported burst point (its stun radius + body + lag allowance) - and
+        /// on bots stacked within the stun radius of THAT bot. A round that ends in the open stuns nobody.
+        /// </summary>
+        void StunFromHitReport(Player from, ItemInfo.Projectile p, short x, short y)
+        {
+            if (from == null || _bots == null)
+                return;
+            Bot hit = null;
+            double best = double.MaxValue;
             foreach (Bot b in _bots)
             {
-                if (b == null || b.IsDead || b.bCondemned || b._state == null || b._team == from._team || b.IsDamageImmune)
+                if (b == null || b.IsDead || b.bCondemned || b._state == null || b.IsDamageImmune || !StunReaches(p, from, b))
                     continue;
-                double bx = b._state.positionX - sx, by = b._state.positionY / 0.7 - sy;
-                double t = bx * dx + by * dy;   // along the shot
-                if (t < -8 || t > range + StunShotLagSlackPx)
-                    continue;
-                double perp = Math.Abs(bx * dy - by * dx);
-                int body = b._type != null ? b._type.TriggerRadius : 12;
-                if (perp > p.proximityRadius + Math.Max(p.antiEffectsRadius / 2, 4) + body + StunShotLagSlackPx)
-                    continue;
-                if (t < firstT) { firstT = t; first = b; }
+                int body = b._type != null ? b._type.TriggerRadius : 16;
+                double d = Math.Sqrt(Math.Pow(b._state.positionX - x, 2) + Math.Pow(b._state.positionY - y, 2));
+                if (d <= Math.Max(p.antiEffectsRadius, p.proximityRadius) + body + HitReportLagSlackPx && d < best)
+                {
+                    best = d;
+                    hit = b;
+                }
             }
-            if (first == null)
+            if (hit == null)
+            {
+                StunDiag(from, string.Format("{0} {1} burst at {2},{3}: hit no bot", from._alias, p.name, x, y));
                 return;
-            if (first.BlastBlockedByWall(x, y))
-                return;   // a wall between the shooter and the bot stops the round
-
-            first.ApplyAntiEffects(p);
+            }
+            if (hit.BlastBlockedByWall(x, y))
+                return;
+            hit.ApplyAntiEffects(p);
+            int stacked = 0;
             if (p.antiEffectsRadius > 0)
                 foreach (Bot b in _bots)
                 {
-                    if (b == null || b == first || b.IsDead || b.bCondemned || b._state == null || b._team == from._team || b.IsDamageImmune)
+                    if (b == null || b == hit || b.IsDead || b.bCondemned || b._state == null || b.IsDamageImmune || !StunReaches(p, from, b))
                         continue;
-                    int body = b._type != null ? b._type.TriggerRadius : 12;
-                    double d = Math.Sqrt(Math.Pow(b._state.positionX - first._state.positionX, 2)
-                        + Math.Pow((b._state.positionY - first._state.positionY) / 0.7, 2));
+                    int body = b._type != null ? b._type.TriggerRadius : 16;
+                    double d = Math.Sqrt(Math.Pow(b._state.positionX - hit._state.positionX, 2) + Math.Pow(b._state.positionY - hit._state.positionY, 2));
                     if (d <= p.antiEffectsRadius + body)
+                    {
                         b.ApplyAntiEffects(p);
+                        stacked++;
+                    }
                 }
+            StunDiag(from, string.Format("{0} {1}: HIT {2} at d={3:0} - stunned (move {4} ms / turn {5} ms / fire {6} ms){7}", from._alias, p.name,
+                hit._alias, best, p.antiEffectsThrust * 10, p.antiEffectsRotate * 10, p.antiEffectsFire * 10, stacked > 0 ? " + " + stacked + " stacked" : ""));
         }
+
         #endregion
 
         #region handlePlayerUpdate
@@ -1391,7 +1412,8 @@ namespace InfServer.Game
                 if (update.itemID != 0)
                 {
                     NoteProjectileFired(from._team, from, update.positionX, update.positionY, update.yaw, update.itemID);
-                    ApplyPlayerStunShot(from, info, update.positionX, update.positionY, update.yaw);
+                    if (StunDebugLog)
+                        Log.write(TLog.Normal, "[fire] {0} item {1} '{2}' ({3}) at {4},{5} yaw {6}", from._alias, info.id, info.name, info.GetType().Name, update.positionX, update.positionY, update.yaw);
                 }
 
                 //Update last movement with firing, don't want to spec people in stationary turrets;
@@ -2660,7 +2682,10 @@ namespace InfServer.Game
         /// Triggered when a player attempts to repair/heal
         /// </summary>
         public override void handlePlayerRepair(Player player, ItemInfo.RepairItem item, UInt16 targetVehicle, short posX, short posY)
-        {   //Does the player have appropriate ammo?
+        {
+            if (StunDebugLog)
+                Log.write(TLog.Normal, "[heal] {0} used {1} (#{2}) type {3} dist {4} amt {5} pct {6} target {7} at {8},{9}",
+                    player._alias, item.name, item.id, item.repairType, item.repairDistance, item.repairAmount, item.repairPercentage, targetVehicle, posX, posY);   //Does the player have appropriate ammo?
             if (item.useAmmoID != 0 && !player.inventoryModify(false, item.useAmmoID, -item.ammoUsedPerShot))
                 return;
 
@@ -2692,9 +2717,14 @@ namespace InfServer.Game
                                     Vehicle botTarget = _vehicles.getObjByID(targetVehicle);
                                     if (botTarget != null && botTarget._bBotVehicle)
                                     {
+                                        short before = botTarget._state.health;
+                                        bool ok = false;
                                         if (!botTarget.IsDead && botTarget._team == player._team
                                             && Helpers.isInRange(item.repairDistance, botTarget._state, player._state))
-                                            botTarget.healAsPlayer(item);
+                                            ok = botTarget.healAsPlayer(item);
+                                        if (StunDebugLog)
+                                            Log.write(TLog.Normal, "[heal]   single bot {0}: {1} -> {2} (full {3}) team {4} {5}", botTarget._id, before, botTarget._state.health,
+                                                botTarget.FullHealth, botTarget._team == player._team ? "same" : "other", ok ? "healed" : "not healed");
                                         return;
                                     }
                                     Log.write(TLog.Warning, "Player {0} attempted to use a {1} to heal a non-existent player.", player._alias, item.name);
@@ -2741,7 +2771,22 @@ namespace InfServer.Game
                                 // (2026-11-23) and the friendly bots in the area
                                 foreach (Vehicle v in _vehicles.getObjsInRange(player._state.positionX, player._state.positionY, -item.repairDistance))
                                     if (v != null && v._bBotVehicle && !v.IsDead && !v.bCondemned && v._team == player._team)
-                                        v.healAsPlayer(item);
+                                    {
+                                        short before = v._state.health;
+                                        bool ok = v.healAsPlayer(item);
+                                        if (StunDebugLog)
+                                            Log.write(TLog.Normal, "[heal]   bot {0}: {1} -> {2} (full {3}) {4}", v is Bot hb ? hb._alias : v._id.ToString(), before, v._state.health, v.FullHealth, ok ? "healed" : "not healed");
+                                    }
+                                if (StunDebugLog)
+                                {
+                                    foreach (Vehicle v in _vehicles.getObjsInRange(player._state.positionX, player._state.positionY, 400))
+                                        if (v != null && v._bBotVehicle && !v.IsDead)
+                                            Log.write(TLog.Normal, "[heal]   area {0}: bot {1} at d={2:0} (dx {3} dy {4}) team {5} hp {6}/{7}", -item.repairDistance,
+                                                v is Bot hb2 ? hb2._alias : v._id.ToString(),
+                                                Math.Sqrt(Math.Pow(v._state.positionX - player._state.positionX, 2) + Math.Pow(v._state.positionY - player._state.positionY, 2)),
+                                                v._state.positionX - player._state.positionX, v._state.positionY - player._state.positionY,
+                                                v._team == player._team ? "same" : "other", v._state.health, v.FullHealth);
+                                }
                             }
                             else
                             {	//A self heal! Sure you can!

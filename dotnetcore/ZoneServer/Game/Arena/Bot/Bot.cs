@@ -1751,9 +1751,15 @@ namespace InfServer.Bots
                 fx = am.getItemByID(wep.projectileRadarMode) as ItemInfo.RepairItem;
             if (fx == null || fx.repairType == 1 || (fx.repairAmount <= 0 && fx.repairPercentage <= 0))
                 return false;
-            int reach = Math.Max(16, Math.Abs(fx.repairDistance)) + (_type != null ? _type.TriggerRadius : 0);
-            if (Helpers.distanceTo(dmgX, dmgY, _state.positionX, _state.positionY) <= reach)
-                healAsPlayer(fx);
+            // (2026-11-23) area heals (negative distance) reach their radius round the burst; a single heal (First Aid
+            // Effect 8, StimD Effect 20) is the bot the round hit - its distance + body + the lag allowance
+            int body = _type != null ? _type.TriggerRadius : 16;
+            int reach = fx.repairDistance < 0 ? -fx.repairDistance + body
+                : Math.Max(8, fx.repairDistance) + body + InfServer.Game.ScriptArena.HitReportLagSlackPx;
+            double d = Helpers.distanceTo(dmgX, dmgY, _state.positionX, _state.positionY);
+            bool healed = d <= reach && healAsPlayer(fx);
+            if (InfServer.Game.ScriptArena.StunDebugLog && d <= reach + 200)
+                Log.write(TLog.Normal, "[heal] round {0} (burst {1}) on bot {2}: d={3:0} reach {4} -> {5}", wep.name, fx.name, _alias, d, reach, healed ? "healed" : "not healed");
             return true;
         }
 

@@ -310,9 +310,13 @@ namespace InfServer.Bots
             //Clamp our resulting velocity
             if (_velocity.Length >= _rollTopSpeed / 1)
                 _velocity.Normalize(_rollTopSpeed / 1);
-            // stunned: crawl
-            if (StunActive(StunThrustUntil) && _velocity.Length > _rollTopSpeed * StunSpeedShare)
-                _velocity.Normalize(_rollTopSpeed * StunSpeedShare);
+            // stunned: stands still, like a stunned player who can't thrust (2026-11-23, owner: "not making them stand
+            // still"; it was a 10-20 % crawl)
+            if (StunActive(StunThrustUntil))
+            {
+                _velocity.x = 0;
+                _velocity.y = 0;
+            }
             // (never let a bad value through: Normalize of a zero vector gives NaN)
             if (double.IsNaN(_velocity.x) || double.IsNaN(_velocity.y) || double.IsInfinity(_velocity.x) || double.IsInfinity(_velocity.y))
             {
