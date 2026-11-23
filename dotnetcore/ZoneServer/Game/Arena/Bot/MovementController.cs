@@ -112,7 +112,7 @@ namespace InfServer.Bots
 		/// velocity sent to clients after the move, so the bot still moved and turned at full speed.
 		/// </summary>
 		public int StunThrustUntil, StunRotateUntil;
-		public const double StunSpeedShare = 0.2;
+		public const double StunSpeedShare = 0.1;   // (2026-11-23: was 0.2 - "move VERY slowly")
 		bool StunActive(int until) { return until != 0 && until - Environment.TickCount > 0; }
 		// Member Functions
 		///////////////////////////////////////////////////
