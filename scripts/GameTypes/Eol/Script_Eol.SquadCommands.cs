@@ -338,6 +338,8 @@ namespace InfServer.Script.GameType_Eol
                     player.sendMessage(-1, "Squad: nobody left to send.");
                     return;
                 }
+                if (UnderTeleportDisrupt(player))   // (2026-11-26) a disruptor stops the bots' suit-teleports to you
+                    player.sendMessage(-1, "Squad: you're inside a teleport disruptor - we can't teleport to you, coming on foot.");
                 int i = 0;
                 foreach (RoamingAttacker b in all)
                 {
@@ -375,6 +377,11 @@ namespace InfServer.Script.GameType_Eol
             if (UnderTeleportDisrupt(player))
             {
                 player.sendMessage(-1, "Squad: you're inside a teleport disruptor - we can't summon you.");
+                return;
+            }
+            if (CarriesNoSummonFlag(player))
+            {   // (2026-11-26) a flag goes nowhere except by HQ recall
+                player.sendMessage(-1, "Squad: you can't be summoned while you carry a flag.");
                 return;
             }
             if (SummonTarget(team, order) == null)
@@ -433,7 +440,7 @@ namespace InfServer.Script.GameType_Eol
                     continue;
                 if (CarriesNoSummonFlag(player))
                 {   // (2026-11-18, owner) no teleporting away with the Citizens / Elite Unit / Mercenaries Standard
-                    player.sendMessage(-1, "Squad: you can't be summoned while you carry a standard.");
+                    player.sendMessage(-1, "Squad: you can't be summoned while you carry a flag.");
                     _squadOrderNext.Remove(player);
                     _squadSummonMeNext.Remove(player);
                     continue;
@@ -601,6 +608,11 @@ namespace InfServer.Script.GameType_Eol
                 InfServer.Game.Player p = w.To;
                 Bots.Bot b = w.Bot;
                 if (b == null || b.IsDead || b.bCondemned || p == null || p.IsDead || p.IsSpectator || p._team != b._team)
+                    continue;
+                // (2026-11-26, owner: "no one should be able to get summoned by anyone, bots or real players if they have a
+                // TD on them") no suit-teleport out of an enemy disruptor, and none into one: that bot comes on foot
+                if (_arena.isTeleportDisruptedAt(b._state.positionX, b._state.positionY, b._team)
+                    || _arena.isTeleportDisruptedAt(p._state.positionX, p._state.positionY, b._team))
                     continue;
                 bool ship = _eol != null && _eol.IsInPioneerDropshipSafeZone(p._state.positionX, p._state.positionY);
                 bool safe = !ship && InSummonSafeZone(p._state.positionX, p._state.positionY);

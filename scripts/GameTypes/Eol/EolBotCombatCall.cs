@@ -150,8 +150,17 @@ namespace InfServer.Script.GameType_Eol
         /// Publish or refresh a team combat call. Same-target refreshes extend the timer without
         /// resetting helper slots. New targets replace the call.
         /// </summary>
-        public void PublishCombatCall(Team team, Bot caller, InfServer.Game.Player playerTarget, Vehicle vehicleTarget, int now)
+        public void PublishCombatCall(Team team, Bot caller, InfServer.Game.Player playerTarget, Vehicle vehicleTarget, int now,
+            bool onlyIfNoCall = false)
         {
+            // (2026-11-26) a stray shot landing near a bot doesn't take over a fight the team is already in
+            if (onlyIfNoCall && team != null)
+            {
+                CombatCallState cur;
+                if (_combatCallsByTeam.TryGetValue(team, out cur) && cur.TickUntil != 0 && now < cur.TickUntil
+                    && (cur.PlayerTarget != playerTarget || cur.VehicleTarget != vehicleTarget))
+                    return;
+            }
             if (team == null || caller == null || caller.IsDead)
                 return;
             if (playerTarget == null && vehicleTarget == null)
@@ -287,6 +296,19 @@ namespace InfServer.Script.GameType_Eol
                 return false;
             }
 
+            // (2026-11-26, owner: "bots turn onto the player straight away if they enter the fight ... if the bots are in a
+            // fight and someone is shooting from a far they are finishing their current fight ... NOT all turn to the player
+            // and start swarming") a bot already fighting someone else finishes that fight - the call is for idle bots
+            if (BotBusyWithOtherTarget(helper, playerTarget, vehicleTarget))
+                return false;
+            // and only a few answer a call: the rest carry on with what they were doing
+            if (st.HelperBotIds != null && !st.HelperBotIds.Contains(helper._id))
+            {
+                PruneDeadCombatCallHelpers(ref st);
+                if (st.HelperBotIds.Count >= CombatCallMaxHelpers)
+                    return false;
+            }
+
             if (registerHelper)
             {
                 if (st.HelperBotIds == null)
@@ -299,6 +321,25 @@ namespace InfServer.Script.GameType_Eol
             }
 
             return true;
+        }
+
+        /// <summary>(2026-11-26) how many extra bots answer one team combat call (besides the caller).</summary>
+        public const int CombatCallMaxHelpers = 2;
+
+        /// <summary>(2026-11-26) the bot has a live target of its own that isn't the called one (a player or an enemy bot).</summary>
+        static bool BotBusyWithOtherTarget(Bot bot, InfServer.Game.Player callP, Vehicle callV)
+        {
+            InfServer.Game.Modules.BotActions.BotActionContext ctx = bot?.Actions?.Context;
+            if (ctx == null)
+                return false;
+            InfServer.Game.Player cp = ctx.CurrentPlayerTarget;
+            if (cp != null && !cp.IsDead && !cp.IsSpectator && cp._team != bot._team && cp != callP)
+                return true;
+            Bots.Bot cb = ctx.CurrentBotTarget;
+            if (cb != null && !cb.IsDead && !cb.bCondemned && cb != callV
+                && EolBotActionBridge.IsEnemyBotCloseEnoughToLeavePatrol(bot, cb))
+                return true;
+            return false;
         }
 
         /// <summary>

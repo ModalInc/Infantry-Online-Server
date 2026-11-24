@@ -67,6 +67,15 @@ namespace InfServer.Script.GameType_Eol
                 return false;
 
             Player prior = playerTarget;
+            // (2026-11-26, owner: "if the bots are in a fight and someone is shooting from a far they are finishing their
+            // current fight") a bot locked on an enemy bot keeps that fight unless the script's player is a NEW one who
+            // came close - the script's pick no longer overwrites the module's bot lock
+            bool keepBotFight = KeepsBotFight(bot, prior);
+            if (keepBotFight)
+            {
+                prior = null;
+                playerTarget = null;
+            }
             if (bot.Actions != null && prior != null && !prior.IsDead && !prior.IsSpectator)
                 bot.Actions.SuggestPlayerTarget(prior);
 
@@ -97,6 +106,25 @@ namespace InfServer.Script.GameType_Eol
                 botTarget = null;
 
             return ran || playerTarget != null || botTarget != null;
+        }
+
+        /// <summary>(2026-11-26) a NEW player only pulls a bot off its enemy-bot fight from this close (raw px).</summary>
+        public const int SwitchToPlayerCloseRaw = 500;
+
+        /// <summary>
+        /// (2026-11-26) the bot is fighting an enemy bot (close, clear shot) and <paramref name="scriptPick"/> is a player it
+        /// wasn't already fighting who is further than <see cref="SwitchToPlayerCloseRaw"/>: keep the bot fight.
+        /// </summary>
+        static bool KeepsBotFight(Bot bot, Player scriptPick)
+        {
+            if (bot?.Actions == null || bot._state == null || scriptPick == null || scriptPick._state == null)
+                return false;
+            Bot cur = bot.Actions.LastBotTarget;
+            if (cur == null || cur.IsDead || cur.bCondemned || !IsEnemyBotCloseEnoughToLeavePatrol(bot, cur))
+                return false;
+            if (bot.Actions.LastPlayerTarget == scriptPick)
+                return false;   // (already its fight)
+            return !Helpers.isInRange(SwitchToPlayerCloseRaw, bot._state, scriptPick._state);
         }
 
         public static void SyncPlayerTargetFromActions(Bot bot, ref Player target)

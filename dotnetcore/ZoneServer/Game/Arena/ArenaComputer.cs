@@ -451,7 +451,7 @@ namespace InfServer.Game
 
                 //Is it within the distance?
                 int dist = (int)(player._state.position().Distance(candidate._state.position()) * 100);
-                if (candidate._activeEquip.Any(util => util.antiWarpDistance >= dist))
+                if (candidate._activeEquip.Any(util => util.antiWarpDistance * AntiWarpScale >= dist))
                     return candidate;
             }
 

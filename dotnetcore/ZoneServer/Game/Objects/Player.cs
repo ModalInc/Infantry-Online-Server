@@ -348,7 +348,7 @@ namespace InfServer.Game
                 //Is it within the distance?
                 int dist = (int)(_state.position().Distance(candidate._state.position()) * 100);
 
-                if (candidate.activeUtilities.Any(util => util != null && util.antiWarpDistance >= dist))
+                if (candidate.activeUtilities.Any(util => util != null && util.antiWarpDistance * _arena.AntiWarpScale >= dist))
                     return candidate;
             }
 

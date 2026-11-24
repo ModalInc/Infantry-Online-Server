@@ -748,6 +748,10 @@ namespace InfServer.Script.GameType_Eol
             // stay available but Eol leaves them off.
             _arena._server.ChecksumAlertOnly = false;
             _arena._server.ChecksumOwnerAliases = null;
+            // (2026-11-26, owner: "you can still be summoned ... when a player is under teleport disrupt") the Teleport
+            // Disruptor / Sentry TD say "1024 pixels" but their item value is 512: the engine checked 512 px, so a player
+            // 512-1024 px from a TD could still be summoned / teleport. Every anti-warp distance counts double here.
+            _arena.AntiWarpScale = 2.0;
             // (2026-11-23, owner: "1 maser OR 1 healer turret OR 1 energizer turret") one of these per player, in total
             ScriptArena.OnePerPlayerComputerGroup = new HashSet<int> { 823, 822, 830 };   // Maser, Heal, Recharge
             // (2026-11-23, owner: "autogun AT and Flak - need FCU 1 of ea per team ... on TOP of the current turret limit.
@@ -2051,6 +2055,7 @@ namespace InfServer.Script.GameType_Eol
             Bots.Bot.SuppressKillfeed = b => IsVehicleStageBot(b);
             PrepareNewBots(now);    // 35 % more armour + spawn protection (Script_Eol.Deploy.cs)
             PollSquadCommands(now); // squad team-chat orders S / X / @ (Script_Eol.SquadCommands.cs)
+            PollHqRecalls(now);     // (2026-11-26) the HQ recall's 5 s stand-still charge (Script_Eol.HqTeleport.cs)
             PollNoSpawnBuildings(now); // bots that come alive inside a no-spawn building go outside (Script_Eol.NoSpawnBuildings.cs)
             WireTacticsHooks();     // per-player adaptive skill (Script_Eol.Tactics.cs)
             PollMedics(now);        // squad medics heal bots and players
@@ -7104,6 +7109,7 @@ namespace InfServer.Script.GameType_Eol
         [Scripts.Event("Player.EnterArena")]
         public void playerEnter(InfServer.Game.Player player)
         {
+            GiveStarterIfBlank(player);   // (2026-11-26; once per session - whichever EnterArena handler runs first)
             if (_kothGameRunning)
                 KothBotsSyncTo(player);   // the bots' crowns too
             //Send them the crowns if KOTH is enabled
@@ -7915,6 +7921,7 @@ namespace InfServer.Script.GameType_Eol
         [Scripts.Event("Player.EnterArena")]
         public void playerEnterArena(InfServer.Game.Player player)
         {
+            GiveStarterIfBlank(player);   // (2026-11-26) blank 0-cash characters get the first-time setup (Script_Eol.NewPlayerStart.cs)
             EnsureKillStreak(player);
 
             //Send them the crowns..
@@ -8106,7 +8113,7 @@ namespace InfServer.Script.GameType_Eol
                         continue;
                     if (player._team != null && bot._team == player._team)
                         continue;
-                    PublishCombatCall(bot._team, bot, player, null, now);
+                    PublishCombatCall(bot._team, bot, player, null, now, onlyIfNoCall: true);   // (2026-11-26) no take-over
                 }
             }
             return true;
@@ -8133,7 +8140,18 @@ namespace InfServer.Script.GameType_Eol
             // own live HQ (469, or a 473 Player headquarters); a message when the team has none.
             if (player != null && item != null && (item.id == HqTeleportItemId || item.warpGroup == HqWarpGroup))
             {
-                TryHqTeleport(player);
+                StartHqRecall(player);   // (2026-11-26, owner: stand still to use it - moving cancels; Script_Eol.HqTeleport.cs)
+                return false;
+            }
+            // (2026-11-26, owner: "Make it so the only way you can teleport with a flag is the hq recall. that is the ONLY
+            // way") a flag carrier can't teleport himself with anything else (the Store Recall below still works but leaves
+            // the flags behind, so no flag is ever teleported); summons of a carrier are refused by his "*" summon-ignore
+            if (player != null && item != null && CarriesNoSummonFlag(player)
+                && (item.name ?? "").IndexOf("Store Recall", StringComparison.OrdinalIgnoreCase) < 0
+                && (item.warpMode == ItemInfo.WarpItem.WarpMode.RandomWarp || item.warpMode == ItemInfo.WarpItem.WarpMode.Lio
+                    || item.warpMode == ItemInfo.WarpItem.WarpMode.WarpTeam || item.warpMode == ItemInfo.WarpItem.WarpMode.WarpAnyone))
+            {
+                player.sendMessage(-1, "You carry a flag - only the HQ recall can teleport you.");
                 return false;
             }
             // (2026-11-17, owner: "you can store recall if you want ... b please") Store Recall works while carrying a

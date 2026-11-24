@@ -2079,7 +2079,8 @@ namespace InfServer.Game
                                     && targetTeam == p._team
                                     && p.ActiveVehicle._type.IsWarpable
                                     && !p._summonIgnore.Contains(player._alias)
-                                    && !p._summonIgnore.Contains("*"))
+                                    && !p._summonIgnore.Contains("*")
+                                    && (p == player || !isTeleportDisrupted(p)))   // (2026-11-26) nobody under a TD moves
                                     p.warp(Helpers.ResetFlags.ResetNone, targetState, (short)item.accuracyRadius, -1, 0);
                             }
                         }
@@ -2115,7 +2116,8 @@ namespace InfServer.Game
                             foreach (Player p in getPlayersInRange(posX, posY, item.areaEffectRadius))
                             {
                                 //Is the player in range dead or ignoring summons?
-                                if (!p.IsDead && !p._summonIgnore.Contains(player._alias) && !p._summonIgnore.Contains("*"))
+                                if (!p.IsDead && !p._summonIgnore.Contains(player._alias) && !p._summonIgnore.Contains("*")
+                                    && (p == player || !isTeleportDisrupted(p)))   // (2026-11-26) nobody under a TD moves
                                     p.warp(Helpers.ResetFlags.ResetNone, target._state, (short)item.accuracyRadius, -1, 0);
                             }
                         }
@@ -2259,7 +2261,10 @@ namespace InfServer.Game
                             foreach (Player p in getPlayersInRange(posX, posY, item.areaEffectRadius))
                             {
                                 //Is the player dead and warpable?
-                                if (!p.IsDead && p.ActiveVehicle._type.IsWarpable)
+                                // (2026-11-26) a portal moves nobody under a TD, and nobody who refuses every summon ("*",
+                                // e.g. a flag carrier in Eol)
+                                if (!p.IsDead && p.ActiveVehicle._type.IsWarpable
+                                    && (p == player || (!p._summonIgnore.Contains("*") && !isTeleportDisrupted(p))))
                                     p.warp(Helpers.ResetFlags.ResetNone, player._state, (short)item.accuracyRadius, -1, 0);
                             }
                         }

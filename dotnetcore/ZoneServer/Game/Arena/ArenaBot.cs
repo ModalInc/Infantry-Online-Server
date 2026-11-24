@@ -1269,9 +1269,66 @@ namespace InfServer.Game
         /// <summary>
         /// Determines whether there is a bot antiwarping the player in the specified area
         /// </summary>
+        /// <summary>
+        /// (2026-11-26) multiplies every anti-warp (teleport disruptor) distance. 1 = as the item file says. A zone whose
+        /// items give the radius in half-units (Eol: Teleport Disruptor 512 = "1024 pixels" in its description) sets 2.
+        /// </summary>
+        public double AntiWarpScale = 1.0;
+
+        /// <summary>The anti-warp reach of a utility in pixels (0 = it has none).</summary>
+        public int AntiWarpReach(ItemInfo.UtilityItem util)
+        {
+            if (util == null || util.antiWarpDistance <= 0)
+                return 0;
+            return (int)(util.antiWarpDistance * AntiWarpScale);
+        }
+
+        /// <summary>
+        /// (2026-11-26) is this spot inside a teleport disruptor of an enemy of <paramref name="team"/> (a player's, a bot's
+        /// or a computer's)? For bots and spots - a player uses ScriptArena.isTeleportDisrupted.
+        /// </summary>
+        public bool isTeleportDisruptedAt(short x, short y, Team team)
+        {
+            Helpers.ObjectState at = new Helpers.ObjectState { positionX = x, positionY = y };
+            foreach (Player c in getPlayersInRange(x, y, 5000))
+            {
+                if (c == null || c._team == null || c._team == team || c.IsDead || c.activeUtilities == null)
+                    continue;
+                int d = (int)Helpers.distanceTo(at, c._state);
+                foreach (ItemInfo.UtilityItem u in c.activeUtilities)
+                    if (AntiWarpReach(u) >= d && AntiWarpReach(u) > 0)
+                        return true;
+            }
+            foreach (Bot b in _bots.getObjsInRange(x, y, 5000))
+            {
+                if (b == null || b.IsDead || b._team == team || b._activeEquip == null)
+                    continue;
+                List<ItemInfo.UtilityItem> equip;
+                lock (b._activeEquip)
+                    equip = new List<ItemInfo.UtilityItem>(b._activeEquip);
+                int d = (int)Helpers.distanceTo(at, b._state);
+                foreach (ItemInfo.UtilityItem u in equip)
+                    if (AntiWarpReach(u) > 0 && AntiWarpReach(u) >= d)
+                        return true;
+            }
+            foreach (Vehicle v in _vehicles)
+            {
+                Computer c = v as Computer;
+                if (c == null || c.IsDead || c._team == team || c._activeEquip == null || c._state == null
+                    || c._state.health < c._type.HitpointsRequiredToOperate)
+                    continue;
+                int d = (int)Helpers.distanceTo(at, c._state);
+                foreach (ItemInfo.UtilityItem u in c._activeEquip)
+                    if (AntiWarpReach(u) > 0 && AntiWarpReach(u) >= d)
+                        return true;
+            }
+            return false;
+        }
+
         public Bot checkBotAntiwarp(Player player)
         {	//Get the list of bots in the area
-            IEnumerable<Bot> candidates = _bots.getObjsInRange(player._state.positionX, player._state.positionY, 1000);
+            // (2026-11-26) 5000 like the player / computer checks (was 1000 - a scaled disruptor reaches further)
+            IEnumerable<Bot> candidates = _bots.getObjsInRange(player._state.positionX, player._state.positionY, 5000);
 
             foreach (Bot candidate in candidates)
             {	//Any anti-warp utils?
@@ -1290,7 +1347,7 @@ namespace InfServer.Game
                 //Is it within the distance?
                 int dist = (int)(player._state.position().Distance(candidate._state.position()) * 100);
 
-                if (equip.Any(util => util.antiWarpDistance >= dist))
+                if (equip.Any(util => util.antiWarpDistance * AntiWarpScale >= dist))
                     return candidate;
             }
 

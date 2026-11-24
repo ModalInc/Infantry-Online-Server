@@ -23,19 +23,15 @@ namespace InfServer.Script.GameType_Eol
         readonly HashSet<InfServer.Game.Player> _noSummonAdded = new HashSet<InfServer.Game.Player>();
         int _tickNoSummonFlags;
 
-        /// <summary>Carrying the Citizens / Elite Unit / Mercenaries Standard right now?</summary>
+        /// <summary>Carrying a flag right now? (2026-11-26, owner: "Make it so the only way you can teleport with a flag is the
+        /// hq recall. that is the ONLY way") any flag now - it was only the Citizens / Elite Unit / Mercenaries Standard.</summary>
         public bool CarriesNoSummonFlag(InfServer.Game.Player p)
         {
             if (p == null || _arena == null || _arena._flags == null)
                 return false;
             foreach (Arena.FlagState fs in _arena._flags.Values)
-            {
-                if (fs == null || fs.carrier != p || fs.flag == null)
-                    continue;
-                string name = (fs.flag.GeneralData.Name ?? "").Trim().Trim('"').Trim();
-                if (NoSummonFlagNames.Contains(name))
+                if (fs != null && fs.carrier == p && fs.flag != null)
                     return true;
-            }
             return false;
         }
 
@@ -55,7 +51,7 @@ namespace InfServer.Script.GameType_Eol
                 {
                     p._summonIgnore.Add("*");
                     _noSummonAdded.Add(p);
-                    p.sendMessage(0, "&You carry a standard - nobody can summon you while you hold it.");
+                    p.sendMessage(0, "&You carry a flag - nobody can summon you, and only the HQ recall can teleport you.");
                 }
                 else if (!carrying && _noSummonAdded.Contains(p))
                 {
