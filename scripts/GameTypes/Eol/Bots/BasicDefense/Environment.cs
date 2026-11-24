@@ -60,7 +60,8 @@ namespace InfServer.Script.GameType_Eol
                 InfServer.Game.Player callP;
                 Vehicle callV;
                 if (_baseScript.TryGetCombatCallAssistTarget(_team, this, Environment.TickCount, out callP, out callV, false)
-                    && callP != null && !callP.IsDead)
+                    && callP != null && !callP.IsDead
+                    && (vHq == null || EolHqPatrol.CanChaseFromBase(this, vHq, callP._state)))   // (2026-11-24: only inside our base)
                     callPrefer = callP;
             }
 

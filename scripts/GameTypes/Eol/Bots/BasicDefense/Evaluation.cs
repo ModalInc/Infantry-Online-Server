@@ -89,7 +89,11 @@ namespace InfServer.Script.GameType_Eol
             }
 
             // Ally already fighting nearby — break patrol and help.
-            if (_baseScript != null && _baseScript.TryAcceptCombatCallAssist(_team, this, now))
+            // (2026-11-24) only a fight inside our own base (not one outside the walls)
+            Helpers.ObjectState callSpot;
+            if (_baseScript != null && (vHq == null || (_baseScript.TryGetCombatCallFightSpot(_team, this, now, out callSpot)
+                    && EolHqPatrol.CanChaseFromBase(this, vHq, callSpot)))
+                && _baseScript.TryAcceptCombatCallAssist(_team, this, now))
             {
                 _cachedFirePri = Action.Priority.High;
                 _combatFireBurstRemain = EolBotActionEvalThrottle.CombatPlanBurstPolls;
