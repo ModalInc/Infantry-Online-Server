@@ -112,6 +112,113 @@ namespace InfServer.Logic
             }
 		}
 
+        // (2026-11-26) owner-checked checksum (see ZoneServer.ChecksumOwnerAliases)
+        const int OwnerCsWindowMs = 600000;    // a report counts toward the majority for 10 minutes
+        const int OwnerCsMinAgree = 3;         // the players' majority needs at least 3 players on one value
+        static readonly object _ownerCsLock = new object();
+        static readonly Dictionary<string, KeyValuePair<uint, int>> _ownerCsReports =
+            new Dictionary<string, KeyValuePair<uint, int>>(StringComparer.OrdinalIgnoreCase);   // alias -> (checksum, tick)
+        static uint _ownerCsValue = 0;         // the owner's last checksum (0 = owner not seen since start)
+        static string _ownerCsBy = "";
+
+        static void OwnerChecksumCheck(uint checksum, Player player)
+        {
+            ZoneServer server = player._server;
+            int now = System.Environment.TickCount;
+            bool isOwner = server.ChecksumOwnerAliases.Contains(player._alias);
+            uint reference;
+            string refBy;
+            int majCount, total;
+            uint majority;
+
+            lock (_ownerCsLock)
+            {
+                if (isOwner)
+                {
+                    if (_ownerCsValue != checksum)
+                        Log.write(TLog.Security, String.Format("[Checksum] owner {0} reports {1} (was {2} by {3})",
+                            player._alias, checksum, _ownerCsValue, _ownerCsBy));
+                    _ownerCsValue = checksum;
+                    _ownerCsBy = player._alias;
+                }
+                else
+                    _ownerCsReports[player._alias] = new KeyValuePair<uint, int>(checksum, now);
+
+                // the players' majority over the last 10 minutes (owners left out)
+                foreach (string old in _ownerCsReports.Where(r => now - r.Value.Value > OwnerCsWindowMs).Select(r => r.Key).ToList())
+                    _ownerCsReports.Remove(old);
+                total = _ownerCsReports.Count;
+                var top = _ownerCsReports.GroupBy(r => r.Value.Key).OrderByDescending(g => g.Count()).FirstOrDefault();
+                majority = top == null ? 0 : top.Key;
+                majCount = top == null ? 0 : top.Count();
+                bool clearMajority = majCount >= OwnerCsMinAgree && majCount * 2 > total;
+
+                if (_ownerCsValue != 0 && !(clearMajority && majority != _ownerCsValue))
+                { reference = _ownerCsValue; refBy = _ownerCsBy; }
+                else if (clearMajority)
+                { reference = majority; refBy = String.Format("majority {0}/{1}", majCount, total); }
+                else
+                { reference = 0; refBy = ""; }
+            }
+
+            if (isOwner)
+            {   // the owner is never kicked; tell him when the players overrule his files
+                if (reference != 0 && reference != checksum)
+                {
+                    Log.write(TLog.Security, String.Format("[Checksum] owner {0} has {1} but the players' majority has {2} ({3}/{4}) - majority used",
+                        player._alias, checksum, majority, majCount, total));
+                    object last = player.getVar("csAlertTick");
+                    if (last == null || now - (int)last > OwnerCsWindowMs)
+                    {
+                        player.setVar("csAlertTick", now);
+                        player.sendMessage(-1, String.Format("&Checksum: your game files differ from most players (yours {0}, {1} of {2} players have {3}) - their value is used, nobody is kicked for differing from you.",
+                            checksum, majCount, total, majority));
+                    }
+                }
+                return;
+            }
+
+            if (reference == 0 || checksum == reference || player._permissionStatic >= Data.PlayerPermission.Level3)
+            {
+                player.setVar("csStrikes", null);
+                return;
+            }
+
+            // mismatch: first one is a warning, the second one in a row a kick
+            int strikes = (player.getVar("csStrikes") as int? ?? 0) + 1;
+            player.setVar("csStrikes", strikes);
+            Log.write(TLog.Security, String.Format("[Checksum] {0} (arena {1}) has {2}, reference {3} ({4}) - strike {5}/2",
+                player._alias, player._arena._name, checksum, reference, refBy, strikes));
+            if (strikes < 2)
+            {
+                foreach (Player ppl in player._arena.Players.ToList())
+                    if (ppl.PermissionLevelLocal >= Data.PlayerPermission.Level1)
+                        ppl.sendMessage(-1, String.Format("&Checksum mismatch (strike 1/2): {0} has {1}, reference {2} ({3})",
+                            player._alias, checksum, reference, refBy));
+                return;
+            }
+
+            string alert = String.Format("&ALERT - Player Kicked: (Zone={0}, Arena={1}, Player={2}, Checksum={3}, Reliable={4} [{5}]) Reason=Client checksum mismatch (2 in a row).",
+                server.Name, player._arena._name, player._alias, checksum, reference, refBy);
+            player.sendMessage(-1, "&Your game files differ from this zone's. Please restart Infantry so it downloads the current files, then rejoin.");
+            if (!server.IsStandalone)
+            {
+                CS_ChatQuery<Data.Database> pktquery = new CS_ChatQuery<Data.Database>();
+                pktquery.queryType = CS_ChatQuery<Data.Database>.QueryType.alert;
+                pktquery.sender = player._alias;
+                pktquery.payload = alert;
+                server._db.send(pktquery);
+            }
+            else
+            {
+                foreach (Player ppl in player._arena.Players.ToList())
+                    if (ppl.PermissionLevelLocal >= Data.PlayerPermission.Level1)
+                        ppl.sendMessage(-1, alert);
+            }
+            player.setVar("csStrikes", null);
+            player.disconnect();
+        }
+
         /// <summary>
 		/// Triggered when the client has responsed to a security request
 		/// </summary>
@@ -127,6 +234,14 @@ namespace InfServer.Logic
           //      return;
             if (target == null)
             {//Server is checking assets
+                // (2026-11-26) zone with an owner-checked checksum (Eol): owner reference + majority + 2 strikes
+                if (player._server.ChecksumOwnerAliases != null)
+                {
+                    if (reliablePlayer != null)
+                        player.setVar("reliable", null);   // a Level 5 no longer sets the reference here
+                    OwnerChecksumCheck(pkt.Unk3, player);
+                    return;
+                }
                 if (reliablePlayer != null && reliablePlayer == player)
                 {//Lets use the mods asset checksum
                     Log.write(TLog.Security, "Reliable client checksum " + pkt.Unk3 + " set by " + player._alias
