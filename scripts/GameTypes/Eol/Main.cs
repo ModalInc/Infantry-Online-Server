@@ -743,12 +743,11 @@ namespace InfServer.Script.GameType_Eol
             if (_arena._bIsPublic)
                 _arena._bPersistent = true;
             _config = _arena._server._zoneConfig;
-            // (2026-11-25, owner: players kicked for "Client checksum mismatch" since 2026-11-25)
-            // (2026-11-26, owner: "have the check done on me instead of a lvl 5") the owner's client is the reference
-            // checksum, the players' majority overrules him when they clearly disagree, kick on 2 mismatches in a row
+            // (2026-11-26, owner: "put it back to how it was") the normal client checksum check again (a Level 5 sets
+            // the reliable value, a mismatch is kicked). The engine switches ChecksumAlertOnly / ChecksumOwnerAliases
+            // stay available but Eol leaves them off.
             _arena._server.ChecksumAlertOnly = false;
-            _arena._server.ChecksumOwnerAliases = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                { "pb", "ProBosnia", "ProBos", "ProBosnia^" };
+            _arena._server.ChecksumOwnerAliases = null;
             // (2026-11-23, owner: "1 maser OR 1 healer turret OR 1 energizer turret") one of these per player, in total
             ScriptArena.OnePerPlayerComputerGroup = new HashSet<int> { 823, 822, 830 };   // Maser, Heal, Recharge
             // (2026-11-23, owner: "autogun AT and Flak - need FCU 1 of ea per team ... on TOP of the current turret limit.
