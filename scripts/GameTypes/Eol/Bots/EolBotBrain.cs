@@ -1286,8 +1286,8 @@ namespace InfServer.Script.GameType_Eol
                 Computer c = (Computer)v;
                 if (IsTargetIgnored(self, c, Helpers.distanceTo(self._state, c._state)))
                     continue;   // couldn't reach it recently
-                if (c._team != null && c._team._name != null && Arena.IsManagedBotTeamName(c._team._name)
-                    && script != null && !script.ShouldEolBotTeamsFight(self._team, c._team))
+                if (c._team != null && script != null && script.IsEolBotTeam(c._team)
+                    && !script.ShouldEolBotTeamsFight(self._team, c._team))
                     continue;   // allied bot turret
                 if (!BotCombat.SightLineClear(self._arena, self._state.positionX, self._state.positionY, c._state.positionX, c._state.positionY))
                     continue;

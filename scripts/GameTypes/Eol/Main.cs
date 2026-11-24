@@ -458,15 +458,18 @@ namespace InfServer.Script.GameType_Eol
         public const short EolBorderWallYawVerticalLeft = 0;
         public const short EolBorderWallYawVerticalRight = 0;
 
-        public string botTeamName1 = "Iron Legion Bots";
-        public string botTeamName2 = "Crimson Vanguard Bots";
-        public string botTeamName3 = "Steel Wardens Bots";
-        public string botTeamName4 = "Pirate Raiders Bots";
-        public string botTeamName5 = "Phantom Assassins Bots";   // local 2026-11-13 (was BHB)
-        public string botTeamName6 = "Black Talon Pirates Bots"; // local 2026-11-14: pirate roamers (5-8)
-        public string botTeamName7 = "Skrall Swarm Bots";
-        public string botTeamName8 = "Ghost Reapers Bots"; // local 2026-11-14: elite vehicle squad (boards + Drop Pack)
-        public string botTeamName9 = "Viper Assassins Bots"; // local 2026-11-13: second assassin cell
+        // (2026-11-24, owner: "add those team names from original eol ... have the 3 bot bases use number 12 name, number 11
+        // name and number 10 name ... make up something cool for the 2 aliens teams") the classic Eol faction names; bot-only
+        // teams are registered with the engine (Arena.RegisterManagedBotTeamName) since they no longer end in " Bots"
+        public string botTeamName1 = "Titan Liberation League";   // base 1 (classic team 12)
+        public string botTeamName2 = "Martian Consortium";        // base 2 (classic team 11)
+        public string botTeamName3 = "Titanium Pirates";          // base 3 (classic team 10)
+        public string botTeamName4 = "Pirate Raiders";
+        public string botTeamName5 = "Vaarsburg Freeholders";     // the 30k assassins (classic team 13) - local 2026-11-13 (was BHB)
+        public string botTeamName6 = "Low Life Thugs";            // the elite pirate squad of 6 (classic team 14)
+        public string botTeamName7 = "Skrall Swarm";
+        public string botTeamName8 = "Ghost Reapers";             // local 2026-11-14: elite vehicle squad (boards + Drop Pack)
+        // (2026-11-24, owner: "one team of assassins is fine. 5 ppl") no second assassin cell any more
 
         /// <summary>
         /// Creates a public bot faction, assigns a unique frequency id, and registers it
@@ -474,6 +477,7 @@ namespace InfServer.Script.GameType_Eol
         /// </summary>
         Team CreateAndRegisterBotTeam(string name)
         {
+            Arena.RegisterManagedBotTeamName(name);   // (2026-11-24) bot-only: never auto-picked, players can't join
             // (2026-11-17, owner: "each human bot team has different jacket colors, most have the same") a bot team
             // whose name is a .cfg team (TeamInfo14-22) uses that team: its .cfg Colors are the jacket colour. A team
             // made up here sat past the .cfg's 50 teams, so every one of them got the same default colours.
@@ -839,11 +843,11 @@ namespace InfServer.Script.GameType_Eol
             botTeam6 = CreateAndRegisterBotTeam(botTeamName6);
             botTeam7 = CreateAndRegisterBotTeam(botTeamName7);
             botTeam8 = CreateAndRegisterBotTeam(botTeamName8);
-            botTeam9 = CreateAndRegisterBotTeam(botTeamName9);
-            botTeamAlienElite1 = CreateAndRegisterBotTeam("Skrall Ravagers Bots");
-            botTeamAlienElite2 = CreateAndRegisterBotTeam("Skrall Brood Bots");
+            botTeam9 = null;   // (2026-11-24) one assassin team
+            botTeamAlienElite1 = CreateAndRegisterBotTeam("Skrall Ravagers");
+            botTeamAlienElite2 = CreateAndRegisterBotTeam("Skrall Brood");
             CreateStrikeTeams();   // local 2026-11-14: three human-class strike teams
-            botTeamRaid2 = CreateAndRegisterBotTeam("Pirate Raiders Bravo Bots");
+            botTeamRaid2 = CreateAndRegisterBotTeam("Pirate Raiders Bravo");
             CreateSwarmTeam();   // (2026-11-16c) the Alien Swarm (Script_Eol.AlienSwarm.cs)
 
             _eolBorderWallTeam = new Team(_arena, _arena._server);
@@ -1405,11 +1409,16 @@ namespace InfServer.Script.GameType_Eol
         }
 
         /// <summary>Bot teams may hold flags but must not drive periodic rewards or CTF victory.</summary>
-        static bool IsBotFactionTeamForFlagRewards(Team team)
+        bool IsBotFactionTeamForFlagRewards(Team team)
         {
-            if (team == null)
-                return false;
-            return team._name != null && Arena.IsManagedBotTeamName(team._name);
+            return IsEolBotTeam(team);
+        }
+
+        /// <summary>(2026-11-24) a team the bots run: a registered bot-only team, or a roaming squad (the squads now sit on the
+        /// ordinary faction teams - Titan Militia ... - so the name alone no longer tells).</summary>
+        public bool IsEolBotTeam(Team team)
+        {
+            return team != null && ((team._name != null && Arena.IsManagedBotTeamName(team._name)) || IsRoamingSquadTeam(team));
         }
 
         void ResetFlagRewardCycleNotices()
@@ -5275,7 +5284,7 @@ namespace InfServer.Script.GameType_Eol
             Helpers.ObjectState warpPoint = null;
             List<Arena.FlagState> sortedFlags = new List<Arena.FlagState>();
 
-            if (!Arena.IsManagedBotTeamName(team._name))
+            if (!IsEolBotTeam(team))
                 sortedFlags = _arena._flags.Values.ToList();
 
             int count = sortedFlags.Count;

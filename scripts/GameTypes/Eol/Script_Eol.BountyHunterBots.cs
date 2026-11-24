@@ -49,7 +49,7 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>No speed bonus: assassins move at their vehicle's own speeds (2026-11-15 - the +35% read as a strafe cheat).</summary>
         public const int AssassinAgilityBonusPercent = 0;
         /// <summary>Live assassins per cell (captain + operatives).</summary>
-        public const int BountyHunterSquadSize = 3;
+        public const int BountyHunterSquadSize = 5;   // (2026-11-24, owner: "one team of assassins is fine. 5 ppl. all elite level different fighting classes")
         /// <summary>Operatives per cell - cell size minus the captain.</summary>
         public const int BountyHunterMaxConcurrentGrunts = BountyHunterSquadSize - 1;
         public const int BountyHunterOpeningBatch = BountyHunterMaxConcurrentGrunts;

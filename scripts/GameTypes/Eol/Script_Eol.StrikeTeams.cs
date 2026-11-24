@@ -77,12 +77,15 @@ namespace InfServer.Script.GameType_Eol
         readonly Dictionary<Team, int> _strikeNextSpawnTick = new Dictionary<Team, int>();
         int _tickStrikePoll;
 
-        static readonly string[] MixedTeamNames = { "Nova Commandos Bots", "Rogue Jackals Bots", "Iron Wolves Bots", "Desert Vipers Bots", "Night Owls Bots",
-            "Thunder Hawks Bots", "Crimson Lancers Bots", "Black Mambas Bots" };   // (the last 3: Sector C only)
+        // (2026-11-24, owner: "put the bots in the normal teams ... the rest the normal teams please starting with the standard
+        // ones ... if they play sector C there is more teams, have them use the same teams going down the numbers") the squads
+        // ARE the classic public factions now - new players land on a team that already has bots
+        static readonly string[] MixedTeamNames = { "Collective Military", "Europan Mercs", "Morgan Raiders", "Tethys Consortium", "United Moons",
+            "StarFire Corps", "Phobos Militarius", "Callisto Irregulars" };   // (the last 3: Sector C only)
 
         void CreateStrikeTeams()
         {
-            botTeamStrike1 = SquadTeam("Storm Rangers Bots");
+            botTeamStrike1 = SquadTeam("Titan Militia");
             _mixedTeams.Clear();
             for (int i = 0; i < RosterMixedTeamCount && i < MixedTeamNames.Length; i++)
                 _mixedTeams.Add(SquadTeam(MixedTeamNames[i]));
