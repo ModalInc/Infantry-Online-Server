@@ -743,6 +743,9 @@ namespace InfServer.Script.GameType_Eol
             if (_arena._bIsPublic)
                 _arena._bPersistent = true;
             _config = _arena._server._zoneConfig;
+            // (2026-11-25, owner: players kicked for "Client checksum mismatch" since 2026-11-25) no checksum kick in
+            // this zone for now: mismatches are only logged + shown to staff while we find out what causes them
+            _arena._server.ChecksumAlertOnly = true;
             // (2026-11-23, owner: "1 maser OR 1 healer turret OR 1 energizer turret") one of these per player, in total
             ScriptArena.OnePerPlayerComputerGroup = new HashSet<int> { 823, 822, 830 };   // Maser, Heal, Recharge
             // (2026-11-23, owner: "autogun AT and Flak - need FCU 1 of ea per team ... on TOP of the current turret limit.

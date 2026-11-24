@@ -36,6 +36,10 @@ namespace InfServer.Game
         public IPEndPoint _dbEP;
 
         public uint _reliableChecksum = 0;      //Reliable checksum value for this zone
+        public string _reliableChecksumBy = ""; //(2026-11-25) who set it (for the mismatch log)
+        /// <summary>(2026-11-25) a game type can switch the client checksum kick off for its zone: a mismatch is then
+        /// only logged and shown to staff, nobody is disconnected. Default off = the normal kick.</summary>
+        public bool ChecksumAlertOnly = false;
 
         public new LogClient _logger;           //Our zone server log
 
