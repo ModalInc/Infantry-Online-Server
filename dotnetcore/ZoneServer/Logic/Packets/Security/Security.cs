@@ -129,8 +129,10 @@ namespace InfServer.Logic
             {//Server is checking assets
                 if (reliablePlayer != null && reliablePlayer == player)
                 {//Lets use the mods asset checksum
+                    Log.write(TLog.Security, "Reliable client checksum " + pkt.Unk3 + " set by " + player._alias
+                        + " (was " + player._server._reliableChecksum + " set by " + player._server._reliableChecksumBy + ")");
                     player._server._reliableChecksum = pkt.Unk3;
-                    Log.write(TLog.Security, "Reliable client checksum " + pkt.Unk3 + " set by " + player._alias);
+                    player._server._reliableChecksumBy = player._alias;
                     player.setVar("reliable", null);
                     return;
                 }
@@ -138,6 +140,25 @@ namespace InfServer.Logic
                 if (pkt.Unk3 != player._server._reliableChecksum && player._server._reliableChecksum != 0 && player._permissionStatic < Data.PlayerPermission.Level3)
                 {//Mismatch
                     Log.write(TLog.Security, "Checksum mismatch: " + pkt.Unk3 + " vs " + player._server._reliableChecksum);
+
+                    // (2026-11-25) zone with the kick switched off (Eol): log who and against whose value, tell staff, keep him
+                    if (player._server.ChecksumAlertOnly)
+                    {
+                        Log.write(TLog.Security, String.Format("[Checksum] {0} (static level {1}, arena {2}) has {3}, reliable {4} set by {5} - not kicked (alert only)",
+                            player._alias, (int)player._permissionStatic, player._arena._name, pkt.Unk3, player._server._reliableChecksum, player._server._reliableChecksumBy));
+                        // staff in the arena hear about each player at most once every 10 minutes
+                        int now = System.Environment.TickCount;
+                        object last = player.getVar("csAlertTick");
+                        if (last == null || now - (int)last > 600000)
+                        {
+                            player.setVar("csAlertTick", now);
+                            foreach (Player ppl in player._arena.Players.ToList())
+                                if (ppl.PermissionLevelLocal >= Data.PlayerPermission.Level1)
+                                    ppl.sendMessage(-1, String.Format("&Checksum mismatch (not kicked): {0} has {1}, reliable {2} set by {3}",
+                                        player._alias, pkt.Unk3, player._server._reliableChecksum, player._server._reliableChecksumBy));
+                        }
+                        return;
+                    }
 
                     if (!player._server.IsStandalone)
                     {
