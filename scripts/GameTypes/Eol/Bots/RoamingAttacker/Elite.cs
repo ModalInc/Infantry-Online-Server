@@ -13,6 +13,10 @@ namespace InfServer.Script.GameType_Eol
         int _tickEliteNav;
         /// <summary>(2026-11-17) while following a player: fight only within this many px of that player.</summary>
         const int FollowLeash = 650;
+        /// <summary>(2026-11-24, owner: "@home ... guard the area ... typical area like building size") the squad holds
+        /// round the "@ home" spot within GuardRadius and fights anything that comes within GuardLeash of it - never further.</summary>
+        const int GuardRadius = 420;
+        const int GuardLeash = 750;
         int _idleSince, _idleCheckTick, _soloUntil, _driftPickTick;
         short _idleX, _idleY;
         Helpers.ObjectState _drift;
@@ -149,9 +153,17 @@ namespace InfServer.Script.GameType_Eol
             // (2026-11-17, owner: "when you say follow me ... they should follow you and then engage if enemy is around, not
             // go elsewhere immediately") while following: fight only what is near the player we follow - a target more than
             // FollowLeash px from that player is let go, and a bot that has fallen far behind comes back first
+            // (2026-11-24, owner: "make the @home guard the area ... follow is basically YOU are the area that the bots follow,
+            // and if fights happen they join the fight normally") one ANCHOR for the whole poll: the player we follow, their
+            // last spot while they are dead / in the dropship, or the "@ home" guard spot. Fights, assists, turrets, repairs and
+            // medic runs only count near the anchor - nothing pulls the squad off across the map any more.
             InfServer.Game.Player follow = _baseScript.SquadFollowTarget(_team, now);
-            bool farBehind = follow != null && Helpers.distanceTo(_state, follow._state) > FollowLeash + 150;
-            if (follow != null && _target != null && (farBehind || Helpers.distanceTo(_target._state, follow._state) > FollowLeash))
+            Helpers.ObjectState followWait = follow == null ? _baseScript.SquadFollowWaitSpot(_team, now) : null;
+            Helpers.ObjectState guard = follow == null && followWait == null ? _baseScript.SquadDefendPoint(_team, now) : null;
+            Helpers.ObjectState anchor = follow != null ? follow._state : (followWait ?? guard);
+            int leash = guard != null ? GuardLeash : FollowLeash;
+            bool farBehind = anchor != null && Helpers.distanceTo(_state, anchor) > leash + 150;
+            if (anchor != null && _target != null && (farBehind || Helpers.distanceTo(_target._state, anchor) > leash))
                 ClearActivePlayerTarget();
 
             // (2026-11-18, owner: "one bot ran in to fight and then bots just watched their team member get gunned down -
@@ -161,15 +173,15 @@ namespace InfServer.Script.GameType_Eol
             if (hostile)
             {
                 seekAndDestroy(now);
-                if (follow != null && _target != null && Helpers.distanceTo(_target._state, follow._state) > FollowLeash)
-                    ClearActivePlayerTarget();   // (it picked something too far from the player: keep following)
+                if (anchor != null && _target != null && Helpers.distanceTo(_target._state, anchor) > leash)
+                    ClearActivePlayerTarget();   // (it picked something too far from the player / guard spot: stay)
                 InLiveCombat = _target != null || InLiveCombat;
                 if (InLiveCombat)
                     return base.poll();
                 // (2026-11-18) helping but no shot yet (no line of sight): run at the fight until it can shoot
                 Helpers.ObjectState fight;
                 if (assist && _baseScript.TryGetCombatCallFightSpot(_team, this, now, out fight)
-                    && (follow == null || Helpers.distanceTo(fight, follow._state) <= FollowLeash))
+                    && (anchor == null || Helpers.distanceTo(fight, anchor) <= leash))
                 {
                     bool forceFight = now - _tickEliteNav > 1200;
                     if (forceFight) _tickEliteNav = now;
@@ -188,11 +200,14 @@ namespace InfServer.Script.GameType_Eol
                 return base.poll();
 
             // (2026-11-17) a Chief Engineer out of a fight repairs its team's damaged turrets / HQ nearby
-            if (_baseScript.PollEngineerRepair(this, now))
+            // (2026-11-24: only while it is inside the area it follows / guards - no trips across the map)
+            if ((anchor == null || Helpers.distanceTo(_state, anchor) <= leash * 0.6) && _baseScript.PollEngineerRepair(this, now))
                 return base.poll();
 
             // (2026-11-16b) a squad medic out of a fight goes to whoever is hurt, or stays behind its player
             Helpers.ObjectState med = _baseScript.MedicMoveTarget(this);
+            if (med != null && anchor != null && Helpers.distanceTo(med, anchor) > leash)
+                med = null;   // (2026-11-24: the patient is outside the area we follow / guard - stay)
             if (med != null)
             {
                 bool forceMed = now - _tickEliteNav > 1500;
@@ -260,11 +275,32 @@ namespace InfServer.Script.GameType_Eol
                 return base.poll();
             }
 
+            // (2026-11-24) the player we follow is dead / in the dropship: wait round their last spot, don't wander off
+            if (followWait != null)
+            {
+                if (Helpers.distanceTo(_state, followWait) > 260)
+                {
+                    bool forceW = now - _tickEliteNav > 2000;
+                    if (forceW) _tickEliteNav = now;
+                    ApplyNavigationApproach(followWait, EolHqPatrol.MakeLineClearPendingSeek(this, () => followWait), new BotNavigateOptions
+                    {
+                        RequeueMinMs = 1200,
+                        PathStartIndex = 0,
+                        ForceRequeue = forceW,
+                        Priority = PathPriority.Combat,
+                    });
+                }
+                else
+                    DriftAround(followWait.positionX, followWait.positionY, now, followCentre: true);
+                return base.poll();
+            }
+
             // (2026-11-16d, owner: "@ home") told to defend a spot: every bot stays round it and fights what comes
-            Helpers.ObjectState hold = _baseScript.SquadDefendPoint(_team, now);
+            // (2026-11-24) guard area = GuardRadius round the spot (about a building); fights only within GuardLeash (above)
+            Helpers.ObjectState hold = guard;
             if (hold != null)
             {
-                if (Helpers.distanceTo(_state, hold) > 350)
+                if (Helpers.distanceTo(_state, hold) > GuardRadius)
                 {
                     bool forceHold = now - _tickEliteNav > 2500;
                     if (forceHold) _tickEliteNav = now;
@@ -277,7 +313,19 @@ namespace InfServer.Script.GameType_Eol
                     });
                 }
                 else
-                    DriftAround(hold.positionX, hold.positionY, now);
+                {   // (2026-11-24) each bot keeps its own post round the spot (about a building wide), not all on the centre
+                    int gslot = Math.Abs(_id) % 8;
+                    double ga = gslot * (Math.PI * 2 / 8) + (Math.Abs(_id) % 3) * 0.3;
+                    double gr = 120 + (gslot % 3) * 90;
+                    short gx = (short)Math.Max(16, Math.Min(short.MaxValue - 16, hold.positionX + Math.Cos(ga) * gr));
+                    short gy = (short)Math.Max(16, Math.Min(short.MaxValue - 16, hold.positionY + Math.Sin(ga) * gr));
+                    if (!EolHqPatrol.IsOpenForBot(this, gx, gy))
+                    {
+                        gx = hold.positionX;
+                        gy = hold.positionY;
+                    }
+                    DriftAround(gx, gy, now, followCentre: true);
+                }
                 return base.poll();
             }
 

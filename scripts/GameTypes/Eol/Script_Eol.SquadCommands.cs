@@ -37,7 +37,7 @@ namespace InfServer.Script.GameType_Eol
         }
         readonly List<PendingSummon> _pendingSummons = new List<PendingSummon>();
 
-        class SquadCall { public InfServer.Game.Player Player; public int Until; public int HealsLeft; }
+        class SquadCall { public InfServer.Game.Player Player; public int Until; public int HealsLeft; public short LastX, LastY; public bool HasLast; }
         /// <summary>(2026-11-17, owner: "not overpowered ... only a few") an H call gives the caller this many heals.</summary>
         public const int SquadHealCallHeals = 3;
         readonly Dictionary<Team, SquadCall> _squadHealCall = new Dictionary<Team, SquadCall>();
@@ -75,7 +75,23 @@ namespace InfServer.Script.GameType_Eol
             if (p.IsDead || p._state == null || !InPlayArea(p._state.positionX, p._state.positionY, 0)
                 || _eol != null && _eol.IsInPioneerDropshipSafeZone(p._state.positionX, p._state.positionY))
                 return null;
+            c.LastX = p._state.positionX; c.LastY = p._state.positionY; c.HasLast = true;
             return p;
+        }
+
+        /// <summary>
+        /// (2026-11-24, owner: "follow is basically YOU are the area that the bots follow ... instead of forgetting about the
+        /// follow and going off elsewhere") the follow order is still on but the player is dead / in the dropship for now:
+        /// the squad waits round the player's last spot instead of marching off on its own objectives.
+        /// </summary>
+        public Helpers.ObjectState SquadFollowWaitSpot(Team t, int now)
+        {
+            SquadCall c;
+            if (t == null || !_squadFollow.TryGetValue(t, out c) || !c.HasLast)
+                return null;
+            if (now - c.Until >= 0 || c.Player == null || c.Player._team != t || c.Player.IsSpectator)
+                return null;
+            return new Helpers.ObjectState { positionX = c.LastX, positionY = c.LastY };
         }
         static Script_Eol _chatScript;
         static bool _chatHooked;
@@ -134,9 +150,9 @@ namespace InfServer.Script.GameType_Eol
         }
 
         const int OrderHome = 1, OrderEnemy = 2, OrderToMe = 3, OrderDefendHere = 4, OrderHeal = 5, OrderFollow = 6, OrderStop = 7, OrderHelp = 8;
-        /// <summary>"@ home": the squad holds the spot it was called to this long (then back to attacking bases).</summary>
-        const int SquadDefendMs = 5 * 60 * 1000;
-        const int SquadDefendRadius = 350;
+        /// <summary>"@ home": the squad holds the spot it was called to this long (then back to attacking bases).
+        /// (2026-11-24, owner: "@home ... should stay at home in the area you summoned them to defend") 5 -> 10 min.</summary>
+        const int SquadDefendMs = 10 * 60 * 1000;
 
         class SquadDefend { public short X, Y; public int Until; }
         readonly Dictionary<Team, SquadDefend> _squadDefend = new Dictionary<Team, SquadDefend>();
@@ -327,8 +343,8 @@ namespace InfServer.Script.GameType_Eol
                 if (order == OrderDefendHere)
                 {   // hold this spot: fight round it instead of marching on enemy bases
                     _squadDefend[team] = new SquadDefend { X = player._state.positionX, Y = player._state.positionY, Until = now + SquadDefendMs };
-                    player.sendMessage(0, i == 0 ? "&Squad: we're with you - defending this spot for 5 min."
-                        : String.Format("&Squad: {0} suit-teleporting to you in 2 s - defending this spot for 5 min.", i));
+                    player.sendMessage(0, i == 0 ? "&Squad: we're with you - guarding this area for 10 min. Say stop to send us back on the attack."
+                        : String.Format("&Squad: {0} suit-teleporting to you in 2 s - guarding this area for 10 min.", i));
                     SquadSay(all[0], Pick3("holding here", "we got the base", "defending, nothing gets through"));
                     return;
                 }
