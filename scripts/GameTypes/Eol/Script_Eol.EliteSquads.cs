@@ -63,8 +63,8 @@ namespace InfServer.Script.GameType_Eol
             bool bestOut = false;
             foreach (RoamingAttacker ra in EliteSquadMembers(team))
             {
-                bool cmd = ra._type != null && IsSquadLeaderVehicle(ra._type.Id);
-                bool bestCmd = best != null && best._type != null && IsSquadLeaderVehicle(best._type.Id);
+                bool cmd = ra._type != null && IsSquadLeaderVehicle(ra._type.Id) || IsVehicleSquadCaptain(ra);   // (2026-11-24: + the captain on a pack)
+                bool bestCmd = best != null && (best._type != null && IsSquadLeaderVehicle(best._type.Id) || IsVehicleSquadCaptain(best));
                 bool isOut = !IsDeploying(ra);
                 if (best == null || (isOut && !bestOut)
                     || (isOut == bestOut && ((cmd && !bestCmd) || (cmd == bestCmd && ra._id < best._id))))

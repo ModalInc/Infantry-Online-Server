@@ -468,7 +468,8 @@ namespace InfServer.Script.GameType_Eol
         public string botTeamName5 = "Vaarsburg Freeholders";     // the 30k assassins (classic team 13) - local 2026-11-13 (was BHB)
         public string botTeamName6 = "Low Life Thugs";            // the elite pirate squad of 6 (classic team 14)
         public string botTeamName7 = "Skrall Swarm";
-        public string botTeamName8 = "Ghost Reapers";             // local 2026-11-14: elite vehicle squad (boards + Drop Pack)
+        public string botTeamName8 = "StarFire Corps";            // the elite vehicle squad (boards + Drop Pack) - (2026-11-24, owner:
+                                                                  // "the ghost reapers should also have a normal team name") a public, joinable squad
         // (2026-11-24, owner: "one team of assassins is fine. 5 ppl") no second assassin cell any more
 
         /// <summary>
@@ -842,7 +843,7 @@ namespace InfServer.Script.GameType_Eol
             botTeam5 = CreateAndRegisterBotTeam(botTeamName5);
             botTeam6 = CreateAndRegisterBotTeam(botTeamName6);
             botTeam7 = CreateAndRegisterBotTeam(botTeamName7);
-            botTeam8 = CreateAndRegisterBotTeam(botTeamName8);
+            botTeam8 = SquadTeam(botTeamName8);   // (2026-11-24) a normal faction team players join with one click, like the other squads
             botTeam9 = null;   // (2026-11-24) one assassin team
             botTeamAlienElite1 = CreateAndRegisterBotTeam("Skrall Ravagers");
             botTeamAlienElite2 = CreateAndRegisterBotTeam("Skrall Brood");

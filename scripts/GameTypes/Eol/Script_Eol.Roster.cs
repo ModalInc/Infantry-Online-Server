@@ -18,7 +18,7 @@ namespace InfServer.Script.GameType_Eol
     {
         /// <summary>(2026-11-21, owner: "3 bot bases team like eol classic", "both swarms out", "if sector C is chosen please add
         /// another 3 6man teams") 79 + the third base 10 + the King's swarm 12, + 18 while Sector C is open.</summary>
-        public static int EolBotTotalTarget { get { return 101 + (s_sectorCOpen ? SectorCExtraSquads * SquadMaxSize : 0); } }
+        public static int EolBotTotalTarget { get { return 102 + (s_sectorCOpen ? SectorCExtraSquads * SquadMaxSize : 0); } }
         /// <summary>Extra mixed squads while Sector C is open (the last ones of MixedTeamNames).</summary>
         public const int SectorCExtraSquads = 3;
         static bool s_sectorCOpen;
@@ -27,7 +27,7 @@ namespace InfServer.Script.GameType_Eol
         public const int RosterBaseTeams = 3;   // (2026-11-21: a third base, like Eol Classic - Steel Wardens)
         public const int RosterBaseSize = EolMaxConcurrentBaseDefenseBots;   // 10
         public const int RosterAlienMainSize = 8;
-        public const int RosterVehicleSquadSize = 5;   // (2026-11-17: + the board medic on a Hoverboard) // (2026-11-17, owner: Deathboard, Shimmerboard, Drop Pack + a SciOps on a Flight Pack)
+        public const int RosterVehicleSquadSize = 6;   // (2026-11-24, owner: "give them a captain on a pack ... so their team is 6")   // (2026-11-17: + the board medic on a Hoverboard) // (2026-11-17, owner: Deathboard, Shimmerboard, Drop Pack + a SciOps on a Flight Pack)
         /// <summary>(2026-11-16c) Storm Rangers + 5 mixed teams = 6 joinable human squads of 5-6.</summary>
         public const int RosterMixedTeamCount = 8;   // (2026-11-21: 5 + 3 that only fill while Sector C is open)
         /// <summary>(2026-11-16c, owner) a joinable squad is 5 to 6 strong, players + bots.</summary>
