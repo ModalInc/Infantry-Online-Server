@@ -1559,9 +1559,25 @@ namespace InfServer.Game
         public static bool IsManagedBotTeamName(string name)
         {
             // "Bot - ..." (legacy) or "... Bots" (named factions, local 2026-11-14)
-            return !string.IsNullOrEmpty(name)
-                && (name.StartsWith("Bot", StringComparison.OrdinalIgnoreCase)
-                    || name.EndsWith(" Bots", StringComparison.OrdinalIgnoreCase));
+            // (2026-11-24) or a bot-only team a script registered by name (bot teams with ordinary names, no "Bots")
+            if (string.IsNullOrEmpty(name))
+                return false;
+            if (name.StartsWith("Bot", StringComparison.OrdinalIgnoreCase)
+                || name.EndsWith(" Bots", StringComparison.OrdinalIgnoreCase))
+                return true;
+            lock (_managedBotTeamNames)
+                return _managedBotTeamNames.Contains(name);
+        }
+
+        static readonly HashSet<string> _managedBotTeamNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>(2026-11-24) a script marks a team as bot-only: humans are never auto-picked onto it and may not join it.</summary>
+        public static void RegisterManagedBotTeamName(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return;
+            lock (_managedBotTeamNames)
+                _managedBotTeamNames.Add(name);
         }
 
         /// <summary>

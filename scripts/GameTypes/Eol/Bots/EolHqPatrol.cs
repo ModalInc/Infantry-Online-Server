@@ -72,7 +72,20 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>Hurt this recently: fight back instead of walking home.</summary>
         public const int HurtCommitMs = 8000;
         /// <summary>...but never further than this from the HQ (bot and attacker).</summary>
-        public const int HurtChaseMaxRaw = 2600;
+        // (2026-11-24, owner: "the base bots are reacting to things happening outside, and they start to hug a wall ... make sure
+        // they arent lured like that, they should be defending the base") was 2600: a shot from far outside pulled them out
+        public const int HurtChaseMaxRaw = HomeLeashRaw;
+
+        /// <summary>(2026-11-24) a base bot only CHASES (moves toward) what is inside its base: within HomeInvestigateRaw of its HQ
+        /// and with no wall between it and the target. Anything else it shoots at if it can, but keeps patrolling.</summary>
+        public static bool CanChaseFromBase(Bot bot, Vehicle hq, Helpers.ObjectState target)
+        {
+            if (bot?._state == null || hq?._state == null || target == null || bot._arena == null)
+                return true;
+            if (Helpers.distanceTo(target, hq._state) > HomeInvestigateRaw)
+                return false;
+            return TileLineClear(bot._arena, bot._state.positionX, bot._state.positionY, target.positionX, target.positionY, bot._type);
+        }
 
         static Helpers.ObjectState AttackerState(object who)
         {

@@ -54,6 +54,20 @@ namespace InfServer.Script.GameType_Eol
                 _target = getTargetPlayer(ref inSight);
             }
 
+            // (2026-11-24) an enemy outside the base (or behind a wall): shoot it if there's a clear shot, but don't go after it
+            // - back to patrolling inside the base (it used to walk at the target and hug the base wall)
+            if (vHq != null && _target != null && !_target.IsDead && !EolHqPatrol.CanChaseFromBase(this, vHq, _target._state))
+            {
+                EolBotPhysicsUtil.TryFireOnlyWhileUnstick(this, _target);
+                InLiveCombat = false;
+                return false;
+            }
+            if (vHq != null && botTarget != null && !EolHqPatrol.CanChaseFromBase(this, vHq, botTarget._state))
+            {
+                InLiveCombat = false;
+                return false;
+            }
+
             if (_target != null && !_target.IsDead)
             {
                 EolBotBrain.CombatMove(this, _baseScript, now, _target, _target._state, steerForPersuePlayer);
@@ -82,7 +96,8 @@ namespace InfServer.Script.GameType_Eol
             if (EolBotBrain.TryEngageTurret(this, _baseScript, now))
                 return;
             // curious (not base guards): go and look where the fighting is
-            if (!EolHqPatrol.IsGuard(this) && EolBotBrain.TryInvestigate(this, _baseScript, now, vHq?._state, EolHqPatrol.HomeInvestigateRaw))
+            // (2026-11-24, owner: "they should be defending the base") only once the HQ has fallen - while it stands they patrol it
+            if (vHq == null && !EolHqPatrol.IsGuard(this) && EolBotBrain.TryInvestigate(this, _baseScript, now, null, EolHqPatrol.HomeInvestigateRaw))
                 return;
             if (vHq == null)
                 return;

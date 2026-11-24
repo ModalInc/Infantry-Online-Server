@@ -46,7 +46,10 @@ namespace InfServer.Script.GameType_Eol
                 return false;
             string skill;
             _strikeSkill.TryGetValue(dead._team, out skill);
-            _pendingFoot.Add(new PendingFoot { Team = dead._team, X = dead._state.positionX, Y = dead._state.positionY, Cls = FootClassFor(dead._type.Id), Skill = skill, Rider = dead, Bounty = BotBountyOf(dead) });
+            // (2026-11-24) the captain on its pack carries on on foot as a Captain (still the squad leader)
+            bool captain;
+            lock (_vehSquadCaptains) captain = _vehSquadCaptains.Remove(dead);
+            _pendingFoot.Add(new PendingFoot { Team = dead._team, X = dead._state.positionX, Y = dead._state.positionY, Cls = captain ? ClsCaptain : FootClassFor(dead._type.Id), Skill = skill, Rider = dead, Bounty = BotBountyOf(dead) });
             return true;
         }
 

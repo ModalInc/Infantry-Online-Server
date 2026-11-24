@@ -215,9 +215,9 @@ namespace InfServer.Script.GameType_Eol
 
         void CreateSwarmTeam()
         {
-            _queenRun.Team = CreateAndRegisterBotTeam("Alien Swarm Bots");
+            _queenRun.Team = CreateAndRegisterBotTeam("Hive Queen Brood");   // (2026-11-24, owner: "make up something cool")
             if (AlienKingEnabled)
-                _kingRun.Team = CreateAndRegisterBotTeam("Alien King Swarm Bots");
+                _kingRun.Team = CreateAndRegisterBotTeam("Hive King Legion");
         }
 
         /// <summary>(2026-11-21, owner: "actualy lets have both swarms out") the Queen's and the King's swarm both run.</summary>

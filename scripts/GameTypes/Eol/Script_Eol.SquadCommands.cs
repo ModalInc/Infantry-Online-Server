@@ -22,12 +22,22 @@ namespace InfServer.Script.GameType_Eol
         const int SquadOrderCooldownMs = 10000;
         const int SquadSummonDelayMs = 3000;      // S / X: you go after 3 s
         const int SquadToMeDelayMs = 2000;        // @: the first bot arrives after 2 s
-        const int SquadToMeCooldownMs = 30000;    // @ / @ home: once every 30 s
+        const int SquadToMeCooldownMs = 45000;    // @ / @ home: once every 45 s (2026-11-24, owner: was 30 s)
+        const int SquadSummonMeCooldownMs = 45000; // S / X: you can be summoned by the squad once every 45 s (2026-11-24, owner)
         const int SquadHealCallMs = 20000;        // H: the medics stay on you this long (or until you're full)
         const int SquadHealWarpBeyond = 900;      // H: a medic further away than this suit-teleports to you
         const int SquadFollowMs = 10 * 60 * 1000; // follow: up to 10 min
 
         readonly Dictionary<InfServer.Game.Player, int> _squadToMeNext = new Dictionary<InfServer.Game.Player, int>();
+        readonly Dictionary<InfServer.Game.Player, int> _squadSummonMeNext = new Dictionary<InfServer.Game.Player, int>();
+
+        /// <summary>(2026-11-24, owner: "if anyone is under a teleport disrupt they cant be summoned by bots") within an enemy
+        /// teleport disruptor (a player's, a bot's or a turret's anti-warp).</summary>
+        bool UnderTeleportDisrupt(InfServer.Game.Player p)
+        {
+            ScriptArena sa = _arena as ScriptArena;
+            return p != null && sa != null && sa.isTeleportDisrupted(p);
+        }
 
         struct PendingSummon
         {
@@ -356,6 +366,17 @@ namespace InfServer.Script.GameType_Eol
             }
 
             // S / X: (2026-11-17, owner: "a 3 second delay for someone to get summoned by a bot, not instant")
+            int snext;
+            if (_squadSummonMeNext.TryGetValue(player, out snext) && now - snext < 0)
+            {
+                player.sendMessage(-1, String.Format("Squad: we can summon you again in {0} s.", (snext - now + 999) / 1000));
+                return;
+            }
+            if (UnderTeleportDisrupt(player))
+            {
+                player.sendMessage(-1, "Squad: you're inside a teleport disruptor - we can't summon you.");
+                return;
+            }
             if (SummonTarget(team, order) == null)
             {
                 player.sendMessage(-1, "Squad: nobody out in the field to summon you.");
@@ -364,6 +385,7 @@ namespace InfServer.Script.GameType_Eol
             _pendingSummons.RemoveAll(s => s.Player == player);
             _pendingSummons.Add(new PendingSummon { Player = player, Order = order, Due = now + SquadSummonDelayMs });
             _squadOrderNext[player] = now + SquadOrderCooldownMs;
+            _squadSummonMeNext[player] = now + SquadSummonMeCooldownMs;
             player.sendMessage(0, "&Squad: summoning you in 3 s...");
         }
 
@@ -413,6 +435,14 @@ namespace InfServer.Script.GameType_Eol
                 {   // (2026-11-18, owner) no teleporting away with the Citizens / Elite Unit / Mercenaries Standard
                     player.sendMessage(-1, "Squad: you can't be summoned while you carry a standard.");
                     _squadOrderNext.Remove(player);
+                    _squadSummonMeNext.Remove(player);
+                    continue;
+                }
+                if (UnderTeleportDisrupt(player))
+                {   // (2026-11-24) walked into a teleport disruptor during the 3 s: no summon (and no cooldown spent)
+                    player.sendMessage(-1, "Squad: you're inside a teleport disruptor - we can't summon you.");
+                    _squadOrderNext.Remove(player);
+                    _squadSummonMeNext.Remove(player);
                     continue;
                 }
                 RoamingAttacker to = SummonTarget(player._team, s.Order);
@@ -420,6 +450,7 @@ namespace InfServer.Script.GameType_Eol
                 {
                     player.sendMessage(-1, "Squad: nobody out in the field to summon you.");
                     _squadOrderNext.Remove(player);
+                    _squadSummonMeNext.Remove(player);
                     continue;
                 }
                 Helpers.ObjectState at = OpenSpotNear(to._state.positionX, to._state.positionY, 140);
@@ -427,6 +458,7 @@ namespace InfServer.Script.GameType_Eol
                 {
                     player.sendMessage(-1, "Squad: no room there right now - try again.");
                     _squadOrderNext.Remove(player);
+                    _squadSummonMeNext.Remove(player);
                     continue;
                 }
                 warp(player, at);
