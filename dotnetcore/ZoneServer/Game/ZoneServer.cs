@@ -40,6 +40,11 @@ namespace InfServer.Game
         /// <summary>(2026-11-25) a game type can switch the client checksum kick off for its zone: a mismatch is then
         /// only logged and shown to staff, nobody is disconnected. Default off = the normal kick.</summary>
         public bool ChecksumAlertOnly = false;
+        /// <summary>(2026-11-26) a game type can name the zone owner's aliases: then only the owner's client sets the
+        /// reference checksum (not any Level 5), the players' majority overrules the owner when they clearly disagree,
+        /// without the owner the majority is the reference, and a player is kicked only on 2 mismatches in a row.
+        /// Null = the normal check.</summary>
+        public HashSet<string> ChecksumOwnerAliases = null;
 
         public new LogClient _logger;           //Our zone server log
 
