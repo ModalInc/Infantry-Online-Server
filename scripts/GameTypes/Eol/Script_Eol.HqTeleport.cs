@@ -20,6 +20,66 @@ namespace InfServer.Script.GameType_Eol
         const int HqWarpGroup = 70;
         const int PlayerHqVehId = 473;
 
+        // (2026-11-26, owner: "make the base recall something where you have to stand still to use, not moving around. if
+        // you move it should cancel") the HQ recall charges for 5 s; moving, dying, leaving or walking into an enemy
+        // teleport disruptor cancels it (the recall isn't used up then)
+        const int HqRecallChargeMs = 5000;
+        const int HqRecallMoveTolerance = 12;   // px - a nudge isn't moving
+        class HqRecallCharge { public short X, Y; public int Due, NextTell; }
+        readonly Dictionary<InfServer.Game.Player, HqRecallCharge> _hqRecalls = new Dictionary<InfServer.Game.Player, HqRecallCharge>();
+
+        void StartHqRecall(InfServer.Game.Player player)
+        {
+            if (player == null || player.IsDead || player._state == null)
+                return;
+            if (_hqRecalls.ContainsKey(player))
+            {
+                player.sendMessage(-1, "&HQ recall already charging - stand still.");
+                return;
+            }
+            int now = Environment.TickCount;
+            _hqRecalls[player] = new HqRecallCharge { X = player._state.positionX, Y = player._state.positionY, Due = now + HqRecallChargeMs, NextTell = now + 1000 };
+            player.sendMessage(0, String.Format("&HQ recall in {0} s - stand still, moving cancels it.", HqRecallChargeMs / 1000));
+        }
+
+        void PollHqRecalls(int now)
+        {
+            if (_hqRecalls.Count == 0)
+                return;
+            foreach (InfServer.Game.Player p in new List<InfServer.Game.Player>(_hqRecalls.Keys))
+            {
+                HqRecallCharge c = _hqRecalls[p];
+                if (p == null || p.IsDead || p.IsSpectator || p._arena != _arena || p._state == null)
+                {
+                    _hqRecalls.Remove(p);
+                    continue;
+                }
+                if (Math.Abs(p._state.positionX - c.X) > HqRecallMoveTolerance || Math.Abs(p._state.positionY - c.Y) > HqRecallMoveTolerance)
+                {
+                    _hqRecalls.Remove(p);
+                    p.sendMessage(-1, "HQ recall cancelled - you moved.");
+                    continue;
+                }
+                if (UnderTeleportDisrupt(p))
+                {
+                    _hqRecalls.Remove(p);
+                    p.sendMessage(-1, "HQ recall cancelled - you're inside a teleport disruptor.");
+                    continue;
+                }
+                if (now - c.Due >= 0)
+                {
+                    _hqRecalls.Remove(p);
+                    TryHqTeleport(p);
+                    continue;
+                }
+                if (now - c.NextTell >= 0)
+                {
+                    c.NextTell += 1000;
+                    p.sendMessage(0, String.Format("&HQ recall in {0}...", (c.Due - now + 999) / 1000));
+                }
+            }
+        }
+
         bool IsAnyHqVeh(Vehicle v)
         {
             return v != null && v._type != null && (IsHqVehId(v._type.Id) || v._type.Id == PlayerHqVehId);

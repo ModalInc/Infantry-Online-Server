@@ -26,6 +26,8 @@ namespace InfServer.Bots
 		internal Arena MovementArena => _arena;
 		internal Helpers.ObjectState MovementState => _state;
 		internal VehInfo.Car MovementCarType => _type;
+		/// <summary>(2026-11-26) a bot that swaps its body (mounts / dismounts a board) moves as the new type.</summary>
+		public void SetCarType(VehInfo.Car type) { if (type != null) _type = type; }
         public bool bCollision;
         public Vector3 _lastCollision;
 
