@@ -37,9 +37,13 @@ namespace InfServer.Script.GameType_Eol
         /// the damage they take. lets use for example a Autogun AT") the bot Harriers take hits with the Auto Turret - AT's
         /// armour (veh 413): explosive 5,000 ignore + 1 %, everything else 12,000 + 75 % - on their own 300 HP.</summary>
         const ushort VehHarrierBotArmour = 413;
-        // (2026-11-26, owner: "there should be TWO names under the vehicle. not a body following it") a bot can't sit inside a
-        // vehicle (only players can), and a second bot riding along trailed behind it - so the Harrier carries both crew names:
-        // "Chief & Gunner". Out of it they are two bots again, each with its own name.
+        /// <summary>(2026-11-26, owner: "there should be TWO names under the vehicle. not a body following it" / "it should stack
+        /// and each have their own BTY") the gunner rides in the Harrier as its own bot on veh 845 (Squad Leader) / 846
+        /// (Sergeant) - the class with no body sprite, so only its name and bounty show. The engine keeps it on the hull every
+        /// tick (Bot.RideOn), RiderOffsetY below the hull's centre so its line sits under the Chief's. It can't be hurt there;
+        /// the Harrier takes the hits and fires the guns.</summary>
+        const ushort VehGunnerSquadLeader = 845, VehGunnerSergeant = 846;
+        const short RiderOffsetY = 64;   // (the Harrier's label sits ~62 px under its centre; the rider has no body, so its line is just under its spot)
         const int ItmKamenevScv = 3070, ItmLawLauncher = 3071, ItmFlakShell = 3074, ItmA2GrenadeLauncher = 3075;
 
         sealed class HarrierCrew
@@ -50,6 +54,8 @@ namespace InfServer.Script.GameType_Eol
             public RoamingAttacker Harrier, Chief, Gunner;
             public Vehicle Turret;   // (2026-11-26) the Harrier's turret piece, on top of the bot (the gunner's seat)
             public string ChiefAlias;   // the crew's own names while they are in the Harrier
+            public RoamingAttacker Rider;   // (2026-11-26) the gunner riding in it (its own name and bounty)
+            public int GunnerBounty;
             public string GunnerAlias;
             public bool ChiefCycled, GunnerCycled;   // been through the dropship since they got out of the Harrier
             public Helpers.ObjectState BuildSpot;
@@ -291,6 +297,16 @@ namespace InfServer.Script.GameType_Eol
                 return;
             PollPendingHarrierFoot(now);
             foreach (HarrierCrew c in _harrierCrews)
+                if (c.Rider != null)
+                {
+                    if (c.Harrier != null && !BotGone(c.Harrier) && !c.Rider.IsDead && !c.Rider.bCondemned)
+                        c.Rider.DamageImmuneUntilTick = NonZeroTick(now + 1000);
+                    else if (c.Harrier == null || BotGone(c.Harrier))
+                        DropHarrierRider(c);
+                    else
+                        c.Rider = null;
+                }
+            foreach (HarrierCrew c in _harrierCrews)
                 if (c.Turret != null)
                 {
                     if (c.Harrier != null && !BotGone(c.Harrier) && !c.Turret.IsDead && !c.Turret.bCondemned)
@@ -311,6 +327,7 @@ namespace InfServer.Script.GameType_Eol
                     if (!BotGone(c.Harrier))
                         continue;
                     c.Harrier = null;   // (gone without the death hook - despawned, sector change): the crew starts again
+                    DropHarrierRider(c);
                 }
                 if (_pendingHarrierFoot.Exists(p => p.Crew == c))
                     continue;
@@ -489,6 +506,7 @@ namespace InfServer.Script.GameType_Eol
             Helpers.ObjectState at = findOpenWarpBot(_arena, chief._state.positionX, chief._state.positionY, 200, 56)
                 ?? new Helpers.ObjectState { positionX = chief._state.positionX, positionY = chief._state.positionY };
             int bounty = BotBountyOf(chief);
+            c.GunnerBounty = BotBountyOf(gunner);
             string chiefAlias = _arena.HandOverBotAlias(chief) ?? c.ChiefAlias;
             string gunnerAlias = _arena.HandOverBotAlias(gunner) ?? c.GunnerAlias;
             c.ChiefAlias = chiefAlias;
@@ -500,7 +518,7 @@ namespace InfServer.Script.GameType_Eol
             c.BuildDoneTick = 0;
             c.BuildSpot = null;
 
-            _arena.NextBotAlias = chiefAlias != null && gunnerAlias != null ? chiefAlias + " & " + gunnerAlias : chiefAlias;   // (both names under it)
+            _arena.NextBotAlias = chiefAlias;
             RoamingAttacker h = _arena.newBot(typeof(RoamingAttacker), c.HarrierVeh, botTeam6, null, at, this, null) as RoamingAttacker;
             _arena.NextBotAlias = null;
             if (h == null)
@@ -523,6 +541,7 @@ namespace InfServer.Script.GameType_Eol
             _bots.Add(h);
             c.Harrier = h;
             AttachHarrierTurret(c, h, at);
+            c.Rider = SpawnHarrierRider(c, h, gunnerAlias, now);
             Log.write(TLog.Normal, "[Eol] Low Life Thugs: {0} and {1} got in their {2} at {3}.", chiefAlias, c.GunnerAlias,
                 HarrierName(c), Helpers.posToLetterCoord(at.positionX, at.positionY));
         }
@@ -567,6 +586,44 @@ namespace InfServer.Script.GameType_Eol
             b.SkillModeOverride = "ultra";
         }
 
+        /// <summary>The gunner riding in the Harrier: no body, its name and bounty under the Chief's, kept on the hull by the engine.</summary>
+        RoamingAttacker SpawnHarrierRider(HarrierCrew c, RoamingAttacker h, string alias, int now)
+        {
+            ushort veh = c.GunnerCls == ClsSergeant ? VehGunnerSergeant : VehGunnerSquadLeader;
+            if (!(_arena._server._assets.getVehicleByID(veh) is VehInfo.Car))
+                return null;
+            Helpers.ObjectState st = new Helpers.ObjectState { positionX = h._state.positionX, positionY = (short)(h._state.positionY + RiderOffsetY), yaw = h._state.yaw };
+            _arena.NextBotAlias = alias;
+            RoamingAttacker g = _arena.newBot(typeof(RoamingAttacker), veh, botTeam6, null, st, this, null) as RoamingAttacker;
+            _arena.NextBotAlias = null;
+            if (g == null)
+                return null;
+            g.RideOn = h;
+            g.RideOffsetY = RiderOffsetY;
+            g.bRespawn = false;
+            g.DamageImmuneUntilTick = NonZeroTick(now + 1500);
+            lock (_botBounty) _botBounty[g] = c.GunnerBounty;
+            g.DisplayBounty = c.GunnerBounty;
+            if (_bots == null)
+                _bots = new List<Bots.Bot>();
+            _bots.Add(g);
+            return g;
+        }
+
+        /// <summary>The Harrier is gone: the rider's name goes to the gunner on foot.</summary>
+        void DropHarrierRider(HarrierCrew c)
+        {
+            RoamingAttacker g = c.Rider;
+            c.Rider = null;
+            if (g == null)
+                return;
+            c.GunnerBounty = BotBountyOf(g);
+            c.GunnerAlias = _arena.HandOverBotAlias(g) ?? c.GunnerAlias;
+            g.RideOn = null;
+            if (!g.IsDead && !g.bCondemned)
+                EnqueueVehicleDespawn(g, force: true);
+        }
+
         void DropHarrierTurret(HarrierCrew c)
         {
             Vehicle t = c.Turret;
@@ -592,8 +649,9 @@ namespace InfServer.Script.GameType_Eol
                 return false;
             c.Harrier = null;
             DropHarrierTurret(c);
+            DropHarrierRider(c);
             short x0 = dead._state != null ? dead._state.positionX : (short)0, y0 = dead._state != null ? dead._state.positionY : (short)0;
-            _arena.HandOverBotAlias(dead);   // (frees "Chief & Gunner" - they get out under their own names)
+            _arena.HandOverBotAlias(dead);   // (the Chief gets out under his name)
             _pendingHarrierFoot.Add(new PendingHarrierFoot { Crew = c, X = x0, Y = y0, ChiefAlias = c.ChiefAlias, Bounty = BotBountyOf(dead) });
             Log.write(TLog.Normal, "[Eol] Low Life Thugs: {0} destroyed - the crew is on foot.", HarrierName(c));
             return true;
@@ -618,6 +676,11 @@ namespace InfServer.Script.GameType_Eol
                 {
                     lock (_botBounty) _botBounty[c.Chief] = f.Bounty;
                     c.Chief.DisplayBounty = f.Bounty;
+                }
+                if (c.Gunner != null)
+                {
+                    lock (_botBounty) _botBounty[c.Gunner] = c.GunnerBounty;
+                    c.Gunner.DisplayBounty = c.GunnerBounty;
                 }
                 c.NextSpawnTick = now + 5000;
             }
