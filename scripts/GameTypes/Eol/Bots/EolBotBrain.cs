@@ -442,6 +442,14 @@ namespace InfServer.Script.GameType_Eol
                     m.P.StrafePower = 1f;
                 }
             }
+            if (b._type != null && Script_Eol.IsHarrierVeh(b._type.Id))
+            {   // (2026-11-26, owner: "it needs to be SMOOTH ALWAYS. butter smooth") a Harrier can't strafe - the infantry juking
+                // (side-steps flipping every 1-3 s, backpedalling) made it swing back and forth: it drives like a vehicle
+                m.P.StrafePower = 0f;
+                m.P.Backpedals = false;
+                m.P.FlipMinMs = 6000;
+                m.P.FlipMaxMs = 9000;
+            }
             m.StrafeSign = m.R.Next(2) == 0 ? -1f : 1f;
             Minds.Add(b, m);
             lock (Known) Known.Add(new WeakReference<Bot>(b));

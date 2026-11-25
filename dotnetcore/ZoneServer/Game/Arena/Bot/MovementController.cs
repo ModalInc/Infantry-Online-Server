@@ -1032,7 +1032,7 @@ namespace InfServer.Bots
         }
 
         /// <summary>The circle a big vehicle keeps round small obstacles (tree trunks, posts).</summary>
-        public const double SmallObstacleRadius = 22;
+        public const double SmallObstacleRadius = 12;   // (2026-11-26: 22 -> 12, it drives between the trees)
 
         bool TallWallAt(double x, double y)
         {

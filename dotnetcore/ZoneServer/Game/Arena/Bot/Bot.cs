@@ -126,9 +126,14 @@ namespace InfServer.Bots
         /// the longest clear run (a doorway / open ground), prefers ones not straight back where it came from,
         /// drives through it for ~1 s, then re-paths from there. Applies to every bot, in or out of combat.
         /// </summary>
+        /// <summary>(2026-11-26, owner: "it needs to be SMOOTH ALWAYS") a big vehicle (radius 24 px and up - the Harriers) slides
+        /// along walls as a circle (MovementController); the wall-escape kicks below threw it onto sudden new routes - the
+        /// jolts. They're off for it (its own script brings it back to its route if it really gets stuck).</summary>
+        bool BigVehicle { get { return _type != null && _type.PhysicalRadius >= 24; } }
+
         private void WallSense(int now)
         {
-            if (MovementMode != BotMovementMode.Api || _state == null || _movement == null || _arena == null || IsDead)
+            if (MovementMode != BotMovementMode.Api || _state == null || _movement == null || _arena == null || IsDead || BigVehicle)
                 return;
             if (_movement.IsMovementFrozen || now - _pinUntil < 0)
                 return;
@@ -292,7 +297,7 @@ namespace InfServer.Bots
         /// </summary>
         private void StuckWatchdog(int now)
         {
-            if (MovementMode != BotMovementMode.Api || _state == null || _movement == null || _arena == null)
+            if (MovementMode != BotMovementMode.Api || _state == null || _movement == null || _arena == null || BigVehicle)
                 return;
             if (_stuckWatchTick != 0 && now - _stuckWatchTick < 600)
                 return;
@@ -1687,7 +1692,7 @@ namespace InfServer.Bots
 
         private void TryWallEscapeRecovery(int tickCount)
         {
-            if (MovementMode != BotMovementMode.Api)
+            if (MovementMode != BotMovementMode.Api || BigVehicle)
                 return;
 
             if (_tickWallEscapeUntil > tickCount)

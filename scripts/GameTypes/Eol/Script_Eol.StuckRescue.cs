@@ -55,6 +55,10 @@ namespace InfServer.Script.GameType_Eol
                 if (b == null || b.IsDead || b.bCondemned || b._state == null || b._team == null)
                     continue;
                 seen.Add(b);
+                // (2026-11-26, owner: "they just got teleported") a Harrier has its own back-to-route rescue
+                // (Script_Eol.HarrierCrew.cs) - this one teleported it onto a team mate a second after that started
+                if (b._type != null && IsHarrierVeh(b._type.Id))
+                    continue;
                 short x = b._state.positionX, y = b._state.positionY;
                 if (PollVehicleIndoors(b, x, y, now))
                     continue;
