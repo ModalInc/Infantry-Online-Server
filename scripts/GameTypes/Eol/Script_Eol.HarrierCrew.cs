@@ -99,6 +99,22 @@ namespace InfServer.Script.GameType_Eol
         /// </summary>
         public Helpers.ObjectState HarrierRouteGoal(Bots.Bot b, int now)
         {
+            try { return HarrierRouteGoalInner(b, now); }
+            catch (Exception ex) { SafeLog("harrier route", ex); return null; }
+        }
+
+        void SafeLog(string what, Exception ex)
+        {
+            int now = Environment.TickCount, last;
+            if (!_safeRunLogged.TryGetValue(what, out last) || now - last > 30000)
+            {
+                _safeRunLogged[what] = now;
+                Log.write(TLog.Exception, "[Eol] {0} failed (logged once per 30 s): {1}", what, ex);
+            }
+        }
+
+        Helpers.ObjectState HarrierRouteGoalInner(Bots.Bot b, int now)
+        {
             if (b == null || b._state == null || b._type == null || !IsHarrierVeh(b._type.Id) || !IsHarrierCrewTeam(b._team))
                 return null;
             HarrierCrew crew = _harrierCrews.Find(c => ReferenceEquals(c.Harrier, b));
@@ -182,6 +198,12 @@ namespace InfServer.Script.GameType_Eol
         /// route. Null = not stuck (carry on as usual).
         /// </summary>
         public Helpers.ObjectState HarrierUnstickGoal(Bots.Bot b, int now)
+        {
+            try { return HarrierUnstickGoalInner(b, now); }
+            catch (Exception ex) { SafeLog("harrier unstick", ex); return null; }
+        }
+
+        Helpers.ObjectState HarrierUnstickGoalInner(Bots.Bot b, int now)
         {
             if (b == null || b._state == null || b._type == null || !IsHarrierVeh(b._type.Id) || !IsHarrierCrewTeam(b._team) || b.IsDead)
                 return null;
@@ -301,8 +323,42 @@ namespace InfServer.Script.GameType_Eol
             return b == null || (b.bCondemned && !b.bDropshipRespawnPending) || (b.IsDead && !b.bDropshipRespawnPending);
         }
 
+        // ---------- (2026-11-26, owner: "the zone crashed ... make sure it does NOT crash") ----------
+        readonly Dictionary<string, int> _safeRunLogged = new Dictionary<string, int>();
+
+        /// <summary>Runs one of the zone's systems; an error is logged at most every 30 s (an error every tick logged a full
+        /// stack trace 200 times a second - a flood that can bring the server down) and never stops the rest of the poll.</summary>
+        void SafeRun(string what, Action run)
+        {
+            try { run(); }
+            catch (Exception ex)
+            {
+                int now = Environment.TickCount, last;
+                if (!_safeRunLogged.TryGetValue(what, out last) || now - last > 30000)
+                {
+                    _safeRunLogged[what] = now;
+                    Log.write(TLog.Exception, "[Eol] {0} failed (logged once per 30 s): {1}", what, ex);
+                }
+            }
+        }
+
+        int _tickHarrierPrune;
+
+        /// <summary>The per-bot route / stuck notes of bots that are gone (no build-up over a long session).</summary>
+        void PruneHarrierNotes(int now)
+        {
+            if (now - _tickHarrierPrune < 30000)
+                return;
+            _tickHarrierPrune = now;
+            foreach (Bots.Bot b in new List<Bots.Bot>(_routeWalk.Keys))
+                if (b == null || b.bCondemned || b.IsDead) _routeWalk.Remove(b);
+            foreach (Bots.Bot b in new List<Bots.Bot>(_harrierStuck.Keys))
+                if (b == null || b.bCondemned || b.IsDead) _harrierStuck.Remove(b);
+        }
+
         void PollHarrierCrew(int now)
         {
+            PruneHarrierNotes(now);
             if (!HarrierCrewEnabled || botTeam6 == null || _arena == null || !_arena._bGameRunning || !EolHasArenaPresence())
                 return;
             PollPendingHarrierFoot(now);
@@ -641,8 +697,8 @@ namespace InfServer.Script.GameType_Eol
             c.Turret = null;
             if (t == null)
                 return;
-            if (t._parent != null && t._parent._childs != null)
-                t._parent._childs.Remove(t);
+            // (never edit the hull's child list here - the engine may be walking it as the hull dies; a destroyed parent
+            // destroys its children itself, and a condemned child is skipped)
             if (!t.IsDead && !t.bCondemned)
                 EnqueueVehicleDespawn(t, force: true);
         }
