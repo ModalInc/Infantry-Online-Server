@@ -44,6 +44,35 @@ namespace InfServer.Script.GameType_Eol
             HoldPosition();
         }
 
+        /// <summary>(2026-11-26) an assassin's hunt: fight the 30k within AssassinEngageRaw, drive at him (firing when he's in
+        /// reach) farther out - nobody else. False = no 30k out in the field.</summary>
+        bool AssassinHuntPoll(int now)
+        {
+            InfServer.Game.Player mark = _baseScript.AssassinMark(this);
+            if (mark == null)
+                return false;
+            _target = mark;
+            _baseScript.NoteBountyHunterMarkSighting(mark);
+            if (Helpers.distanceTo(_state, mark._state) <= Script_Eol.AssassinEngageRaw)
+            {
+                EolBotBrain.CombatMove(this, _baseScript, now, mark, mark._state, steerForPersuePlayer);
+                InLiveCombat = true;
+            }
+            else
+            {
+                Helpers.ObjectState to = new Helpers.ObjectState { positionX = mark._state.positionX, positionY = mark._state.positionY };
+                ApplyNavigationApproach(to, steerForPersuePlayer, new BotNavigateOptions
+                {
+                    RequeueMinMs = 1500,
+                    PathStartIndex = 1,
+                    Priority = PathPriority.Combat,
+                });
+                EolBotPhysicsUtil.TryFireOnlyWhileUnstick(this, mark);
+                InLiveCombat = false;
+            }
+            return true;
+        }
+
         public void seekAndDestroy(int now)
         {
             if (_baseScript != null && _baseScript.IsBountyHunterBotTeam(_team))

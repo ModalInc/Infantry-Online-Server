@@ -188,6 +188,20 @@ namespace InfServer.Script.GameType_Eol
                 return false;
             }
 
+            // (2026-11-26, owner: "the squad leader is just standing far away not doing anything. the focus should be killing
+            // the 30ker") the assassins' Squad Leader: waits in the dropship until he is sent out, then goes straight for the 30k
+            if (_baseScript.IsBountyHunterBotTeam(_team))
+            {
+                if (_baseScript.AssassinWaitsInShip(this))
+                {
+                    ClearActivePlayerTarget();
+                    HoldPosition();
+                    return base.poll();
+                }
+                if (AssassinHuntPoll(Environment.TickCount))
+                    return base.poll();
+            }
+
             int now = Environment.TickCount;
             InLiveCombat = false;
             bool walkPastHostile = BotShouldEngageInsteadOfIdle(now);

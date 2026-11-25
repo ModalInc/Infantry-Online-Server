@@ -218,9 +218,13 @@ namespace InfServer.Script.GameType_Eol
             if (bot == null || _arena == null)
                 return null;
 
-            // Bounty hunters revive in an open sector, never the Pioneer dropship or a raid pin.
+            // (2026-11-26, owner: "if the assassins die, they go to the drop ship and respawn like the other bots") assassins
+            // revive in the dropship and wait there for the Squad Leader (he is sent out near the 30k, he summons the rest)
             if (IsBountyHunterBotTeam(bot._team))
             {
+                Helpers.ObjectState ship = PickDropshipSpawn();
+                if (ship != null)
+                    return ship;
                 Helpers.ObjectState sector;
                 if (TryFindBountyHunterSectorSpawn(out sector) && sector != null)
                     return sector;
@@ -500,8 +504,8 @@ namespace InfServer.Script.GameType_Eol
                 if (!_sw.Pirate || (_eol != null && _eol.IsInPioneerDropshipSafeZone(spawn.positionX, spawn.positionY)))
                     BeginSwarmDeploy(bot, Environment.TickCount);
             }
-            else if (_eol != null && _eol.IsInPioneerDropshipSafeZone(spawn.positionX, spawn.positionY))
-                BeginDeploy(bot, Environment.TickCount);
+            else if (_eol != null && _eol.IsInPioneerDropshipSafeZone(spawn.positionX, spawn.positionY) && !IsBountyHunterBotTeam(bot._team))
+                BeginDeploy(bot, Environment.TickCount);   // (assassins wait in the ship for the summon)
 
             // Re-list if death dropped them while the team was under max.
             _arena.EnsureBotOnNamelist(bot);
