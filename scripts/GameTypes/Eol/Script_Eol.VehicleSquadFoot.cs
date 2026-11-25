@@ -5,8 +5,6 @@ using InfServer.Bots;
 using InfServer.Game;
 using InfServer.Protocol;
 
-using Assets;
-
 namespace InfServer.Script.GameType_Eol
 {
     /// <summary>
@@ -41,43 +39,7 @@ namespace InfServer.Script.GameType_Eol
             return ClsJumpTrooper;
         }
 
-        /// <summary>(2026-11-26) the body a vehicle-squad bot gets off as: a Captain for the squad's captain, else its class.</summary>
-        VehInfo.Car FootBodyFor(int vehId, bool captain)
-        {
-            return _arena._server._assets.getVehicleByID(captain ? ClsCaptain : FootClassFor(vehId)) as VehInfo.Car;
-        }
-
-        /// <summary>
-        /// (2026-11-26, the other dev's mount code - Bots/RoamingAttacker/Mount.cs) the board / pack of a riding squad bot is
-        /// destroyed: the SAME bot gets off on the spot - body back, full health, its class's guns and armour, no kill reward
-        /// for the board, no killfeed line, no new bot. On foot it dies normally and the squad's refill sends a new vehicle.
-        /// True = handled (the bot lives on).
-        /// </summary>
-        public bool OnBoardDestroyed(RoamingAttacker bot, InfServer.Game.Player killer)
-        {
-            if (bot == null || !bot.IsMounted || bot._state == null || _arena == null)
-                return false;
-            int boardId = bot._type != null ? bot._type.Id : 0;
-            bool captain;
-            lock (_vehSquadCaptains) captain = _vehSquadCaptains.Remove(bot);
-            int cls = captain ? ClsCaptain : FootClassFor(boardId);
-            bot.Dismount();   // body first (the order rule)
-            bot._state.health = (short)Math.Min(short.MaxValue, Math.Max(1, bot._type != null ? bot._type.Hitpoints : 100));
-            ApplyHumanLoadout(bot, cls, bot._team);
-            if (captain)
-            {   // still the squad's captain, with a Captain's armour
-                bot.ArmorSource = _arena._server._assets.getVehicleByID(ClsCaptain);
-                ApplyPlayerArmor(bot, ClsCaptain, useClassTable: true);
-            }
-            bot.bRespawn = false;   // (dies on foot = gone; the squad sends a new vehicle)
-            bot.DamageImmuneUntilTick = NonZeroTick(Environment.TickCount + 800);
-            Log.write(TLog.Normal, "[Eol] squad bot {0}: board {1} destroyed{2} - on foot as {3}",
-                InfServer.Game.Modules.BotNameModule.GetDisplayName(bot), boardId, killer != null ? " by " + killer._alias : "", cls);
-            return true;
-        }
-
-        /// <summary>Bot.Death: a vehicle-squad bot lost its vehicle - queue its rider on foot. True = it was one (no kill reward).
-        /// (2026-11-26: only a fallback now - riding bots get off through OnBoardDestroyed and never die on their board.)</summary>
+        /// <summary>Bot.Death: a vehicle-squad bot lost its vehicle - queue its rider on foot. True = it was one (no kill reward).</summary>
         bool OnVehicleSquadVehicleLost(Bots.Bot dead)
         {
             if (!IsVehicleStageBot(dead) || dead._state == null)
