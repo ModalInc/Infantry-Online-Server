@@ -59,6 +59,10 @@ namespace InfServer.Script.GameType_Eol
                 // (Script_Eol.HarrierCrew.cs) - this one teleported it onto a team mate a second after that started
                 if (b._type != null && IsHarrierVeh(b._type.Id))
                     continue;
+                // (2026-11-26, owner: "the squad leader is having the summon animation spam") the idle assassin leader was
+                // teleported again and again by this rescue; assassins now always move (straight for the 30k)
+                if (IsBountyHunterBotTeam(b._team))
+                    continue;
                 short x = b._state.positionX, y = b._state.positionY;
                 if (PollVehicleIndoors(b, x, y, now))
                     continue;

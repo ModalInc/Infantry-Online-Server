@@ -83,13 +83,16 @@ namespace InfServer.Script.GameType_Eol
         {
             try
             {
-                int close = PickAssassinTopGun(AssassinClose), far = PickAssassinTopGun(AssassinFar);
+                // the class's own guns (ApplyHumanLoadout picked them from the class pools)
+                int close = b._weaponCloseItem != null ? b._weaponCloseItem.id : 0;
+                int far = b._weaponFarItem != null ? b._weaponFarItem.id : 0;
                 int melee = ItmCombatSword;
                 switch (role)
                 {
                     case AssassinRole.SphereBlackOps:
                         EquipCloseFar(b, close, ItmProtonSphere);
-                        SetAssassinMisc(b, far);
+                        if (far != 0 && far != close && far != ItmProtonSphere)
+                            SetAssassinMisc(b, far);   // (its class's other gun as the third)
                         SetUtility(b, ItmTeleportDisruptor);
                         break;
                     case AssassinRole.Infiltrator:
@@ -103,8 +106,7 @@ namespace InfServer.Script.GameType_Eol
                         melee = ItmMagnaFist;
                         break;
                     default:
-                        EquipCloseFar(b, close, far);
-                        break;
+                        break;   // (the Squad Leader and the second Black Ops: their class guns as they are)
                 }
                 ItemInfo mi = Itm(melee);
                 WeaponController wm = new WeaponController(b._state, new WeaponController.WeaponSettings());
@@ -264,10 +266,21 @@ namespace InfServer.Script.GameType_Eol
             int n = 0;
             foreach (Vehicle v in _arena.Vehicles)
             {
-                if (v is RoamingAttacker && !v.IsDead && v._team == team)
-                    n++;
+                if (v is RoamingAttacker ra && v._team == team && !ra.bCondemned && (!ra.IsDead || ra.bDropshipRespawnPending))
+                    n++;   // (2026-11-26: one on its way back to the dropship counts)
             }
             return n;
+        }
+
+        /// <summary>(2026-11-26) the team's Squad Leader is dead but on his way back to the dropship.</summary>
+        bool AssassinLeaderPending(Team team)
+        {
+            if (_arena == null || team == null)
+                return false;
+            foreach (Vehicle v in _arena.Vehicles)
+                if (v is RoamingCaptain rc && v._team == team && rc.IsDead && rc.bDropshipRespawnPending && !rc.bCondemned)
+                    return true;
+            return false;
         }
 
         /// <summary>Mark, or anyone on the mark's team — assassins may engage these only.</summary>
@@ -535,15 +548,16 @@ namespace InfServer.Script.GameType_Eol
             b.SkillModeOverride = AssassinSkillMode;
             if (b._type != null)
                 ApplyHumanLoadout(b, b._type.Id, b._team);   // class weapons, cloak, SuperCharger, grenades, opener
-            ApplyAssassinWeapons(b);
-            ApplyAssassinRole(b, role);   // (2026-11-26: the fixed team's guns, disruptors, cloak and melee)
+            // (2026-11-26, owner: "one of the blackops has assault rifle? they should only have their own class weapons") no
+            // more assassin "top guns" on top (an AR / chaingun when the class list was empty) - the class's own guns, plus
+            // the role's named guns
+            ApplyAssassinRole(b, role);
             b.AgilityBonusPercent = AssassinAgilityBonusPercent;
-            // (2026-11-23, owner: "there is dead bodies still spawning on the assassin team") no corpse revive for assassins:
-            // a revived assassin was warped to a new sector and re-shown, and clients drew a dead body there; and while
-            // it lay waiting it wasn't counted, so a replacement spawned and the cell grew past its size. Now a dead
-            // assassin leaves one body and is gone; the cell is topped up with a fresh one (new random class) after
-            // the respawn delay (NoteAssassinDeath).
-            b.bRespawn = false;
+            // (2026-11-26, owner: "if the assassins die, they go to the drop ship and respawn like the other bots. not re-enter
+            // the zone") a dead assassin comes back in the dropship (the same bot) and waits there for the Squad Leader's
+            // summon; one on its way back counts, so no replacement spawns meanwhile (the old revive into a sector drew dead
+            // bodies and let the cell grow - 2026-11-23)
+            EnableBotDropshipRespawn(b, 0);
             if (_bots != null && !_bots.Contains(b))
                 _bots.Add(b);
         }
@@ -629,7 +643,7 @@ namespace InfServer.Script.GameType_Eol
         {
             if (!_bountyHunterWaveActive || !IsBountyHuntActive || team == null)
                 return;
-            if (FindLiveBountyHunterCaptain(team) != null)
+            if (FindLiveBountyHunterCaptain(team) != null || AssassinLeaderPending(team))
                 return;
             int due;
             if (_tickNextBountyHunterCaptainSpawn.TryGetValue(team, out due) && due != 0 && now < due)
@@ -792,7 +806,10 @@ namespace InfServer.Script.GameType_Eol
                 if (roamBots != null)
                     roamBots[team] = CountLiveBountyHunterGrunts(team);
                 if (IsBountyHunterMarkInField())
+                {
+                    PollAssassinLeaderOut(now, team);
                     PollAssassinSummon(now, team);
+                }
             }
         }
 
@@ -802,7 +819,35 @@ namespace InfServer.Script.GameType_Eol
         /// AssassinSummonEveryMs while some of them are far off (AssassinSummonFarRaw). Like a player's summon: nobody inside
         /// an enemy teleport disruptor comes (and none if he is inside one), and not while he is in a fight up close.
         /// </summary>
-        const int AssassinSummonEveryMs = 30000, AssassinSummonFarRaw = 900;
+        const int AssassinSummonEveryMs = 30000, AssassinSummonFarRaw = 1500;
+
+        /// <summary>(2026-11-26) the Squad Leader back in the dropship (he died) goes out near the 30k again - the only one
+        /// that does; the summon brings the rest.</summary>
+        void PollAssassinLeaderOut(int now, Team team)
+        {
+            RoamingCaptain lead = FindLiveBountyHunterCaptain(team);
+            if (lead == null || lead._state == null || !AssassinWaitsInShip(lead))
+                return;
+            Helpers.ObjectState spot;
+            if (!TryFindAssassinLeaderSpotNearMark(out spot))
+                return;
+            WarpBot(lead, spot);
+            lead.DamageImmuneUntilTick = NonZeroTick(now + 1500);
+            _assassinSummonNext.Remove(team);   // (he summons the team straight away)
+        }
+
+        /// <summary>(2026-11-26, owner: "the focus should be killing the 30ker. not other teams") the 30k an assassin hunts -
+        /// null when there's no contract or he isn't out in the field.</summary>
+        public InfServer.Game.Player AssassinMark(Bot b)
+        {
+            if (b == null || !IsBountyHunterBotTeam(b._team) || !BountyHunterSquadOperational || !IsBountyHunterMarkInField())
+                return null;
+            InfServer.Game.Player m = _bountyHuntMarked;
+            return m != null && !m.IsDead && !m.IsSpectator && m._state != null ? m : null;
+        }
+
+        /// <summary>Within this an assassin fights the 30k; farther, it drives at him (firing if it can reach).</summary>
+        public const int AssassinEngageRaw = 900;
         readonly Dictionary<Team, int> _assassinSummonNext = new Dictionary<Team, int>();
 
         void PollAssassinSummon(int now, Team team)
