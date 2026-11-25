@@ -423,7 +423,7 @@ namespace InfServer.Script.GameType_Eol
             if (b.SkillModeOverride == "ace" || b.SkillModeOverride == "ultra")
             {   // elite: sharp, disciplined, sticks together. Assassins ("ultra") and elite aliens never retreat.
                 bool alienElite = b is AlienHorde;
-                bool assassin = b.SkillModeOverride == "ultra" && !(b._type != null && Script_Eol.IsHarrierVeh(b._type.Id));   // (2026-11-26: the Harriers aim like assassins, fight like elites)
+                bool assassin = b.SkillModeOverride == "ultra" && !(b._type != null && Script_Eol.IsHarrierCrewVeh(b._type.Id));   // (2026-11-26: the Harriers aim like assassins, fight like elites)
                 m.P.Fighter = true;   // (2026-11-18, owner: no flight or fight - always engage)
                 m.P.TeamPlayer = true;
                 m.P.Retaliates = !assassin;          // assassins stay on the contract
