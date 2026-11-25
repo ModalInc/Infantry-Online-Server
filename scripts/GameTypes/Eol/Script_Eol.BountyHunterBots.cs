@@ -29,6 +29,109 @@ namespace InfServer.Script.GameType_Eol
             ClsNeuroTAC, ClsSciOps, ClsBlackOps, ClsDropTrooper,
         };
 
+        // ---------- (2026-11-26, owner: "make sure 1 of the classes is a blackops with proton sphere and other guns. and another
+        // class in that team is a infil with a maklov PR and both have teleport distrupt. have a sciops cloaked that has that
+        // kuchler pb g1111 gun and a kuchler pr209g. and then another black ops. make sure all know how to melee too. the sciops
+        // using the magnafist") the 30k assassins: a fixed team of 4 ----------
+        enum AssassinRole { SphereBlackOps, Infiltrator, SciOps, BlackOps }
+        readonly Dictionary<Bot, AssassinRole> _assassinRole = new Dictionary<Bot, AssassinRole>();
+        const int ItmMaklovMk4PR = 1044, ItmKuchlerPBg111 = 1125, ItmKuchlerPR209g = 1104, ItmMagnaFist = 1173, ItmTeleportDisruptor = 22;
+
+        /// <summary>The cell's next role: the leader is the Proton Sphere Black Ops; then the Infiltrator, the SciOps and the
+        /// second Black Ops, whichever is missing.</summary>
+        AssassinRole NextAssassinRole(Team team, bool leader)
+        {
+            if (leader)
+                return AssassinRole.SphereBlackOps;
+            HashSet<AssassinRole> have = new HashSet<AssassinRole>();
+            foreach (KeyValuePair<Bot, AssassinRole> kv in new List<KeyValuePair<Bot, AssassinRole>>(_assassinRole))
+            {
+                Bot b = kv.Key;
+                if (b == null || b.IsDead || b.bCondemned || b._team != team)
+                {
+                    _assassinRole.Remove(b);
+                    continue;
+                }
+                have.Add(kv.Value);
+            }
+            foreach (AssassinRole r in new[] { AssassinRole.Infiltrator, AssassinRole.SciOps, AssassinRole.BlackOps })
+                if (!have.Contains(r))
+                    return r;
+            return AssassinRole.BlackOps;
+        }
+
+        static int ClassOfRole(AssassinRole r)
+        {
+            switch (r)
+            {
+                case AssassinRole.Infiltrator: return ClsInfiltrator;
+                case AssassinRole.SciOps: return ClsSciOps;
+                default: return ClsBlackOps;
+            }
+        }
+
+        /// <summary>
+        /// The role's kit on top of the class loadout: Sphere Black Ops - Proton Sphere + a top close gun + a third gun,
+        /// Teleport Disruptor; Infiltrator - Maklov mk IV PR + a top close gun, Teleport Disruptor; SciOps - Cloaking Unit,
+        /// Kuchler PB g111 + Kuchler PR209g; Black Ops - the top guns. Every one has a melee weapon it uses up close: the
+        /// SciOps the MagnaFist, the others the Combat Sword.
+        /// </summary>
+        void ApplyAssassinRole(Bot b, AssassinRole role)
+        {
+            try
+            {
+                int close = PickAssassinTopGun(AssassinClose), far = PickAssassinTopGun(AssassinFar);
+                int melee = ItmCombatSword;
+                switch (role)
+                {
+                    case AssassinRole.SphereBlackOps:
+                        EquipCloseFar(b, close, ItmProtonSphere);
+                        SetAssassinMisc(b, far);
+                        SetUtility(b, ItmTeleportDisruptor);
+                        break;
+                    case AssassinRole.Infiltrator:
+                        EquipCloseFar(b, close, ItmMaklovMk4PR);
+                        SetUtility(b, ItmTeleportDisruptor);
+                        break;
+                    case AssassinRole.SciOps:
+                        EquipCloseFar(b, ItmKuchlerPR209g, ItmKuchlerPBg111);
+                        if (!BotHasUtility(b, ItmCloakingUnit))
+                            SetUtility(b, ItmCloakingUnit);
+                        melee = ItmMagnaFist;
+                        break;
+                    default:
+                        EquipCloseFar(b, close, far);
+                        break;
+                }
+                ItemInfo mi = Itm(melee);
+                WeaponController wm = new WeaponController(b._state, new WeaponController.WeaponSettings());
+                if (mi != null && wm.equip(mi))
+                {
+                    wm.Owner = b;
+                    EolBotBrain.SetMeleeWeapon(b, wm);
+                    EolBotBrain.SetMeleeUpClose(b, true);   // (swings it whenever a target is in arm's reach)
+                }
+                _assassinRole[b] = role;
+            }
+            catch (Exception ex)
+            {
+                Log.write(TLog.Warning, "[Eol] Assassin role kit failed: " + ex.Message);
+            }
+        }
+
+        /// <summary>A top gun from the list the bot's class may carry (else any of them).</summary>
+        int PickAssassinTopGun(int[] pool)
+        {
+            return Pick(pool);
+        }
+
+        void SetAssassinMisc(Bot b, int itemId)
+        {
+            ItemInfo mi = Itm(itemId);
+            WeaponController wm = new WeaponController(b._state, new WeaponController.WeaponSettings());
+            if (mi != null && wm.equip(mi)) { wm.Owner = b; EolBotBrain.SetMiscWeapon(b, wm); }
+        }
+
         /// <summary>A random assassin class not already alive on this cell (any, if all are taken).</summary>
         int PickAssassinClass(Team team)
         {
@@ -49,7 +152,7 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>No speed bonus: assassins move at their vehicle's own speeds (2026-11-15 - the +35% read as a strafe cheat).</summary>
         public const int AssassinAgilityBonusPercent = 0;
         /// <summary>Live assassins per cell (captain + operatives).</summary>
-        public const int BountyHunterSquadSize = 5;   // (2026-11-24, owner: "one team of assassins is fine. 5 ppl. all elite level different fighting classes")
+        public const int BountyHunterSquadSize = 4;   // (2026-11-26, owner: Black Ops (Proton Sphere) + Infiltrator + SciOps + Black Ops - was 5 random classes)
         /// <summary>Operatives per cell - cell size minus the captain.</summary>
         public const int BountyHunterMaxConcurrentGrunts = BountyHunterSquadSize - 1;
         public const int BountyHunterOpeningBatch = BountyHunterMaxConcurrentGrunts;
@@ -420,14 +523,15 @@ namespace InfServer.Script.GameType_Eol
         }
 
         /// <summary>Ultra-elite: beyond-ace aim and the brain's assassin persona.</summary>
-        void MakeAssassin(Bot b)
+        void MakeAssassin(Bot b, AssassinRole role)
         {
             if (b == null)
                 return;
             b.SkillModeOverride = AssassinSkillMode;
             if (b._type != null)
-                ApplyHumanLoadout(b, b._type.Id, b._team);   // class weapons, SuperCharger, grenades, opener
+                ApplyHumanLoadout(b, b._type.Id, b._team);   // class weapons, cloak, SuperCharger, grenades, opener
             ApplyAssassinWeapons(b);
+            ApplyAssassinRole(b, role);   // (2026-11-26: the fixed team's guns, disruptors, cloak and melee)
             b.AgilityBonusPercent = AssassinAgilityBonusPercent;
             // (2026-11-23, owner: "there is dead bodies still spawning on the assassin team") no corpse revive for assassins:
             // a revived assassin was warped to a new sector and re-shown, and clients drew a dead body there; and while
@@ -505,12 +609,13 @@ namespace InfServer.Script.GameType_Eol
             if (spawn == null || team == null || _arena == null)
                 return null;
 
+            AssassinRole lrole = NextAssassinRole(team, leader: true);
             RoamingCaptain captain = !CanSpawnBotOnTeam(team) ? null : _arena.newBot(
-                typeof(RoamingCaptain), (ushort)PickAssassinClass(team), team, null, spawn, this) as RoamingCaptain;
+                typeof(RoamingCaptain), (ushort)ClassOfRole(lrole), team, null, spawn, this) as RoamingCaptain;
             if (captain == null)
                 return null;
 
-            MakeAssassin(captain);
+            MakeAssassin(captain, lrole);
             _tickNextBountyHunterCaptainSpawn[team] = now + BountyHunterCaptainRespawnMs;
             return captain;
         }
@@ -559,7 +664,8 @@ namespace InfServer.Script.GameType_Eol
                 return;
             }
 
-            int id = PickAssassinClass(team);
+            AssassinRole grole = NextAssassinRole(team, leader: false);
+            int id = ClassOfRole(grole);
 
             if (_bots == null)
                 _bots = new List<Bot>();
@@ -572,7 +678,7 @@ namespace InfServer.Script.GameType_Eol
                 return;
             }
 
-            MakeAssassin(grunt);
+            MakeAssassin(grunt, grole);
             if (!roamBots.ContainsKey(team))
                 roamBots.Add(team, 0);
             roamBots[team] = CountLiveBountyHunterGrunts(team);

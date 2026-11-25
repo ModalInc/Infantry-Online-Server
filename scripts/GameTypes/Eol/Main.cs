@@ -7892,13 +7892,42 @@ namespace InfServer.Script.GameType_Eol
         {
             // (2026-11-22, owner: carry more than 1 roamer - all of them in theory) the zone lets a player carry several flags
             // (cfg CarryCount); any number of Eol Roamers, but still only one other flag (a Standard) at a time
-            if (bPickup && player != null && flag != null && !IsRoamerFlag(flag) && _arena?._flags != null)
+            // (2026-11-26, owner: "While holding the citizens flag you cannot capture resource point flags but can collect the
+            // roamer flags with it - please make it so you cannot capture roamer flags if you hold a citizens / merc or elite flag.
+            // and you CAN capture the fixed flags") carrying a Standard: no Eol Roamer, no second Standard - but the fixed flags
+            // (resource points - not carriable) can be captured as usual
+            if (bPickup && player != null && flag != null && _arena?._flags != null)
             {
+                bool carriesStandard = false;
                 foreach (Arena.FlagState fs in _arena._flags.Values)
                     if (fs != null && fs.carrier == player && fs.flag != null && fs.flag != flag && !IsRoamerFlag(fs.flag))
+                        carriesStandard = true;
+                if (carriesStandard)
+                {
+                    bool fixedFlag = flag.FlagData.FlagCarriable == 0;
+                    if (!fixedFlag)
+                    {
+                        if (IsRoamerFlag(flag))
+                            TellOnce(player, "flagroamer", "You can't pick up an Eol Roamer while you carry a Standard.");
                         return false;
+                    }
+                }
             }
             return true;
+        }
+
+        /// <summary>(2026-11-26) a message to a player at most every 4 s per kind (a refused pickup repeats while standing on it).</summary>
+        readonly Dictionary<string, int> _toldOnce = new Dictionary<string, int>();
+        void TellOnce(InfServer.Game.Player p, string kind, string msg)
+        {
+            if (p == null)
+                return;
+            string key = p._alias + "|" + kind;
+            int now = Environment.TickCount, last;
+            if (_toldOnce.TryGetValue(key, out last) && now - last < 4000)
+                return;
+            _toldOnce[key] = now;
+            p.sendMessage(-1, msg);
         }
 
         /// <summary>

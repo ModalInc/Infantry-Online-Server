@@ -189,6 +189,7 @@ namespace InfServer.Script.GameType_Eol
             public int MixNext, MixUntil;                       // (2026-11-18) a misc-gun burst now and then
             public WeaponController Melee; public bool EnergySaving;   // (2026-11-18) low energy: free guns / melee
             public bool PreferMelee;   // (2026-11-26) the Pirate Commander swings his Chain Sword whenever someone is in reach
+            public bool MeleeUpClose;  // (2026-11-26) the assassins: their melee weapon (Melee slot) whenever a target is in reach
             public int MiscFrom, MiscUntil;
             // (2026-11-17) stand-still guns: charge-up end, end of the planted burst, earliest next commit
             public int PlantFireFrom, PlantUntil, NextPlant;
@@ -200,6 +201,12 @@ namespace InfServer.Script.GameType_Eol
         public static void SetMeleeWeapon(Bot b, WeaponController melee)
         {
             if (b != null) Get(b).Melee = melee;
+        }
+
+        /// <summary>(2026-11-26) the bot's Melee weapon is used whenever its target is in arm's reach (the assassins).</summary>
+        public static void SetMeleeUpClose(Bot b, bool on)
+        {
+            if (b != null) Get(b).MeleeUpClose = on;
         }
 
         /// <summary>(2026-11-26) a melee misc gun is used whenever the target is in reach (not only as a last resort).</summary>
@@ -274,6 +281,9 @@ namespace InfServer.Script.GameType_Eol
             // energy regain, and then back again to the guns ... not spamming something with low energy and only firing low
             // rate") below 20 % energy a bot saves it until it is back to 60 %: a gun that costs no energy, else its melee
             // weapon (it closes in with it), never the energy guns at a trickle
+            // (2026-11-26, owner: "make sure all know how to melee") in arm's reach: the melee weapon
+            if (m.MeleeUpClose && m.Melee != null && dist <= MeleeReachRaw)
+                return m.Melee;
             if (self.PlayerEnergy)
             {
                 double ef = self.EnergyFraction;
