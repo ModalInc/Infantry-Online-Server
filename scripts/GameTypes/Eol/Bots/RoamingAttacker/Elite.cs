@@ -166,6 +166,24 @@ namespace InfServer.Script.GameType_Eol
             if (anchor != null && _target != null && (farBehind || Helpers.distanceTo(_target._state, anchor) > leash))
                 ClearActivePlayerTarget();
 
+            // (2026-11-26, owner: "if it gets stuck it should go back to driving path") a stuck Harrier leaves the fight and
+            // drives back to its route (Script_Eol.HarrierCrew.cs)
+            Helpers.ObjectState unstick = _baseScript.HarrierUnstickGoal(this, now);
+            if (unstick != null)
+            {
+                ClearActivePlayerTarget();
+                bool forceU = now - _tickEliteNav > 1500;
+                if (forceU) _tickEliteNav = now;
+                ApplyNavigationApproach(unstick, EolHqPatrol.MakeLineClearPendingSeek(this, () => unstick), new BotNavigateOptions
+                {
+                    RequeueMinMs = 800,
+                    PathStartIndex = 0,
+                    ForceRequeue = forceU,
+                    Priority = PathPriority.Combat,
+                });
+                return base.poll();
+            }
+
             // (2026-11-18, owner: "one bot ran in to fight and then bots just watched their team member get gunned down -
             // make sure they all engage if one is engaging") a team mate's combat call pulls the whole squad in
             bool assist = !farBehind && _baseScript.TryAcceptCombatCallAssist(_team, this, now);
@@ -227,6 +245,27 @@ namespace InfServer.Script.GameType_Eol
             if (zoneHold != null)
             {
                 DriftAround(zoneHold.positionX, zoneHold.positionY, now, followCentre: true);
+                return base.poll();
+            }
+
+            // (2026-11-26, owner drew them) a Low Life Thugs Harrier out of a fight drives its sector's route, looking for people
+            Helpers.ObjectState route = _baseScript.HarrierRouteGoal(this, now);
+            if (route != null)
+            {
+                if (EolHqPatrol.IsOpenForBot(this, route.positionX, route.positionY) && _baseScript.WideLineClearFor(this, route))
+                    Script_Eol.SteerStraight(this, route.positionX, route.positionY);
+                else
+                {
+                    bool forceRoute = now - _tickEliteNav > 3000;
+                    if (forceRoute) _tickEliteNav = now;
+                    ApplyNavigationApproach(route, EolHqPatrol.MakeLineClearPendingSeek(this, () => route), new BotNavigateOptions
+                    {
+                        RequeueMinMs = 1200,
+                        PathStartIndex = 0,
+                        ForceRequeue = forceRoute,
+                        Priority = PathPriority.Idle,
+                    });
+                }
                 return base.poll();
             }
 

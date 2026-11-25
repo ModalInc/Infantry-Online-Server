@@ -350,9 +350,65 @@ namespace InfServer.Bots
             // ClearanceRaw short of any tile this vehicle can't cross, so the bot slides along walls with a gap
             // instead of entering them. (The old code slowed down on contact but still moved INTO the blocked
             // tile, so bots ended up on green/yellow physics and got snapped back - the visible "jumping".)
+            // (2026-11-26, owner: "it is still stuttering when it hits physics like jolting ... it should respect the physics around
+            // it with the vehicle circle under. like a real harrier" / "it should be buttery smooth") a big vehicle (the Harriers)
+            // moves as a circle: pushed gently out of whatever it touches, keeping only the part of its speed along the wall -
+            // it glides along walls instead of stopping dead and lurching (the speed sent to clients is the speed it really has).
+            if (NeverTouchPhysics && WallClearance > ClearanceRaw)
+            {
+                CollectNearbySolids();
+                double px = newPosition.x, py = newPosition.y, accX = 0, accY = 0;
+                bool touched = false;
+                for (int iter = 0; iter < 4; iter++)
+                {
+                    double pushX, pushY;
+                    if (!CirclePush(px, py, out pushX, out pushY))
+                        break;
+                    touched = true;
+                    px += pushX; py += pushY; accX += pushX; accY += pushY;
+                }
+                // a smooth correction: never more than the step plus a few px in one tick (no snapping)
+                double stepX = newPosition.x - _position.x, stepY = newPosition.y - _position.y;
+                double maxFix = Math.Sqrt(stepX * stepX + stepY * stepY) + 4;
+                double fix = Math.Sqrt(accX * accX + accY * accY);
+                if (fix > maxFix && fix > 0)
+                {
+                    px = newPosition.x + accX / fix * maxFix;
+                    py = newPosition.y + accY / fix * maxFix;
+                }
+                double before = Math.Sqrt(_velocity.x * _velocity.x + _velocity.y * _velocity.y);
+                if (touched && fix > 0)
+                {   // keep only the speed along the wall (position space: y moves at 0.7 of its speed)
+                    double ux = accX / fix, uy = accY / fix;
+                    double vx = _velocity.x, vy = _velocity.y * 0.70;
+                    double vn = vx * ux + vy * uy;
+                    if (vn < 0)
+                    {
+                        vx -= vn * ux; vy -= vn * uy;
+                        _velocity.x = vx;
+                        _velocity.y = vy / 0.70;
+                    }
+                }
+                double after = Math.Sqrt(_velocity.x * _velocity.x + _velocity.y * _velocity.y);
+                bCollision = touched && after < before * 0.25;   // (only a real stop counts as a collision - sliding isn't)
+                _wallContactAxisX = bCollision ? Math.Sign(stepX) : 0;
+                _wallContactAxisY = bCollision ? Math.Sign(stepY) : 0;
+                if (bCollision)
+                {
+                    _lastCollision = new Vector3(((float)_position.x) / 100.0, ((float)_position.y) / 100.0, 0);
+                    _stuckCollisionCount++;
+                }
+                updateStuckDetection(delta, bCollision);
+                _position.x = Math.Max(0, Math.Min(px, (AssetManager.Manager.Level.Width - 1) * 16));
+                _position.y = Math.Max(0, Math.Min(py, (AssetManager.Manager.Level.Height - 1) * 16));
+                writeStateFromPhysics();
+                return !bCollision;
+            }
+
             if (NeverTouchPhysics)
             {
                 CollectNearbySolids();
+                double clr = WallClearance;   // (2026-11-26: a big vehicle keeps its own radius off the wall - the Harriers)
                 bool insideNow = BlockedForMe(_position.x, _position.y);
                 double nx = newPosition.x, ny = newPosition.y;
                 double mx = nx - _position.x, my = ny - _position.y;
@@ -361,7 +417,10 @@ namespace InfServer.Bots
                 {
                     if (mx != 0 && (BlockedForMe(nx + Math.Sign(mx) * ClearanceRaw, _position.y)
                                     || BlockedForMe(nx + Math.Sign(mx) * ClearanceRaw, _position.y - ClearanceRaw * 0.6)
-                                    || BlockedForMe(nx + Math.Sign(mx) * ClearanceRaw, _position.y + ClearanceRaw * 0.6)))
+                                    || BlockedForMe(nx + Math.Sign(mx) * ClearanceRaw, _position.y + ClearanceRaw * 0.6)
+                                    || (clr > ClearanceRaw && (TallWallAt(nx + Math.Sign(mx) * clr, _position.y)
+                                        || TallWallAt(nx + Math.Sign(mx) * clr, _position.y - clr * 0.6)
+                                        || TallWallAt(nx + Math.Sign(mx) * clr, _position.y + clr * 0.6)))))
                     {
                         hitX = true;
                         nx = _position.x;
@@ -369,7 +428,10 @@ namespace InfServer.Bots
                     }
                     if (my != 0 && (BlockedForMe(nx, ny + Math.Sign(my) * ClearanceRaw)
                                     || BlockedForMe(nx - ClearanceRaw * 0.6, ny + Math.Sign(my) * ClearanceRaw)
-                                    || BlockedForMe(nx + ClearanceRaw * 0.6, ny + Math.Sign(my) * ClearanceRaw)))
+                                    || BlockedForMe(nx + ClearanceRaw * 0.6, ny + Math.Sign(my) * ClearanceRaw)
+                                    || (clr > ClearanceRaw && (TallWallAt(nx, ny + Math.Sign(my) * clr)
+                                        || TallWallAt(nx - clr * 0.6, ny + Math.Sign(my) * clr)
+                                        || TallWallAt(nx + clr * 0.6, ny + Math.Sign(my) * clr)))))
                     {
                         hitY = true;
                         ny = _position.y;
@@ -819,6 +881,10 @@ namespace InfServer.Bots
         /// <summary>Bots keep this gap (raw px) from any physics they can't cross, and never enter it.</summary>
         public static bool NeverTouchPhysics = true;
         public const double ClearanceRaw = 10;
+        /// <summary>(2026-11-26, owner: "the vehicle circle under them should be the same as the harrier, so they dont jump around in
+        /// physics") a big vehicle (radius 24 px and up - the Harriers, 50) stops its own radius short of a tall wall, like the client
+        /// does for a player driving one; people, bugs and boards keep the 10 px gap.</summary>
+        double WallClearance { get { return _type != null && _type.PhysicalRadius >= 24 ? _type.PhysicalRadius : ClearanceRaw; } }
 
         /// <summary>
         /// True when this vehicle can't occupy the point: ANY physics tile, off-map, or inside a built object.
@@ -843,6 +909,139 @@ namespace InfServer.Bots
                 if (!over)
                     return true;
             }
+            return IsSolidObjectAt(x, y);
+        }
+
+        /// <summary>(2026-11-26, owner: "it should not get stuck in these trees") a big vehicle keeps its radius off real walls
+        /// only - a block of tall physics (200 high and up) of BigWallMinTiles tiles or more, and built objects. Tree trunks,
+        /// posts and other small or low physics keep the normal 10 px gap, so it fits between them like a player's Harrier.</summary>
+        public const int TallWallMinHeight = 17, BigWallMinTiles = 16;   // (2026-11-26: any wall taller than green - the orange / purple building walls too, not only red)
+        static bool[] _bigWall;
+        static LvlInfo _bigWallLevel;
+        static readonly object _bigWallLock = new object();
+
+        static bool[] BigWallMap(LvlInfo level)
+        {
+            lock (_bigWallLock)
+            {
+                if (_bigWall != null && ReferenceEquals(_bigWallLevel, level))
+                    return _bigWall;
+                int w = level.Width, h = level.Height, n = w * h;
+                bool[] tall = new bool[n], big = new bool[n], seen = new bool[n];
+                for (int i = 0; i < n; i++)
+                {
+                    LvlInfo.Tile t = level.Tiles[i];
+                    int ph = t.Physics;
+                    tall[i] = t.Blocked && ph < level.PhysicsHigh.Length && ph < level.PhysicsLow.Length
+                        && level.PhysicsLow[ph] == 0 && level.PhysicsHigh[ph] >= TallWallMinHeight;
+                }
+                List<int> comp = new List<int>();
+                Stack<int> st = new Stack<int>();
+                for (int i = 0; i < n; i++)
+                {
+                    if (!tall[i] || seen[i])
+                        continue;
+                    comp.Clear();
+                    seen[i] = true;
+                    st.Push(i);
+                    while (st.Count > 0)
+                    {
+                        int c = st.Pop();
+                        comp.Add(c);
+                        int cx = c % w, cy = c / w;
+                        if (cx > 0 && tall[c - 1] && !seen[c - 1]) { seen[c - 1] = true; st.Push(c - 1); }
+                        if (cx < w - 1 && tall[c + 1] && !seen[c + 1]) { seen[c + 1] = true; st.Push(c + 1); }
+                        if (cy > 0 && tall[c - w] && !seen[c - w]) { seen[c - w] = true; st.Push(c - w); }
+                        if (cy < h - 1 && tall[c + w] && !seen[c + w]) { seen[c + w] = true; st.Push(c + w); }
+                    }
+                    if (comp.Count >= BigWallMinTiles)
+                        foreach (int c in comp) big[c] = true;
+                }
+                _bigWall = big;
+                _bigWallLevel = level;
+                return big;
+            }
+        }
+
+        /// <summary>
+        /// (2026-11-26) how far to push this vehicle's circle at (x, y) out of what it touches: physics it can't fly over (a
+        /// real wall: the full radius; a tree trunk / post / other small cluster: SmallObstacleRadius, so it fits between trees)
+        /// and built objects. False = touching nothing.
+        /// </summary>
+        bool CirclePush(double x, double y, out double pushX, out double pushY)
+        {
+            pushX = 0; pushY = 0;
+            LvlInfo level = _arena._server._assets.Level;
+            bool[] big = BigWallMap(level);
+            double r = WallClearance, rSmall = Math.Min(r, SmallObstacleRadius);
+            int tx0 = (int)Math.Floor((x - r) / 16), tx1 = (int)Math.Floor((x + r) / 16);
+            int ty0 = (int)Math.Floor((y - r) / 16), ty1 = (int)Math.Floor((y + r) / 16);
+            double sumX = 0, sumY = 0, deepest = 0;
+            int n = 0;
+            for (int ty = ty0; ty <= ty1; ty++)
+                for (int tx = tx0; tx <= tx1; tx++)
+                {
+                    bool wall, isBig;
+                    if (tx < 0 || ty < 0 || tx >= level.Width || ty >= level.Height) { wall = true; isBig = true; }
+                    else
+                    {
+                        LvlInfo.Tile t = _arena._tiles[ty * _arena._levelWidth + tx];
+                        wall = BotCombat.IsWallFor(level, t, _type);
+                        isBig = wall && big[ty * level.Width + tx];
+                    }
+                    if (!wall)
+                        continue;
+                    double rr = isBig ? r : rSmall;
+                    double cx = Math.Max(tx * 16, Math.Min(x, tx * 16 + 16)), cy = Math.Max(ty * 16, Math.Min(y, ty * 16 + 16));
+                    double dx = x - cx, dy = y - cy, d = Math.Sqrt(dx * dx + dy * dy);
+                    if (d >= rr)
+                        continue;
+                    if (d < 0.001)
+                    {   // centre inside the tile: straight back out the way it came
+                        dx = _position.x - x; dy = _position.y - y; d = Math.Sqrt(dx * dx + dy * dy);
+                        if (d < 0.001) { dx = 0; dy = -1; d = 1; }
+                    }
+                    double pen = rr - d;
+                    sumX += dx / d * pen; sumY += dy / d * pen; n++;
+                    if (pen > deepest) deepest = pen;
+                }
+            // built objects (walls, turrets, HQs) as circles
+            for (int i = 0; i < _solidCount; i++)
+            {
+                Vehicle v = _solids[i];
+                if (v == null || v.IsDead || v._state == null || v._type == null)
+                    continue;
+                double dx = x - v._state.positionX, dy = y - v._state.positionY, d = Math.Sqrt(dx * dx + dy * dy);
+                double rr = r + v._type.PhysicalRadius;
+                if (d >= rr)
+                    continue;
+                if (d < 0.001) { dx = 0; dy = -1; d = 1; }
+                double pen = rr - d;
+                sumX += dx / d * pen; sumY += dy / d * pen; n++;
+                if (pen > deepest) deepest = pen;
+            }
+            if (n == 0)
+                return false;
+            // the averaged direction, as far as the deepest overlap (many tiles along one wall don't add up to a big shove)
+            double sl = Math.Sqrt(sumX * sumX + sumY * sumY);
+            if (sl < 0.001)
+                return false;
+            pushX = sumX / sl * deepest;
+            pushY = sumY / sl * deepest;
+            return deepest > 0.05;
+        }
+
+        /// <summary>The circle a big vehicle keeps round small obstacles (tree trunks, posts).</summary>
+        public const double SmallObstacleRadius = 12;   // (2026-11-26: 22 -> 12, it drives between the trees)
+
+        bool TallWallAt(double x, double y)
+        {
+            LvlInfo level = _arena._server._assets.Level;
+            int tx = (int)Math.Floor(x / 16), ty = (int)Math.Floor(y / 16);
+            if (tx < 0 || ty < 0 || tx >= level.Width || ty >= level.Height)
+                return true;
+            if (BigWallMap(level)[ty * level.Width + tx])
+                return true;
             return IsSolidObjectAt(x, y);
         }
 

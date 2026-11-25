@@ -38,7 +38,7 @@ namespace InfServer.Script.GameType_Eol
             _tickElitePoll = now;
             // local 2026-11-14 roster: botTeam6 = the pirate roamers (5-8, Roamer chassis + Captain Roamer);
             // botTeam8 is now the elite vehicle squad (Script_Eol.StrikeTeams.cs)
-            KeepEliteSquadFilled(botTeam6, now, RosterPirateRoamers);
+            PollHarrierCrew(now);   // (2026-11-26: botTeam6 = Low Life Thugs, the Harrier crews - Script_Eol.HarrierCrew.cs; was the pirate squad)
         }
 
         /// <summary>Live members of an elite squad.</summary>

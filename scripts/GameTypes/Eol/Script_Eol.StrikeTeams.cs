@@ -81,7 +81,7 @@ namespace InfServer.Script.GameType_Eol
         // ones ... if they play sector C there is more teams, have them use the same teams going down the numbers") the squads
         // ARE the classic public factions now - new players land on a team that already has bots
         static readonly string[] MixedTeamNames = { "Collective Military", "Europan Mercs", "Morgan Raiders", "Tethys Consortium", "United Moons",
-            "Phobos Militarius", "Callisto Irregulars", "Ganymede Rangers" };   // (the last 3: Sector C only; StarFire Corps = the vehicle squad)
+            "Phobos Militarius", "Callisto Irregulars", "Ganymede Rangers" };   // (the last 3: Sector C only; StarFire Corps = the vehicle squad; Low Life Thugs = the Harrier crews)
 
         void CreateStrikeTeams()
         {
@@ -211,7 +211,7 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>Roaming squads players may join (pirate elite squad, vehicle squad, human squads).</summary>
         public bool IsJoinableSquadTeam(Team t)
         {
-            return t != null && IsRoamingSquadTeam(t) && !IsAssassinTeam(t) && !IsPirateRaidTeam(t);
+            return t != null && IsRoamingSquadTeam(t) && !IsAssassinTeam(t) && !IsPirateRaidTeam(t) && !IsHarrierCrewTeam(t);   // (2026-11-26: nobody joins the Harrier crews)
         }
 
         /// <summary>Players on a squad right now (not spectating).</summary>

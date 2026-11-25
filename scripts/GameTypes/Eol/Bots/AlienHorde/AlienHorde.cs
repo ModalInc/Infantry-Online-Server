@@ -36,6 +36,8 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>Crashed alien ship vehicle — same role as <see cref="BasicDefense.vHq"/> (defender HQ).</summary>
         public Vehicle vHq;
         public BotType type;
+        /// <summary>(2026-11-26) a Pirate Raider's own name ("Commander Vex") - killfeed and messages use it, not the vehicle's.</summary>
+        public string FixedName;
         protected bool bOverriddenPoll;
 
         protected List<Vector3> _path;
@@ -338,7 +340,7 @@ namespace InfServer.Script.GameType_Eol
             }
 
             if (owner == null
-                && !_baseScript.IsBugTeam(_team))
+                && !_baseScript.IsBugTeam(_team) && !_baseScript.IsSwarmTeam(_team))   // (2026-11-26: + the Pirate Raiders)
             {
                 if (_team.ActivePlayerCount > 0)
                     owner = _team.ActivePlayers.Last();
@@ -357,7 +359,7 @@ namespace InfServer.Script.GameType_Eol
                 }
             }
 
-            if (!_baseScript.IsBugTeam(_team) && !_baseScript.TeamHasLiveHqVehicle(_team))
+            if (!_baseScript.IsBugTeam(_team) && !_baseScript.IsSwarmTeam(_team) && !_baseScript.TeamHasLiveHqVehicle(_team))
             {
                 kill(null);
                 ReleasePollScratch();

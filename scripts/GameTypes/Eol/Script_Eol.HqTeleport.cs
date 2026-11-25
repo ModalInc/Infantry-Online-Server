@@ -25,21 +25,50 @@ namespace InfServer.Script.GameType_Eol
         // teleport disruptor cancels it (the recall isn't used up then)
         const int HqRecallChargeMs = 5000;
         const int HqRecallMoveTolerance = 12;   // px - a nudge isn't moving
-        class HqRecallCharge { public short X, Y; public int Due, NextTell; }
+        // (2026-11-26, owner: "the store recall, the pre equipped is still able to use while moving. please make sure you have to
+        // stand still. similar to a HQ teleport ... all store recall, including the conscript purple version") the Store Recall
+        // (every class's, Conscripts' too - itm 1552) and the Teleport Charge - Recall charge the same way; when the charge is
+        // done the engine's own warp runs (StoreRecallBypass lets it through Player.WarpItem this once)
+        class HqRecallCharge { public short X, Y; public int Due, NextTell; public ItemInfo.WarpItem Item; public ushort Target; public string Label = "HQ recall"; }
         readonly Dictionary<InfServer.Game.Player, HqRecallCharge> _hqRecalls = new Dictionary<InfServer.Game.Player, HqRecallCharge>();
+        readonly HashSet<InfServer.Game.Player> _recallBypass = new HashSet<InfServer.Game.Player>();
 
-        void StartHqRecall(InfServer.Game.Player player)
+        /// <summary>A recall that needs standing still (not the HQ Teleport - that one has its own charge): any warp item named
+        /// "... Recall" - the Store Recall and the Teleport Charge - Recall.</summary>
+        static bool IsStandStillRecall(ItemInfo.WarpItem item)
+        {
+            return item != null && item.id != HqTeleportItemId && (item.name ?? "").IndexOf("Recall", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>Player.WarpItem: true = this recall goes through now (its charge just finished).</summary>
+        bool StoreRecallBypass(InfServer.Game.Player player) { return player != null && _recallBypass.Contains(player); }
+
+        void StartHqRecall(InfServer.Game.Player player) { StartRecallCharge(player, null, 0); }
+
+        void StartRecallCharge(InfServer.Game.Player player, ItemInfo.WarpItem item, ushort target)
         {
             if (player == null || player.IsDead || player._state == null)
                 return;
-            if (_hqRecalls.ContainsKey(player))
+            string label = item == null ? "HQ recall" : (item.name ?? "Recall").Trim('"', ' ');
+            HqRecallCharge cur;
+            if (_hqRecalls.TryGetValue(player, out cur))
             {
-                player.sendMessage(-1, "&HQ recall already charging - stand still.");
+                player.sendMessage(-1, "&" + cur.Label + " already charging - stand still.");
                 return;
             }
             int now = Environment.TickCount;
-            _hqRecalls[player] = new HqRecallCharge { X = player._state.positionX, Y = player._state.positionY, Due = now + HqRecallChargeMs, NextTell = now + 1000 };
-            player.sendMessage(0, String.Format("&HQ recall in {0} s - stand still, moving cancels it.", HqRecallChargeMs / 1000));
+            _hqRecalls[player] = new HqRecallCharge { X = player._state.positionX, Y = player._state.positionY, Due = now + HqRecallChargeMs, NextTell = now + 1000, Item = item, Target = target, Label = label };
+            player.sendMessage(0, String.Format("&{0} in {1} s - stand still, moving cancels it.", label, HqRecallChargeMs / 1000));
+        }
+
+        /// <summary>The charge is done: the recall's own (engine) warp, let through the script hook this once.</summary>
+        void FinishItemRecall(InfServer.Game.Player p, HqRecallCharge c)
+        {
+            if (p.ActiveVehicle == null || p.ActiveVehicle._type == null || !p.ActiveVehicle._type.IsWarpable)
+                return;
+            _recallBypass.Add(p);
+            try { _arena.handlePlayerWarp(p, c.Item, c.Target, p._state.positionX, p._state.positionY); }
+            finally { _recallBypass.Remove(p); }
         }
 
         void PollHqRecalls(int now)
@@ -57,25 +86,28 @@ namespace InfServer.Script.GameType_Eol
                 if (Math.Abs(p._state.positionX - c.X) > HqRecallMoveTolerance || Math.Abs(p._state.positionY - c.Y) > HqRecallMoveTolerance)
                 {
                     _hqRecalls.Remove(p);
-                    p.sendMessage(-1, "HQ recall cancelled - you moved.");
+                    p.sendMessage(-1, c.Label + " cancelled - you moved.");
                     continue;
                 }
                 if (UnderTeleportDisrupt(p))
                 {
                     _hqRecalls.Remove(p);
-                    p.sendMessage(-1, "HQ recall cancelled - you're inside a teleport disruptor.");
+                    p.sendMessage(-1, c.Label + " cancelled - you're inside a teleport disruptor.");
                     continue;
                 }
                 if (now - c.Due >= 0)
                 {
                     _hqRecalls.Remove(p);
-                    TryHqTeleport(p);
+                    if (c.Item != null)
+                        FinishItemRecall(p, c);
+                    else
+                        TryHqTeleport(p);
                     continue;
                 }
                 if (now - c.NextTell >= 0)
                 {
                     c.NextTell += 1000;
-                    p.sendMessage(0, String.Format("&HQ recall in {0}...", (c.Due - now + 999) / 1000));
+                    p.sendMessage(0, String.Format("&{0} in {1}...", c.Label, (c.Due - now + 999) / 1000));
                 }
             }
         }

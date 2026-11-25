@@ -257,6 +257,16 @@ namespace InfServer.Script.GameType_Eol
                 }
             }
 
+            // (2026-11-26) a Harrier crew lands together, where the Chief Engineer builds their Harrier
+            at = HarrierCrewLandingFor(b);
+            if (at != null)
+                return at;
+
+            // (2026-11-26) a squad sent after a team's roamer flags: its staging spot near them
+            at = RaidStageFor(b);
+            if (at != null)
+                return at;
+
             // the pirate raid: the raid's anchor
             if (IsPirateRaidTeam(team) && RaiderPdbAnchorValid)
             {
@@ -316,6 +326,9 @@ namespace InfServer.Script.GameType_Eol
                 if (b is RoamingAttacker && (IsRoamingSquadTeam(b._team) || IsRoamBotTeam(b._team))
                     && _eol.IsInPioneerDropshipSafeZone(x, y) && !IsDeploying(b) && ShipSummonHold(b) == null)   // (not one summoned in by its player)
                     BeginDeploy(b, now);
+                else if (b is AlienHorde && IsPirateRaidersTeam(b._team) && !SwarmBugDeploying(b)
+                    && _eol.IsInPioneerDropshipSafeZone(x, y) && UseSwarmOf(b._team))
+                    BeginSwarmDeploy(b, now);   // (2026-11-26: a Pirate Raider standing in the dropship)
                 else if (b is AlienHorde && IsSwarmTeam(b._team) && !SwarmBugDeploying(b)
                     && x >= CaveTX(1617) * 16 && x <= CaveTX(1716) * 16 && y >= CaveTY(394) * 16 && y <= CaveTY(438) * 16
                     && UseSwarmOf(b._team))

@@ -188,6 +188,7 @@ namespace InfServer.Script.GameType_Eol
             public object DrainTarget; public int DrainUntil;   // (2026-11-18) the sidearm's energy-drain opener
             public int MixNext, MixUntil;                       // (2026-11-18) a misc-gun burst now and then
             public WeaponController Melee; public bool EnergySaving;   // (2026-11-18) low energy: free guns / melee
+            public bool PreferMelee;   // (2026-11-26) the Pirate Commander swings his Chain Sword whenever someone is in reach
             public int MiscFrom, MiscUntil;
             // (2026-11-17) stand-still guns: charge-up end, end of the planted burst, earliest next commit
             public int PlantFireFrom, PlantUntil, NextPlant;
@@ -199,6 +200,12 @@ namespace InfServer.Script.GameType_Eol
         public static void SetMeleeWeapon(Bot b, WeaponController melee)
         {
             if (b != null) Get(b).Melee = melee;
+        }
+
+        /// <summary>(2026-11-26) a melee misc gun is used whenever the target is in reach (not only as a last resort).</summary>
+        public static void SetPreferMelee(Bot b, bool on)
+        {
+            if (b != null) Get(b).PreferMelee = on;
         }
 
         public static void SetMiscWeapon(Bot b, WeaponController misc)
@@ -288,6 +295,8 @@ namespace InfServer.Script.GameType_Eol
             // is the last resort: in reach (close) and only when neither the main nor the sidearm can fire
             if (misc != null && IsMeleeGun(misc))
             {
+                if (m.PreferMelee && miscOk)
+                    return misc;   // (2026-11-26: in reach - GunReaches keeps a melee to arm's length)
                 bool mainCan = main != null && GunReaches(main, dist) && !main.IsReloading;
                 bool sideCan = side != null && !ReferenceEquals(side, misc) && GunReaches(side, dist) && !side.IsReloading;
                 if (mainCan) return main;
@@ -414,7 +423,7 @@ namespace InfServer.Script.GameType_Eol
             if (b.SkillModeOverride == "ace" || b.SkillModeOverride == "ultra")
             {   // elite: sharp, disciplined, sticks together. Assassins ("ultra") and elite aliens never retreat.
                 bool alienElite = b is AlienHorde;
-                bool assassin = b.SkillModeOverride == "ultra";
+                bool assassin = b.SkillModeOverride == "ultra" && !(b._type != null && Script_Eol.IsHarrierCrewVeh(b._type.Id));   // (2026-11-26: the Harriers aim like assassins, fight like elites)
                 m.P.Fighter = true;   // (2026-11-18, owner: no flight or fight - always engage)
                 m.P.TeamPlayer = true;
                 m.P.Retaliates = !assassin;          // assassins stay on the contract
@@ -432,6 +441,14 @@ namespace InfServer.Script.GameType_Eol
                     m.P.PatienceMs = 9000;           // relentless: keeps working round cover to the mark
                     m.P.StrafePower = 1f;
                 }
+            }
+            if (b._type != null && Script_Eol.IsHarrierVeh(b._type.Id))
+            {   // (2026-11-26, owner: "it needs to be SMOOTH ALWAYS. butter smooth") a Harrier can't strafe - the infantry juking
+                // (side-steps flipping every 1-3 s, backpedalling) made it swing back and forth: it drives like a vehicle
+                m.P.StrafePower = 0f;
+                m.P.Backpedals = false;
+                m.P.FlipMinMs = 6000;
+                m.P.FlipMaxMs = 9000;
             }
             m.StrafeSign = m.R.Next(2) == 0 ? -1f : 1f;
             Minds.Add(b, m);
