@@ -230,6 +230,27 @@ namespace InfServer.Script.GameType_Eol
                 return base.poll();
             }
 
+            // (2026-11-26, owner drew them) a Low Life Thugs Harrier out of a fight drives its sector's route, looking for people
+            Helpers.ObjectState route = _baseScript.HarrierRouteGoal(this, now);
+            if (route != null)
+            {
+                if (EolHqPatrol.IsOpenForBot(this, route.positionX, route.positionY) && _baseScript.WideLineClearFor(this, route))
+                    Script_Eol.SteerStraight(this, route.positionX, route.positionY);
+                else
+                {
+                    bool forceRoute = now - _tickEliteNav > 3000;
+                    if (forceRoute) _tickEliteNav = now;
+                    ApplyNavigationApproach(route, EolHqPatrol.MakeLineClearPendingSeek(this, () => route), new BotNavigateOptions
+                    {
+                        RequeueMinMs = 1200,
+                        PathStartIndex = 0,
+                        ForceRequeue = forceRoute,
+                        Priority = PathPriority.Idle,
+                    });
+                }
+                return base.poll();
+            }
+
             RoamingAttacker leader = _baseScript.EliteSquadLeader(_team);
 
             // (2026-11-16b) a squad cut down to under half waits for its reinforcements (from the dropship)
