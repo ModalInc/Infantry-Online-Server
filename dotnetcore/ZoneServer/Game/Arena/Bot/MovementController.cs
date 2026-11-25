@@ -360,17 +360,23 @@ namespace InfServer.Bots
                 bool hitX = false, hitY = false;
                 if (!insideNow)
                 {
-                    if (mx != 0 && (BlockedForMe(nx + Math.Sign(mx) * clr, _position.y)
-                                    || BlockedForMe(nx + Math.Sign(mx) * clr, _position.y - clr * 0.6)
-                                    || BlockedForMe(nx + Math.Sign(mx) * clr, _position.y + clr * 0.6)))
+                    if (mx != 0 && (BlockedForMe(nx + Math.Sign(mx) * ClearanceRaw, _position.y)
+                                    || BlockedForMe(nx + Math.Sign(mx) * ClearanceRaw, _position.y - ClearanceRaw * 0.6)
+                                    || BlockedForMe(nx + Math.Sign(mx) * ClearanceRaw, _position.y + ClearanceRaw * 0.6)
+                                    || (clr > ClearanceRaw && (TallWallAt(nx + Math.Sign(mx) * clr, _position.y)
+                                        || TallWallAt(nx + Math.Sign(mx) * clr, _position.y - clr * 0.6)
+                                        || TallWallAt(nx + Math.Sign(mx) * clr, _position.y + clr * 0.6)))))
                     {
                         hitX = true;
                         nx = _position.x;
                         _velocity.x = 0;
                     }
-                    if (my != 0 && (BlockedForMe(nx, ny + Math.Sign(my) * clr)
-                                    || BlockedForMe(nx - clr * 0.6, ny + Math.Sign(my) * clr)
-                                    || BlockedForMe(nx + clr * 0.6, ny + Math.Sign(my) * clr)))
+                    if (my != 0 && (BlockedForMe(nx, ny + Math.Sign(my) * ClearanceRaw)
+                                    || BlockedForMe(nx - ClearanceRaw * 0.6, ny + Math.Sign(my) * ClearanceRaw)
+                                    || BlockedForMe(nx + ClearanceRaw * 0.6, ny + Math.Sign(my) * ClearanceRaw)
+                                    || (clr > ClearanceRaw && (TallWallAt(nx, ny + Math.Sign(my) * clr)
+                                        || TallWallAt(nx - clr * 0.6, ny + Math.Sign(my) * clr)
+                                        || TallWallAt(nx + clr * 0.6, ny + Math.Sign(my) * clr)))))
                     {
                         hitY = true;
                         ny = _position.y;
@@ -821,7 +827,7 @@ namespace InfServer.Bots
         public static bool NeverTouchPhysics = true;
         public const double ClearanceRaw = 10;
         /// <summary>(2026-11-26, owner: "the vehicle circle under them should be the same as the harrier, so they dont jump around in
-        /// physics") a big vehicle (radius 24 px and up - the Harriers, 50) stops its own radius short of a wall, like the client
+        /// physics") a big vehicle (radius 24 px and up - the Harriers, 50) stops its own radius short of a tall wall, like the client
         /// does for a player driving one; people, bugs and boards keep the 10 px gap.</summary>
         double WallClearance { get { return _type != null && _type.PhysicalRadius >= 24 ? _type.PhysicalRadius : ClearanceRaw; } }
 
@@ -848,6 +854,68 @@ namespace InfServer.Bots
                 if (!over)
                     return true;
             }
+            return IsSolidObjectAt(x, y);
+        }
+
+        /// <summary>(2026-11-26, owner: "it should not get stuck in these trees") a big vehicle keeps its radius off real walls
+        /// only - a block of tall physics (200 high and up) of BigWallMinTiles tiles or more, and built objects. Tree trunks,
+        /// posts and other small or low physics keep the normal 10 px gap, so it fits between them like a player's Harrier.</summary>
+        public const int TallWallMinHeight = 200, BigWallMinTiles = 16;
+        static bool[] _bigWall;
+        static LvlInfo _bigWallLevel;
+        static readonly object _bigWallLock = new object();
+
+        static bool[] BigWallMap(LvlInfo level)
+        {
+            lock (_bigWallLock)
+            {
+                if (_bigWall != null && ReferenceEquals(_bigWallLevel, level))
+                    return _bigWall;
+                int w = level.Width, h = level.Height, n = w * h;
+                bool[] tall = new bool[n], big = new bool[n], seen = new bool[n];
+                for (int i = 0; i < n; i++)
+                {
+                    LvlInfo.Tile t = level.Tiles[i];
+                    int ph = t.Physics;
+                    tall[i] = t.Blocked && ph < level.PhysicsHigh.Length && ph < level.PhysicsLow.Length
+                        && level.PhysicsLow[ph] == 0 && level.PhysicsHigh[ph] >= TallWallMinHeight;
+                }
+                List<int> comp = new List<int>();
+                Stack<int> st = new Stack<int>();
+                for (int i = 0; i < n; i++)
+                {
+                    if (!tall[i] || seen[i])
+                        continue;
+                    comp.Clear();
+                    seen[i] = true;
+                    st.Push(i);
+                    while (st.Count > 0)
+                    {
+                        int c = st.Pop();
+                        comp.Add(c);
+                        int cx = c % w, cy = c / w;
+                        if (cx > 0 && tall[c - 1] && !seen[c - 1]) { seen[c - 1] = true; st.Push(c - 1); }
+                        if (cx < w - 1 && tall[c + 1] && !seen[c + 1]) { seen[c + 1] = true; st.Push(c + 1); }
+                        if (cy > 0 && tall[c - w] && !seen[c - w]) { seen[c - w] = true; st.Push(c - w); }
+                        if (cy < h - 1 && tall[c + w] && !seen[c + w]) { seen[c + w] = true; st.Push(c + w); }
+                    }
+                    if (comp.Count >= BigWallMinTiles)
+                        foreach (int c in comp) big[c] = true;
+                }
+                _bigWall = big;
+                _bigWallLevel = level;
+                return big;
+            }
+        }
+
+        bool TallWallAt(double x, double y)
+        {
+            LvlInfo level = _arena._server._assets.Level;
+            int tx = (int)Math.Floor(x / 16), ty = (int)Math.Floor(y / 16);
+            if (tx < 0 || ty < 0 || tx >= level.Width || ty >= level.Height)
+                return true;
+            if (BigWallMap(level)[ty * level.Width + tx])
+                return true;
             return IsSolidObjectAt(x, y);
         }
 
