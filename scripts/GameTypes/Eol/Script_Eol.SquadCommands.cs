@@ -338,8 +338,6 @@ namespace InfServer.Script.GameType_Eol
                     player.sendMessage(-1, "Squad: nobody left to send.");
                     return;
                 }
-                if (UnderTeleportDisrupt(player))   // (2026-11-26) a disruptor stops the bots' suit-teleports to you
-                    player.sendMessage(-1, "Squad: you're inside a teleport disruptor - we can't teleport to you, coming on foot.");
                 int i = 0;
                 foreach (RoamingAttacker b in all)
                 {
@@ -609,10 +607,10 @@ namespace InfServer.Script.GameType_Eol
                 Bots.Bot b = w.Bot;
                 if (b == null || b.IsDead || b.bCondemned || p == null || p.IsDead || p.IsSpectator || p._team != b._team)
                     continue;
-                // (2026-11-26, owner: "no one should be able to get summoned by anyone, bots or real players if they have a
-                // TD on them") no suit-teleport out of an enemy disruptor, and none into one: that bot comes on foot
-                if (_arena.isTeleportDisruptedAt(b._state.positionX, b._state.positionY, b._team)
-                    || _arena.isTeleportDisruptedAt(p._state.positionX, p._state.positionY, b._team))
+                // (2026-11-26, owner: "no one should be able to get summoned by anyone ... if they have a TD on them" / "team mates
+                // can't teleport to you if YOU're in a teleport disrupt. that makes no sense ... its only for summons the TD") a bot
+                // inside an enemy disruptor can't suit-teleport out of it (it comes on foot); teleporting TO a player inside one is fine
+                if (_arena.isTeleportDisruptedAt(b._state.positionX, b._state.positionY, b._team))
                     continue;
                 bool ship = _eol != null && _eol.IsInPioneerDropshipSafeZone(p._state.positionX, p._state.positionY);
                 bool safe = !ship && InSummonSafeZone(p._state.positionX, p._state.positionY);

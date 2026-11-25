@@ -73,9 +73,9 @@ namespace InfServer.Script.GameType_Eol
                         continue;
                     if (Helpers.distanceTo(b._state, m._state) <= BoardMedicSummonBeyond)
                         continue;
-                    // (2026-11-26) no summon out of / into an enemy teleport disruptor
-                    if (_arena.isTeleportDisruptedAt(b._state.positionX, b._state.positionY, b._team)
-                        || _arena.isTeleportDisruptedAt(m._state.positionX, m._state.positionY, m._team))
+                    // (2026-11-26) no summon OUT of an enemy teleport disruptor (owner: "its only for summons the TD" - teleporting
+                    // to someone inside one is fine)
+                    if (_arena.isTeleportDisruptedAt(b._state.positionX, b._state.positionY, b._team))
                         continue;
                     Helpers.ObjectState at = OpenSpotNear(m._state.positionX, m._state.positionY, 160);
                     if (at == null)
