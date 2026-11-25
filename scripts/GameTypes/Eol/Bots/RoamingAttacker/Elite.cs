@@ -184,6 +184,33 @@ namespace InfServer.Script.GameType_Eol
                 return base.poll();
             }
 
+            // (2026-11-26, owner: "mostly drive bys ... they dont engage for long") a Harrier that has fought a few seconds drives
+            // on along its route, firing at its target as it passes
+            if (_baseScript.HarrierDriveByActive(this, now))
+            {
+                Helpers.ObjectState onward = _baseScript.HarrierRouteGoal(this, now);
+                if (onward != null)
+                {
+                    if (_baseScript.WideLineClearFor(this, onward))
+                        Script_Eol.SteerStraight(this, onward.positionX, onward.positionY);
+                    else
+                    {
+                        bool forceOn = now - _tickEliteNav > 1500;
+                        if (forceOn) _tickEliteNav = now;
+                        ApplyNavigationApproach(onward, EolHqPatrol.MakeLineClearPendingSeek(this, () => onward), new BotNavigateOptions
+                        {
+                            RequeueMinMs = 1000,
+                            PathStartIndex = 0,
+                            ForceRequeue = forceOn,
+                            Priority = PathPriority.Combat,
+                        });
+                    }
+                }
+                if (_target != null && !_target.IsDead)
+                    EolBotPhysicsUtil.TryFireOnlyWhileUnstick(this, _target);
+                return base.poll();
+            }
+
             // (2026-11-18, owner: "one bot ran in to fight and then bots just watched their team member get gunned down -
             // make sure they all engage if one is engaging") a team mate's combat call pulls the whole squad in
             bool assist = !farBehind && _baseScript.TryAcceptCombatCallAssist(_team, this, now);

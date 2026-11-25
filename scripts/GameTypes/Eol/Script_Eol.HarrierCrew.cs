@@ -256,6 +256,42 @@ namespace InfServer.Script.GameType_Eol
             return HarrierRouteGoal(b, now);
         }
 
+        // ---------- (2026-11-26, owner: "they shouldnt hang around for long they are mostly drive bys doing it. so they dont
+        // engage for long") ----------
+        sealed class DriveBy { public int CombatSince, DriveUntil; }
+        readonly Dictionary<Bots.Bot, DriveBy> _driveBy = new Dictionary<Bots.Bot, DriveBy>();
+        const int HarrierEngageMs = 3500, HarrierDriveOnMs = 6000;
+
+        /// <summary>
+        /// A Harrier fights at most HarrierEngageMs, then drives on along its route for HarrierDriveOnMs, still shooting at
+        /// what it was fighting as it passes - drive-bys, not dogfights. True = drive on now (the caller drives the route
+        /// and fires on the move).
+        /// </summary>
+        public bool HarrierDriveByActive(RoamingAttacker b, int now)
+        {
+            if (b == null || b._type == null || !IsHarrierVeh(b._type.Id) || !IsHarrierCrewTeam(b._team))
+                return false;
+            DriveBy d;
+            if (!_driveBy.TryGetValue(b, out d))
+                _driveBy[b] = d = new DriveBy();
+            if (d.DriveUntil != 0 && now - d.DriveUntil < 0)
+                return true;
+            d.DriveUntil = 0;
+            if (!b.InLiveCombat)
+            {
+                d.CombatSince = 0;
+                return false;
+            }
+            if (d.CombatSince == 0)
+                d.CombatSince = NonZeroTick(now);
+            if (now - d.CombatSince < HarrierEngageMs)
+                return false;
+            d.CombatSince = 0;
+            d.DriveUntil = NonZeroTick(now + HarrierDriveOnMs);
+            ResetRouteWalk(b);   // (on from the nearest waypoint)
+            return true;
+        }
+
         /// <summary>The Harrier picks up its route again from the nearest waypoint.</summary>
         void ResetRouteWalk(Bots.Bot b)
         {
@@ -354,6 +390,8 @@ namespace InfServer.Script.GameType_Eol
                 if (b == null || b.bCondemned || b.IsDead) _routeWalk.Remove(b);
             foreach (Bots.Bot b in new List<Bots.Bot>(_harrierStuck.Keys))
                 if (b == null || b.bCondemned || b.IsDead) _harrierStuck.Remove(b);
+            foreach (Bots.Bot b in new List<Bots.Bot>(_driveBy.Keys))
+                if (b == null || b.bCondemned || b.IsDead) _driveBy.Remove(b);
         }
 
         void PollHarrierCrew(int now)
@@ -719,9 +757,28 @@ namespace InfServer.Script.GameType_Eol
             DropHarrierRider(c);
             short x0 = dead._state != null ? dead._state.positionX : (short)0, y0 = dead._state != null ? dead._state.positionY : (short)0;
             _arena.HandOverBotAlias(dead);   // (the Chief gets out under his name)
+            DropHarrierReward(x0, y0);
             _pendingHarrierFoot.Add(new PendingHarrierFoot { Crew = c, X = x0, Y = y0, ChiefAlias = c.ChiefAlias, Bounty = BotBountyOf(dead) });
             Log.write(TLog.Normal, "[Eol] Low Life Thugs: {0} destroyed - the crew is on foot.", HarrierName(c));
             return true;
+        }
+
+        /// <summary>(2026-11-26, owner: "add a reward for the harrier if you kill them, when the vehicle dies they drop a large
+        /// stim and large energizer ... they still have to kill the bots that are on foot after") the wreck drops a Large Stim
+        /// Pack and a Large Energizer on the spot (the crew getting out pays nothing extra - they are killed as usual).</summary>
+        const int ItmLargeStimPack = 1652, ItmLargeEnergizer = 107;
+        void DropHarrierReward(short x, short y)
+        {
+            try
+            {
+                foreach (int id in new[] { ItmLargeStimPack, ItmLargeEnergizer })
+                {
+                    ItemInfo it = Itm(id);
+                    if (it != null)
+                        _arena.itemSpawn(it, 1, x, y, 48, null);
+                }
+            }
+            catch (Exception ex) { SafeLog("harrier reward", ex); }
         }
 
         void PollPendingHarrierFoot(int now)
