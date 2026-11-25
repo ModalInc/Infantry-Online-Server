@@ -39,11 +39,11 @@ namespace InfServer.Script.GameType_Eol
         const ushort VehHarrierBotArmour = 413;
         /// <summary>(2026-11-26, owner: "there should be TWO names under the vehicle. not a body following it" / "it should stack
         /// and each have their own BTY") the gunner rides in the Harrier as its own bot on veh 845 (Squad Leader) / 846
-        /// (Sergeant) - the class with no body sprite, so only its name and bounty show. The engine keeps it on the hull every
+        /// (Sergeant) - the class wearing the Harrier turret's sprite (it is the turret, turning to aim). The engine keeps it on the hull every
         /// tick (Bot.RideOn), RiderOffsetY below the hull's centre so its line sits under the Chief's. It can't be hurt there;
         /// the Harrier takes the hits and fires the guns.</summary>
         const ushort VehGunnerSquadLeader = 845, VehGunnerSergeant = 846;
-        const short RiderOffsetY = 64;   // (the Harrier's label sits ~62 px under its centre; the rider has no body, so its line is just under its spot)
+        const short RiderOffsetY = 12;   // (the turret sits on the hull; 12 px down puts its name one line under the Chief's)
         const int ItmKamenevScv = 3070, ItmLawLauncher = 3071, ItmFlakShell = 3074, ItmA2GrenadeLauncher = 3075;
 
         sealed class HarrierCrew
@@ -540,8 +540,11 @@ namespace InfServer.Script.GameType_Eol
                 _bots = new List<Bots.Bot>();
             _bots.Add(h);
             c.Harrier = h;
-            AttachHarrierTurret(c, h, at);
+            // (2026-11-26) the gunner IS the turret (veh 845 / 846 wear the turret's sprite and turn on their own to aim); the
+            // engine's turret piece only if it couldn't be made (a vehicle with no sprite crashed the clients)
             c.Rider = SpawnHarrierRider(c, h, gunnerAlias, now);
+            if (c.Rider == null)
+                AttachHarrierTurret(c, h, at);
             Log.write(TLog.Normal, "[Eol] Low Life Thugs: {0} and {1} got in their {2} at {3}.", chiefAlias, c.GunnerAlias,
                 HarrierName(c), Helpers.posToLetterCoord(at.positionX, at.positionY));
         }
