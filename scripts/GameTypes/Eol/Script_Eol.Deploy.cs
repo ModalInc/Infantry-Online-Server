@@ -257,6 +257,11 @@ namespace InfServer.Script.GameType_Eol
                 }
             }
 
+            // (2026-11-26) a Harrier crew lands together, where the Chief Engineer builds their Harrier
+            at = HarrierCrewLandingFor(b);
+            if (at != null)
+                return at;
+
             // (2026-11-26) a squad sent after a team's roamer flags: its staging spot near them
             at = RaidStageFor(b);
             if (at != null)

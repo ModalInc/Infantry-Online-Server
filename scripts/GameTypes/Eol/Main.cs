@@ -466,7 +466,7 @@ namespace InfServer.Script.GameType_Eol
         public string botTeamName3 = "Titanium Pirates";          // base 3 (classic team 10)
         public string botTeamName4 = "Pirate Raid Crew";        // (the old raid, off; 2026-11-26: "Pirate Raiders" is the swarm-site crew now)
         public string botTeamName5 = "Vaarsburg Freeholders";     // the 30k assassins (classic team 13) - local 2026-11-13 (was BHB)
-        public string botTeamName6 = "Low Life Thugs";            // (2026-11-26: no pirate squad any more - the name is a normal joinable squad, MixedTeamNames)
+        public string botTeamName6 = "Low Life Thugs";            // (2026-11-26: the Harrier crews - Script_Eol.HarrierCrew.cs; bot-only, was the pirate squad)
         public string botTeamName7 = "Skrall Swarm";
         public string botTeamName8 = "StarFire Corps";            // the elite vehicle squad (boards + Drop Pack) - (2026-11-24, owner:
                                                                   // "the ghost reapers should also have a normal team name") a public, joinable squad
@@ -850,7 +850,7 @@ namespace InfServer.Script.GameType_Eol
             botTeam3 = CreateAndRegisterBotTeam(botTeamName3);
             botTeam4 = CreateAndRegisterBotTeam(botTeamName4);
             botTeam5 = CreateAndRegisterBotTeam(botTeamName5);
-            botTeam6 = null;   // (2026-11-26, owner: "there is no low life thugs pirate team anymore ... that team name joins the other normal teams")
+            botTeam6 = CreateAndRegisterBotTeam(botTeamName6);   // (2026-11-26: the Harrier crews, 2 x 2 - no pirates any more; players can't join)
             botTeam7 = CreateAndRegisterBotTeam(botTeamName7);
             botTeam8 = SquadTeam(botTeamName8);   // (2026-11-24) a normal faction team players join with one click, like the other squads
             botTeam9 = null;   // (2026-11-24) one assassin team
@@ -6700,7 +6700,7 @@ namespace InfServer.Script.GameType_Eol
             if (queenDied)
                 OnSwarmNestDeath(dead, killer);
             // (2026-11-18) a vehicle-squad bot's vehicle destroyed: its rider goes on foot - no kill reward for the vehicle
-            bool vehicleLost = !queenDied && OnVehicleSquadVehicleLost(dead);
+            bool vehicleLost = !queenDied && (OnVehicleSquadVehicleLost(dead) || OnHarrierLost(dead));   // (2026-11-26: + a Harrier - its crew gets out)
             if (!queenDied && !vehicleLost && killer != null && dead != null && dead._team != killer._team)
             {
                 calculateBotKillRewards(dead, killer);
