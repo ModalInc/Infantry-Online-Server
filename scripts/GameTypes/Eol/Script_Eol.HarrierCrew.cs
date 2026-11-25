@@ -37,13 +37,16 @@ namespace InfServer.Script.GameType_Eol
         /// the damage they take. lets use for example a Autogun AT") the bot Harriers take hits with the Auto Turret - AT's
         /// armour (veh 413): explosive 5,000 ignore + 1 %, everything else 12,000 + 75 % - on their own 300 HP.</summary>
         const ushort VehHarrierBotArmour = 413;
-        /// <summary>(2026-11-26, owner: "there should be TWO names under the vehicle. not a body following it" / "it should stack
-        /// and each have their own BTY") the gunner rides in the Harrier as its own bot on veh 845 (Squad Leader) / 846
-        /// (Sergeant) - the class wearing the Harrier turret's sprite (it is the turret, turning to aim). The engine keeps it on the hull every
-        /// tick (Bot.RideOn), RiderOffsetY below the hull's centre so its line sits under the Chief's. It can't be hurt there;
-        /// the Harrier takes the hits and fires the guns.</summary>
-        const ushort VehGunnerSquadLeader = 845, VehGunnerSergeant = 846;
-        const short RiderOffsetY = 0;   // (the turret on the hull's centre; its smaller sprite puts its name line above the Chief's)
+        /// <summary>(2026-11-26, owner: "there should be TWO names under the vehicle" / "it should stack and each have their own
+        /// BTY") the gunner rides in the Harrier as its own bot in its own class (Squad Leader / Sergeant - the gunner in the
+        /// hatch), kept on the hull every tick by the engine (Bot.RideOn), with its own name and bounty. It can't be hurt there;
+        /// the Harrier takes the hits and fires the guns. (Special gunner vehicles - no body, or the turret's sprite on a class -
+        /// crashed the clients: never give a class vehicle a non-person sprite.)</summary>
+        const short RiderOffsetY = 0;
+        /// <summary>(2026-11-26, owner: "we were so close before?? it was Name & Name") off: the Harrier carries both names
+        /// ("Chief & Gunner"), which works on every client; a stacked second line needs a second bot, and every bodiless way of
+        /// doing that crashed the clients.</summary>
+        const bool HarrierRiderEnabled = false;
         const int ItmKamenevScv = 3070, ItmLawLauncher = 3071, ItmFlakShell = 3074, ItmA2GrenadeLauncher = 3075;
 
         sealed class HarrierCrew
@@ -518,7 +521,7 @@ namespace InfServer.Script.GameType_Eol
             c.BuildDoneTick = 0;
             c.BuildSpot = null;
 
-            _arena.NextBotAlias = chiefAlias;
+            _arena.NextBotAlias = !HarrierRiderEnabled && chiefAlias != null && gunnerAlias != null ? chiefAlias + " & " + gunnerAlias : chiefAlias;
             RoamingAttacker h = _arena.newBot(typeof(RoamingAttacker), c.HarrierVeh, botTeam6, null, at, this, null) as RoamingAttacker;
             _arena.NextBotAlias = null;
             if (h == null)
@@ -540,11 +543,9 @@ namespace InfServer.Script.GameType_Eol
                 _bots = new List<Bots.Bot>();
             _bots.Add(h);
             c.Harrier = h;
-            // (2026-11-26) the gunner IS the turret (veh 845 / 846 wear the turret's sprite and turn on their own to aim); the
-            // engine's turret piece only if it couldn't be made (a vehicle with no sprite crashed the clients)
-            c.Rider = SpawnHarrierRider(c, h, gunnerAlias, now);
-            if (c.Rider == null)
-                AttachHarrierTurret(c, h, at);
+            AttachHarrierTurret(c, h, at);
+            if (HarrierRiderEnabled)
+                c.Rider = SpawnHarrierRider(c, h, gunnerAlias, now);   // (the gunner in the hatch: its own name and bounty)
             Log.write(TLog.Normal, "[Eol] Low Life Thugs: {0} and {1} got in their {2} at {3}.", chiefAlias, c.GunnerAlias,
                 HarrierName(c), Helpers.posToLetterCoord(at.positionX, at.positionY));
         }
@@ -592,7 +593,7 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>The gunner riding in the Harrier: no body, its name and bounty under the Chief's, kept on the hull by the engine.</summary>
         RoamingAttacker SpawnHarrierRider(HarrierCrew c, RoamingAttacker h, string alias, int now)
         {
-            ushort veh = c.GunnerCls == ClsSergeant ? VehGunnerSergeant : VehGunnerSquadLeader;
+            ushort veh = (ushort)c.GunnerCls;   // (its own class body - the gunner in the hatch)
             if (!(_arena._server._assets.getVehicleByID(veh) is VehInfo.Car))
                 return null;
             Helpers.ObjectState st = new Helpers.ObjectState { positionX = h._state.positionX, positionY = (short)(h._state.positionY + RiderOffsetY), yaw = h._state.yaw };
