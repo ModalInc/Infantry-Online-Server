@@ -162,8 +162,32 @@ namespace InfServer.Script.GameType_Eol
             if (_baseScript != null && (_baseScript.IsRoamingSquadTeam(_team) || _baseScript.IsReleasedAssassinTeam(_team)))
                 return EliteSquadPoll();
 
-            Vehicle capV = _baseScript._pollCacheRoamCaptainVehicle;
-            if (capV != null && capV._team == _team && !capV.IsDead)
+            // (2026-11-26, owner: "they are spawning dead on the command ... the assassin team should spawn in the drop ship,
+            // and then the command is the only one that goes out ... and then the command summons the whole team") an assassin
+            // waits in the dropship until its Squad Leader summons it, and finds its leader directly - the lookup below is by
+            // the pirate raid captain's vehicle (142), which never matched, so every assassin killed itself as it spawned
+            bool assassin = _baseScript != null && _baseScript.IsBountyHunterBotTeam(_team);
+            if (assassin)
+            {
+                if (_baseScript.AssassinWaitsInShip(this))
+                {
+                    ClearActivePlayerTarget();
+                    HoldPosition();
+                    return base.poll();
+                }
+                Vehicle lead = _baseScript.AssassinLeaderOf(_team);
+                if (lead == null)
+                {   // (no leader out right now: hold - never die for it)
+                    HoldPosition();
+                    return base.poll();
+                }
+                _roamCapt = lead;
+                x = lead._state.positionX;
+                y = lead._state.positionY;
+            }
+            Vehicle capV = assassin ? null : _baseScript._pollCacheRoamCaptainVehicle;
+            if (assassin) { }
+            else if (capV != null && capV._team == _team && !capV.IsDead)
             {
                 _roamCapt = capV;
                 x = capV._state.positionX;

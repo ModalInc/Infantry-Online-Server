@@ -362,6 +362,8 @@ namespace InfServer.Script.GameType_Eol
         bool TryFindBountyHunterSectorSpawn(out Helpers.ObjectState spawn)
         {
             spawn = null;
+            if (TryFindAssassinLeaderSpotNearMark(out spawn))   // (2026-11-26: the Squad Leader near the mark)
+                return true;
             if (!TryFindOpenRaiderAnchorInActiveSectors(out spawn) || spawn == null)
             {
                 if (!_bountyHunterSectorSpawnValid)
@@ -649,11 +651,13 @@ namespace InfServer.Script.GameType_Eol
             if (!ignoreInterval && _tickNextBountyHunterGruntSpawn.TryGetValue(team, out due) && now < due)
                 return;
 
-            Helpers.ObjectState openPoint = null;
+            // (2026-11-26, owner: "the assassin team should spawn in the drop ship") the team waits in the dropship for the Squad
+            // Leader's summon (no walk out through the portal)
+            Helpers.ObjectState openPoint = PickDropshipSpawn();
             RoamingCaptain liveCap = nearCaptain != null && !nearCaptain.IsDead
                 ? nearCaptain
                 : FindLiveBountyHunterCaptain(team);
-            if (liveCap != null && !liveCap.IsDead
+            if (openPoint == null && liveCap != null && !liveCap.IsDead
                 && (_eol == null || !_eol.IsInPioneerDropshipSafeZone(liveCap._state.positionX, liveCap._state.positionY))
                 && !MarkTeamNear(liveCap._state.positionX, liveCap._state.positionY, AssassinSpawnClearOfMarkRaw))   // (not into the fight)
             {
@@ -699,6 +703,50 @@ namespace InfServer.Script.GameType_Eol
                     return c;
             }
             return null;
+        }
+
+        /// <summary>(2026-11-26) the team's live Squad Leader (null = none out).</summary>
+        public Vehicle AssassinLeaderOf(Team team)
+        {
+            RoamingCaptain c = FindLiveBountyHunterCaptain(team);
+            return c != null && c._state != null ? c : null;
+        }
+
+        /// <summary>(2026-11-26) an assassin still in the dropship, waiting for its Squad Leader's summon.</summary>
+        public bool AssassinWaitsInShip(Bot b)
+        {
+            return b != null && b._state != null && _eol != null && IsBountyHunterBotTeam(b._team)
+                && _eol.IsInPioneerDropshipSafeZone(b._state.positionX, b._state.positionY);
+        }
+
+        /// <summary>
+        /// (2026-11-26, owner: "the command is the only one that goes out to find the 30k (spawning near them)") the Squad
+        /// Leader comes in 1,000-1,500 px from the mark - close, but out of his team's sight (AssassinSpawnClearOfMarkRaw) -
+        /// on open ground in an open sector. False = no such spot right now.
+        /// </summary>
+        bool TryFindAssassinLeaderSpotNearMark(out Helpers.ObjectState spot)
+        {
+            spot = null;
+            InfServer.Game.Player mark = _bountyHuntMarked;
+            if (mark == null || mark.IsDead || mark._state == null || !IsBountyHunterMarkInField())
+                return false;
+            Random r = _rand ?? (_rand = new Random(Environment.TickCount));
+            for (int i = 0; i < 30; i++)
+            {
+                double a = r.NextDouble() * 2 * Math.PI;
+                int d = 1000 + r.Next(500);
+                int x = mark._state.positionX + (int)(Math.Cos(a) * d), y = mark._state.positionY + (int)(Math.Sin(a) * d);
+                if (x < 64 || y < 64 || x > short.MaxValue - 64 || y > short.MaxValue - 64)
+                    continue;
+                Helpers.ObjectState at = OpenSpotNear((short)x, (short)y, 160);
+                if (at == null || !IsOpenConnectedGround(at.positionX, at.positionY)
+                    || (_eol != null && (_eol.IsInPioneerDropshipSafeZone(at.positionX, at.positionY) || !_eol.IsInAnyActiveSector(at.positionX, at.positionY)))
+                    || MarkTeamNear(at.positionX, at.positionY, AssassinSpawnClearOfMarkRaw))
+                    continue;
+                spot = at;
+                return true;
+            }
+            return false;
         }
 
         /// <summary>Any live assassin captain (either cell).</summary>
@@ -754,7 +802,7 @@ namespace InfServer.Script.GameType_Eol
         /// AssassinSummonEveryMs while some of them are far off (AssassinSummonFarRaw). Like a player's summon: nobody inside
         /// an enemy teleport disruptor comes (and none if he is inside one), and not while he is in a fight up close.
         /// </summary>
-        const int AssassinSummonEveryMs = 45000, AssassinSummonFarRaw = 900;
+        const int AssassinSummonEveryMs = 30000, AssassinSummonFarRaw = 900;
         readonly Dictionary<Team, int> _assassinSummonNext = new Dictionary<Team, int>();
 
         void PollAssassinSummon(int now, Team team)
@@ -775,7 +823,7 @@ namespace InfServer.Script.GameType_Eol
                 RoamingAttacker b = v as RoamingAttacker;
                 if (b == null || b.IsDead || b.bCondemned || b._team != team || b._state == null || IsDeploying(b))
                     continue;
-                if (Helpers.distanceTo(b._state, lead._state) < AssassinSummonFarRaw)
+                if (!AssassinWaitsInShip(b) && Helpers.distanceTo(b._state, lead._state) < AssassinSummonFarRaw)
                     continue;
                 if (_arena.isTeleportDisruptedAt(b._state.positionX, b._state.positionY, team))
                     continue;   // (an enemy disruptor holds it)
