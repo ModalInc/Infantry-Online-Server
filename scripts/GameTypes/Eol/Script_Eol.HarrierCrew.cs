@@ -41,6 +41,7 @@ namespace InfServer.Script.GameType_Eol
             public int GunnerCls;
             public int CloseGun, FarGun;
             public RoamingAttacker Harrier, Chief, Gunner;
+            public Vehicle Turret;   // (2026-11-26) the Harrier's turret piece, on top of the bot (the gunner's seat)
             public string GunnerAlias;
             public bool ChiefCycled, GunnerCycled;   // been through the dropship since they got out of the Harrier
             public Helpers.ObjectState BuildSpot;
@@ -213,6 +214,14 @@ namespace InfServer.Script.GameType_Eol
             if (!HarrierCrewEnabled || botTeam6 == null || _arena == null || !_arena._bGameRunning || !EolHasArenaPresence())
                 return;
             PollPendingHarrierFoot(now);
+            foreach (HarrierCrew c in _harrierCrews)
+                if (c.Turret != null)
+                {
+                    if (c.Harrier != null && !BotGone(c.Harrier) && !c.Turret.IsDead && !c.Turret.bCondemned)
+                        c.Harrier.propagateState();   // (the turret's server state follows the hull - hits on it land right)
+                    else
+                        DropHarrierTurret(c);
+                }
             if (now - _tickHarrierPoll < 500)
                 return;
             _tickHarrierPoll = now;
@@ -429,8 +438,48 @@ namespace InfServer.Script.GameType_Eol
                 _bots = new List<Bots.Bot>();
             _bots.Add(h);
             c.Harrier = h;
+            AttachHarrierTurret(c, h, at);
             Log.write(TLog.Normal, "[Eol] Low Life Thugs: {0} and {1} got in their {2} at {3}.", chiefAlias, c.GunnerAlias,
                 HarrierName(c), Helpers.posToLetterCoord(at.positionX, at.positionY));
+        }
+
+        /// <summary>
+        /// (2026-11-26, owner: "the turret is invisible") the engine makes a vehicle's turret (its child vehicle) only for a
+        /// vehicle made with newVehicle - a bot Harrier had none. It is made here, tied to the bot as its child (the clients
+        /// draw it on the hull, as on a player's Harrier) and kept on it every poll.
+        /// </summary>
+        void AttachHarrierTurret(HarrierCrew c, RoamingAttacker h, Helpers.ObjectState at)
+        {
+            try
+            {
+                VehInfo hull = _arena._server._assets.getVehicleByID(c.HarrierVeh);
+                int tid = hull != null && hull.ChildVehicles != null && hull.ChildVehicles.Length > 0 ? hull.ChildVehicles[0] : 0;
+                VehInfo tt = tid > 0 ? _arena._server._assets.getVehicleByID(tid) : null;
+                if (tt == null)
+                    return;
+                Helpers.ObjectState st = new Helpers.ObjectState { positionX = h._state.positionX, positionY = h._state.positionY, yaw = h._state.yaw };
+                Vehicle turret = _arena.newVehicle(tt, botTeam6, null, st, delegate (Vehicle v) { v._parent = h; v._parentSlot = 0; });
+                if (turret == null)
+                    return;
+                h._childs.Add(turret);
+                c.Turret = turret;
+            }
+            catch (Exception ex)
+            {
+                Log.write(TLog.Warning, "[Eol] Low Life Thugs: turret failed: " + ex.Message);
+            }
+        }
+
+        void DropHarrierTurret(HarrierCrew c)
+        {
+            Vehicle t = c.Turret;
+            c.Turret = null;
+            if (t == null)
+                return;
+            if (t._parent != null && t._parent._childs != null)
+                t._parent._childs.Remove(t);
+            if (!t.IsDead && !t.bCondemned)
+                EnqueueVehicleDespawn(t, force: true);
         }
 
         /// <summary>
@@ -445,6 +494,7 @@ namespace InfServer.Script.GameType_Eol
             if (c == null)
                 return false;
             c.Harrier = null;
+            DropHarrierTurret(c);
             short x0 = dead._state != null ? dead._state.positionX : (short)0, y0 = dead._state != null ? dead._state.positionY : (short)0;
             _pendingHarrierFoot.Add(new PendingHarrierFoot { Crew = c, X = x0, Y = y0, ChiefAlias = _arena.HandOverBotAlias(dead), Bounty = BotBountyOf(dead) });
             Log.write(TLog.Normal, "[Eol] Low Life Thugs: {0} destroyed - the crew is on foot.", HarrierName(c));

@@ -353,23 +353,24 @@ namespace InfServer.Bots
             if (NeverTouchPhysics)
             {
                 CollectNearbySolids();
+                double clr = WallClearance;   // (2026-11-26: a big vehicle keeps its own radius off the wall - the Harriers)
                 bool insideNow = BlockedForMe(_position.x, _position.y);
                 double nx = newPosition.x, ny = newPosition.y;
                 double mx = nx - _position.x, my = ny - _position.y;
                 bool hitX = false, hitY = false;
                 if (!insideNow)
                 {
-                    if (mx != 0 && (BlockedForMe(nx + Math.Sign(mx) * ClearanceRaw, _position.y)
-                                    || BlockedForMe(nx + Math.Sign(mx) * ClearanceRaw, _position.y - ClearanceRaw * 0.6)
-                                    || BlockedForMe(nx + Math.Sign(mx) * ClearanceRaw, _position.y + ClearanceRaw * 0.6)))
+                    if (mx != 0 && (BlockedForMe(nx + Math.Sign(mx) * clr, _position.y)
+                                    || BlockedForMe(nx + Math.Sign(mx) * clr, _position.y - clr * 0.6)
+                                    || BlockedForMe(nx + Math.Sign(mx) * clr, _position.y + clr * 0.6)))
                     {
                         hitX = true;
                         nx = _position.x;
                         _velocity.x = 0;
                     }
-                    if (my != 0 && (BlockedForMe(nx, ny + Math.Sign(my) * ClearanceRaw)
-                                    || BlockedForMe(nx - ClearanceRaw * 0.6, ny + Math.Sign(my) * ClearanceRaw)
-                                    || BlockedForMe(nx + ClearanceRaw * 0.6, ny + Math.Sign(my) * ClearanceRaw)))
+                    if (my != 0 && (BlockedForMe(nx, ny + Math.Sign(my) * clr)
+                                    || BlockedForMe(nx - clr * 0.6, ny + Math.Sign(my) * clr)
+                                    || BlockedForMe(nx + clr * 0.6, ny + Math.Sign(my) * clr)))
                     {
                         hitY = true;
                         ny = _position.y;
@@ -819,6 +820,10 @@ namespace InfServer.Bots
         /// <summary>Bots keep this gap (raw px) from any physics they can't cross, and never enter it.</summary>
         public static bool NeverTouchPhysics = true;
         public const double ClearanceRaw = 10;
+        /// <summary>(2026-11-26, owner: "the vehicle circle under them should be the same as the harrier, so they dont jump around in
+        /// physics") a big vehicle (radius 24 px and up - the Harriers, 50) stops its own radius short of a wall, like the client
+        /// does for a player driving one; people, bugs and boards keep the 10 px gap.</summary>
+        double WallClearance { get { return _type != null && _type.PhysicalRadius >= 24 ? _type.PhysicalRadius : ClearanceRaw; } }
 
         /// <summary>
         /// True when this vehicle can't occupy the point: ANY physics tile, off-map, or inside a built object.
