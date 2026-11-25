@@ -161,6 +161,69 @@ namespace InfServer.Script.GameType_Eol
             return true;
         }
 
+        // ---------- (2026-11-26, owner: "it got stuck in this point. have it go back to the drive path if it is stuck. it should
+        // drive around searching") ----------
+        sealed class HarrierStuck { public short X, Y; public int Since, ForceUntil, Stage; }
+        readonly Dictionary<Bots.Bot, HarrierStuck> _harrierStuck = new Dictionary<Bots.Bot, HarrierStuck>();
+        const int HarrierStuckMs = 7000, HarrierStuckWarpMs = 8000, HarrierStuckMoveRaw = 48;
+
+        /// <summary>
+        /// First in a Harrier's poll (before any fight): a Harrier that has hardly moved for 7 s drops what it's doing and
+        /// drives back to its route (returns the waypoint); still stuck 8 s later, it is put on the nearest waypoint of its
+        /// route. Null = not stuck (carry on as usual).
+        /// </summary>
+        public Helpers.ObjectState HarrierUnstickGoal(Bots.Bot b, int now)
+        {
+            if (b == null || b._state == null || b._type == null || !IsHarrierVeh(b._type.Id) || !IsHarrierCrewTeam(b._team) || b.IsDead)
+                return null;
+            HarrierStuck s;
+            if (!_harrierStuck.TryGetValue(b, out s))
+                _harrierStuck[b] = s = new HarrierStuck { X = b._state.positionX, Y = b._state.positionY, Since = now };
+            if (Helpers.distanceTo(b._state.positionX, b._state.positionY, s.X, s.Y) > HarrierStuckMoveRaw)
+            {   // moving: fine (a back-to-route trip ends once it's moving again and back near the route)
+                s.X = b._state.positionX; s.Y = b._state.positionY; s.Since = now;
+                if (s.Stage == 1 && now - s.ForceUntil >= 0)
+                    s.Stage = 0;
+                return s.Stage == 1 ? HarrierRouteGoal(b, now) : null;
+            }
+            if (s.Stage == 0)
+            {
+                if (now - s.Since < HarrierStuckMs)
+                    return null;
+                s.Stage = 1;
+                s.ForceUntil = now + 10000;
+                ResetRouteWalk(b);
+                Log.write(TLog.Normal, "[Eol] Low Life Thugs: {0} stuck at {1},{2} - back to its route.", b._alias, b._state.positionX / 16, b._state.positionY / 16);
+                return HarrierRouteGoal(b, now);
+            }
+            if (now - s.Since >= HarrierStuckMs + HarrierStuckWarpMs)
+            {   // still stuck: onto the nearest waypoint
+                RouteWalk w;
+                Helpers.ObjectState to = null;
+                if (_routeWalk.TryGetValue(b, out w) && w.Route != null)
+                {
+                    Helpers.ObjectState n = RouteNodeRaw(w.Route, NearestRouteNode(w.Route, b._state));
+                    to = findOpenWarpBot(_arena, n.positionX, n.positionY, 200, 56) ?? n;
+                }
+                if (to != null)
+                {
+                    WarpBot(b, to);
+                    try { b.Navigation?.Clear(); } catch { }
+                    Log.write(TLog.Normal, "[Eol] Low Life Thugs: {0} still stuck - put back on its route at {1},{2}.", b._alias, to.positionX / 16, to.positionY / 16);
+                }
+                ResetRouteWalk(b);
+                s.Stage = 0; s.Since = now; s.X = b._state.positionX; s.Y = b._state.positionY;
+                return null;
+            }
+            return HarrierRouteGoal(b, now);
+        }
+
+        /// <summary>The Harrier picks up its route again from the nearest waypoint.</summary>
+        void ResetRouteWalk(Bots.Bot b)
+        {
+            _routeWalk.Remove(b);
+        }
+
         static int NearestRouteNode(HarrierRoute r, Helpers.ObjectState at)
         {
             int best = 0; double bd = double.MaxValue;
