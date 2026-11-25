@@ -283,9 +283,12 @@ namespace InfServer.Bots
             else
                 applyBooleanThrust(directionVector, ref accelVector);
 
-            //Apply our acceleration
-            _velocity.x += accelVector.x * (delta / 1000.0d);
-            _velocity.y += accelVector.y * (delta / 1000.0d);
+            //Apply our acceleration (2026-11-26: not while stunned - a stunned bot can't thrust, like a stunned player)
+            if (!StunActive(StunThrustUntil))
+            {
+                _velocity.x += accelVector.x * (delta / 1000.0d);
+                _velocity.y += accelVector.y * (delta / 1000.0d);
+            }
 
             // Sustained explosion recoil (WeaponDuration), if any.
             if (_tickRecoilForceUntil != 0)
@@ -314,11 +317,10 @@ namespace InfServer.Bots
                 _velocity.Normalize(_rollTopSpeed / 1);
             // stunned: stands still, like a stunned player who can't thrust (2026-11-23, owner: "not making them stand
             // still"; it was a 10-20 % crawl)
-            if (StunActive(StunThrustUntil))
-            {
-                _velocity.x = 0;
-                _velocity.y = 0;
-            }
+            // (2026-11-26, owner: "the knock back works perfect for real players, but not on bots ... make it so it works the
+            // same on the bots") a stun used to zero the bot's speed every tick - which wiped out the blast's knockback the
+            // moment it was given (the CL5 / CL7 and the sonics stun AND push). Now, like a stunned player, it only loses its
+            // own thrust (above): the knockback still carries it, and friction slows it to a stop.
             // (never let a bad value through: Normalize of a zero vector gives NaN)
             if (double.IsNaN(_velocity.x) || double.IsNaN(_velocity.y) || double.IsInfinity(_velocity.x) || double.IsInfinity(_velocity.y))
             {
