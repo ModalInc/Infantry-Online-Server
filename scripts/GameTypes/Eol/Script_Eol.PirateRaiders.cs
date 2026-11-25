@@ -20,49 +20,48 @@ namespace InfServer.Script.GameType_Eol
     /// kill the commander" / "SHOULD NOT change anything about the pirate base bots")
     ///
     /// The second swarm run (Script_Eol.AlienSwarm.cs): the Commander is the "nest" - a bot on veh 838 "Pirate Commander"
-    /// (the Captain's body, the Queen's armour, 2500 HP) that wanders round his landing spot and heals like the Queen
-    /// (Bots/AlienHorde/Queen.cs). 12 raiders guard him from the same guard posts, leash and rally as the bugs; they come
-    /// in through the dropship and out of its portal beside him. Normal class bodies (Infantry, Heavy Weapons, Infiltrator =
-    /// sniper, Jump Trooper = scout, one Sergeant like the bugs' Chief) with each one's guns, but a bug's HP and armour, so
-    /// they take as much killing as the aliens. The team is the .cfg's "Pirate Raiders" (dark jackets). Killing the
-    /// Commander pays the killing team the same as the Queen / King.
-    /// The base pirates (Titanium Pirates) and their Defender / Roamer bodies are untouched.
+    /// (the base pirate Captain's body, darker, the Queen's armour, 2500 HP) that wanders round his landing spot and heals
+    /// like the Queen (Bots/AlienHorde/Queen.cs). 12 raiders guard him from the same guard posts, leash and rally as the bugs;
+    /// they come in through the dropship and out of its portal beside him.
+    /// (2026-11-26, owner: "they have to have those Pirate skins like the base pirates have" / "change the skin color ... darker
+    /// more thugs type" / "pirate names instead of class names, except the commander") the raiders are their own darker
+    /// copies of the base pirate bodies (veh 839-843, with those bodies' pirate guns): Raider (AR + AC), Heavy (MG x2), Scout
+    /// (PDW x2), Sniper (PCAR + Carbine), one Sergeant (Flamer + AR, like the bugs' Chief) - with a bug's HP and armour, so
+    /// they take as much killing as the aliens. Pirate names; the Commander is "Commander <name>". Killing the Commander pays
+    /// the killing team the same as the Queen / King.
+    /// The base pirates (Titanium Pirates) and their veh 140-147 / 156-158 / 162 are untouched.
     /// </summary>
     public partial class Script_Eol
     {
         public const bool PirateRaidersEnabled = true;
         public const string PirateRaidersTeamName = "Pirate Raiders";
         public const string PirateCommanderTitle = "Pirate Commander";
-        /// <summary>veh 838 in PioneerStation.veh: the Captain's body, the Queen's armour, 2500 HP.</summary>
+        /// <summary>veh 838 in PioneerStation.veh: the base pirate Captain's body (darker), the Queen's armour, 2500 HP.</summary>
         public const ushort PirateCommanderVehId = 838;
-        const int PirateSergeantCls = ClsSergeant;
+        /// <summary>Darker copies of the base pirate bodies, with their pirate guns: Raider (AR + AC, from 158), Heavy (MG x2,
+        /// 143), Scout (PDW x2, 146), Sniper (PCAR + Carbine, 141), Sergeant (Flamer + AR, 140).</summary>
+        const int PirateRaiderVeh = 839, PirateHeavyVeh = 840, PirateScoutVeh = 841, PirateSniperVeh = 842, PirateSergeantCls = 843;
         const int ItmPirateHandMaser = 3056, ItmPiratePdw = 1514, ItmChainSword = 1075;
-        /// <summary>The raider classes, kept even (12 = the Sergeant + about 3 of each).</summary>
-        static readonly int[] PirateRaiderClasses = { ClsInfantry, ClsHeavy, ClsInfiltrator, ClsJumpTrooper };
+        /// <summary>The raider bodies, kept even (12 = the Sergeant + about 3 of each).</summary>
+        static readonly int[] PirateRaiderClasses = { PirateRaiderVeh, PirateHeavyVeh, PirateScoutVeh, PirateSniperVeh };
         /// <summary>
-        /// Each raider class takes hits like this bug (its HP and armour): Heavy Weapons = Arachnomorph (250), Infantry =
-        /// Electromorph (250), Scout = Predator (200), Sniper = Warrior (200), the Sergeant = the Alien Chief (250).
+        /// Each raider takes hits like this bug (its HP and armour): Heavy = Arachnomorph (250), Raider = Electromorph (250),
+        /// Scout = Predator (200), Sniper = Warrior (200), the Sergeant = the Alien Chief (250).
         /// </summary>
         static readonly Dictionary<int, ushort> PirateToughAs = new Dictionary<int, ushort>
         {
-            { ClsHeavy, 149 }, { ClsInfantry, 153 }, { ClsJumpTrooper, 154 }, { ClsInfiltrator, 155 }, { ClsSergeant, SwarmChiefVehId },
+            { PirateHeavyVeh, 149 }, { PirateRaiderVeh, 153 }, { PirateScoutVeh, 154 }, { PirateSniperVeh, 155 }, { PirateSergeantCls, SwarmChiefVehId },
         };
-        static readonly string[] PirateNames = { "Rourke", "Vex", "Skull", "Mako", "Brick", "Ratchet", "Scab", "Grimm", "Jagger",
-            "Dutch", "Viper", "Knuckles", "Boone", "Kray", "Slade", "Rook", "Crowe", "Hatch", "Tusk", "Mongrel", "Cutter", "Diesel",
-            "Gash", "Wolfe", "Rusty", "Fang", "Stitch", "Bones", "Grub", "Spike", "Vargas", "Moss", "Jinx", "Cobb", "Hex", "Rocco" };
-
-        static string PirateRank(int cls)
-        {
-            switch (cls)
-            {
-                case ClsHeavy: return "Heavy Weapons";
-                case ClsInfiltrator: return "Sniper";
-                case ClsJumpTrooper: return "Scout";
-                case ClsSergeant: return "Sergeant";
-                case PirateCommanderVehId: return "Commander";
-                default: return "Infantry";
-            }
-        }
+        /// <summary>Pirate names for the raiders (owner: "pirate names instead of class names").</summary>
+        static readonly string[] PirateNames = { "Redbeard", "Blackjack", "Calico Jack", "Scurvy Pete", "One-Eye Mako", "Iron Hook",
+            "Mad Dog Rourke", "Bilge Rat", "Cutlass Vex", "Dead-Eye Dutch", "Saltbones", "Peg-Leg Slade", "Black Bart", "Bloody Bess",
+            "Skull Kray", "Gutter Grimm", "Rusty Anchor", "Barnacle Bill", "Smuggler Jinx", "Gunpowder Gash", "Long John Cobb",
+            "Sea Dog Boone", "Plank Walker", "Grog Tusk", "Mutiny Moss", "Shark-Tooth Fang", "Powder Monkey", "Scallywag Stitch",
+            "Crowsnest Crowe", "Buccaneer Hex", "Davy Jones", "Cannonball Rocco", "Rumrunner Vargas", "Jolly Roger", "Kraken Wolfe",
+            "Sly Ratchet", "Brigand Brick", "Corsair Knuckles", "Marauder Jagger", "Hatchet Hatch" };
+        /// <summary>The Commander's second name.</summary>
+        static readonly string[] PirateCommanderNames = { "Blackbeard", "Kidd", "Morgan", "Drake", "Flint", "Silver", "Teach",
+            "Bonny", "Vane", "Rackham", "Roberts", "Bellamy", "Kraken", "Ironsides", "Dread", "Cutthroat" };
 
         /// <summary>The raider's name ("Commander Vex") - the alias it was made with.</summary>
         string PirateNameOf(Vehicle v)
@@ -71,7 +70,7 @@ namespace InfServer.Script.GameType_Eol
             return a != null && !string.IsNullOrEmpty(a.FixedName) ? a.FixedName : PirateCommanderTitle;
         }
 
-        /// <summary>"Rank Name" with a name no living bot or player has.</summary>
+        /// <summary>A pirate name no living bot or player has ("Commander Blackbeard" for the Commander).</summary>
         string PickPirateName(int cls)
         {
             HashSet<string> taken = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -79,15 +78,16 @@ namespace InfServer.Script.GameType_Eol
                 if (b != null && b._alias != null) taken.Add(b._alias);
             foreach (InfServer.Game.Player p in _arena.Players)
                 if (p != null && p._alias != null) taken.Add(p._alias);
-            string rank = PirateRank(cls);
-            int start = _arena._rand.Next(PirateNames.Length);
-            for (int i = 0; i < PirateNames.Length; i++)
+            bool cmd = cls == PirateCommanderVehId;
+            string[] pool = cmd ? PirateCommanderNames : PirateNames;
+            int start = _arena._rand.Next(pool.Length);
+            for (int i = 0; i < pool.Length; i++)
             {
-                string n = rank + " " + PirateNames[(start + i) % PirateNames.Length];
+                string n = (cmd ? "Commander " : "") + pool[(start + i) % pool.Length];
                 if (!taken.Contains(n))
                     return n;
             }
-            return rank + " " + (100 + _arena._rand.Next(900));
+            return (cmd ? "Commander " : "Pirate ") + (100 + _arena._rand.Next(900));
         }
 
         /// <summary>The raider class the living crew has fewest of (random between ties).</summary>
@@ -160,7 +160,7 @@ namespace InfServer.Script.GameType_Eol
             if (p == null)
                 return false;
             p.SkillModeOverride = "veteran";   // (as the bugs)
-            ApplyPirateLoadout(p, cls);
+            ApplyPirateGrenades(p);   // (their body's own pirate guns are equipped already, as the base pirates')
             ApplyPirateToughness(p);
             EnableBotDropshipRespawn(p, 0);   // dies -> corpse -> back in the dropship, same raider
             if (_bots == null)
@@ -173,22 +173,12 @@ namespace InfServer.Script.GameType_Eol
             return true;
         }
 
-        /// <summary>The class's guns (the same pick as the human squads), sometimes a few grenades. No cloak, no player armour.</summary>
-        void ApplyPirateLoadout(AlienHorde p, int cls)
+        /// <summary>~35 % carry 2-3 grenades (frag / incendiary / EMP).</summary>
+        void ApplyPirateGrenades(AlienHorde p)
         {
             try
             {
-                int side, main, misc;
-                PickClassWeapons(cls, p._team, out side, out main, out misc);
-                EquipCloseFar(p, side, main);
-                p.CombatWeaponSelector = null;
-                if (misc != 0)
-                {
-                    ItemInfo mi = Itm(misc);
-                    WeaponController wm = new WeaponController(p._state, new WeaponController.WeaponSettings());
-                    if (mi != null && wm.equip(mi)) { wm.Owner = p; EolBotBrain.SetMiscWeapon(p, wm); }
-                }
-                int gid = _arena._rand.NextDouble() < 0.35 ? PickClassGrenade(p) : 0;
+                int gid = _arena._rand.NextDouble() < 0.35 ? Grenades[_arena._rand.Next(Grenades.Length)] : 0;
                 ItemInfo g = gid != 0 ? Itm(gid) : null;
                 if (g != null)
                 {
@@ -198,7 +188,7 @@ namespace InfServer.Script.GameType_Eol
             }
             catch (Exception ex)
             {
-                Log.write(TLog.Warning, "[Eol] Pirate Raiders loadout failed: " + ex.Message);
+                Log.write(TLog.Warning, "[Eol] Pirate Raiders grenades failed: " + ex.Message);
             }
         }
 
