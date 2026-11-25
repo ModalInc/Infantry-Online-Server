@@ -434,8 +434,6 @@ namespace InfServer.Script.GameType_Eol
             string skill;
             if (_strikeSkill.TryGetValue(team, out skill) && skill != null)
                 bot.SkillModeOverride = skill;
-            if (vehicleSquad)
-                bot.SetFootBody(FootBodyFor(cls, captainPack));   // (2026-11-26) the body it gets off as when the board goes down
             if (vehicleSquad && cls == VehHoverboard)
                 ApplyBoardMedicLoadout(bot);   // (2026-11-17) the Ghost Reapers' board medic
             else if (vehicleSquad)
