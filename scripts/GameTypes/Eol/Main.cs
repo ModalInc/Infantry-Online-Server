@@ -2055,7 +2055,7 @@ namespace InfServer.Script.GameType_Eol
             Bots.Bot.SuppressKillfeed = b => IsVehicleStageBot(b);
             PrepareNewBots(now);    // 35 % more armour + spawn protection (Script_Eol.Deploy.cs)
             PollSquadCommands(now); // squad team-chat orders S / X / @ (Script_Eol.SquadCommands.cs)
-            PollHqRecalls(now);     // (2026-11-26) the HQ recall's 5 s stand-still charge (Script_Eol.HqTeleport.cs)
+            SafeRun("hq recall", () => PollHqRecalls(now));     // (2026-11-26) the HQ recall's 5 s stand-still charge (Script_Eol.HqTeleport.cs)
             PollNoSpawnBuildings(now); // bots that come alive inside a no-spawn building go outside (Script_Eol.NoSpawnBuildings.cs)
             WireTacticsHooks();     // per-player adaptive skill (Script_Eol.Tactics.cs)
             PollMedics(now);        // squad medics heal bots and players
@@ -2070,10 +2070,10 @@ namespace InfServer.Script.GameType_Eol
             PollNoSummonFlags(now);  // (2026-11-18) standard carriers can't be summoned (Script_Eol.FlagSummonBlock.cs)
             PollChokeRescue(now);    // bots wedged in a known choke (146,411) are moved out (Script_Eol.ChokeRescue.cs)
             PollStuckRescue(now);    // (2026-11-17) any bot stuck anywhere: to a team mate / open ground (Script_Eol.StuckRescue.cs)
-            PollAlienSwarm(now);    // the Alien Swarm nest (Script_Eol.AlienSwarm.cs)
-            PollEliteSquads(now);   // local: two elite roaming squads
-            PollStrikeTeams(now);   // local: three human-class strike teams
-            PollBaseRaids(now);     // (2026-11-19) roamer squads raid a player base holding roamer flags (Script_Eol.BaseRaids.cs)
+            SafeRun("swarms", () => PollAlienSwarm(now));    // the Alien Swarm + the Pirate Raiders (Script_Eol.AlienSwarm.cs)
+            SafeRun("harrier crews", () => PollEliteSquads(now));   // (2026-11-26: the Low Life Thugs' Harrier crews)
+            SafeRun("strike teams", () => PollStrikeTeams(now));   // local: three human-class strike teams
+            SafeRun("flag squads", () => PollBaseRaids(now));     // (2026-11-19) roamer squads raid a player base holding roamer flags (Script_Eol.BaseRaids.cs)
             PollBotDropshipRespawns(now);
             SyncIngameBountyStats();
             PollBountyHunt(now);
