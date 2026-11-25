@@ -33,6 +33,10 @@ namespace InfServer.Script.GameType_Eol
         const ushort VehHarrierGvs = 121, VehHarrierGvsA2 = 126;
         const int HarrierBuildMs = 4000;
         const int HarrierCrewSize = 4;
+        /// <summary>(2026-11-26, owner: "the damage should do it to the vehicle ... explosive that does decent damage but not a
+        /// crazy amount") veh 844: the Harrier's own armour with the explosive flat ignore 5,000 instead of 30,000 - small arms
+        /// and lasers still bounce off, explosives hurt (a frag grenade ~41 of its 300 HP).</summary>
+        const ushort VehHarrierBotArmour = 844;
         const int ItmKamenevScv = 3070, ItmLawLauncher = 3071, ItmFlakShell = 3074, ItmA2GrenadeLauncher = 3075;
 
         sealed class HarrierCrew
@@ -430,6 +434,7 @@ namespace InfServer.Script.GameType_Eol
             }
             h.SkillModeOverride = "ultra";   // (owner: "really good aim" - the assassins' tier, the best there is)
             EquipCloseFar(h, c.CloseGun, c.FarGun);
+            h.ArmorSource = _arena._server._assets.getVehicleByID(VehHarrierBotArmour);   // (null: its own armour)
             h.bRespawn = false;   // (destroyed: the crew gets out - OnHarrierLost)
             h.DamageImmuneUntilTick = NonZeroTick(now + 1500);
             lock (_botBounty) _botBounty[h] = bounty;
