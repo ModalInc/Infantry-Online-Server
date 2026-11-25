@@ -43,7 +43,7 @@ namespace InfServer.Script.GameType_Eol
         {
             public ushort HarrierVeh;
             public int GunnerCls;
-            public int CloseGun, FarGun;
+            public int CloseGun, FarGun, MiscGun;   // (MiscGun: the bots' third slot - a short burst every 8-14 s)
             public RoamingAttacker Harrier, Chief, Gunner;
             public Vehicle Turret;   // (2026-11-26) the Harrier's turret piece, on top of the bot (the gunner's seat)
             public string GunnerAlias;
@@ -194,7 +194,8 @@ namespace InfServer.Script.GameType_Eol
 
         readonly List<HarrierCrew> _harrierCrews = new List<HarrierCrew>
         {
-            new HarrierCrew { HarrierVeh = VehHarrierGvs, GunnerCls = ClsSquadLeader, CloseGun = ItmKamenevScv, FarGun = ItmLawLauncher },
+            // (2026-11-26, owner: "they were shooting the rocket law too often") the Kamenev at every range, the LAW now and then
+            new HarrierCrew { HarrierVeh = VehHarrierGvs, GunnerCls = ClsSquadLeader, CloseGun = ItmKamenevScv, FarGun = ItmKamenevScv, MiscGun = ItmLawLauncher },
             new HarrierCrew { HarrierVeh = VehHarrierGvsA2, GunnerCls = ClsSergeant, CloseGun = ItmFlakShell, FarGun = ItmA2GrenadeLauncher },
         };
 
@@ -434,6 +435,12 @@ namespace InfServer.Script.GameType_Eol
             }
             h.SkillModeOverride = "ultra";   // (owner: "really good aim" - the assassins' tier, the best there is)
             EquipCloseFar(h, c.CloseGun, c.FarGun);
+            ItemInfo mi = c.MiscGun != 0 ? Itm(c.MiscGun) : null;
+            if (mi != null)
+            {
+                WeaponController wm = new WeaponController(h._state, new WeaponController.WeaponSettings());
+                if (wm.equip(mi)) { wm.Owner = h; EolBotBrain.SetMiscWeapon(h, wm); }
+            }
             h.ArmorSource = _arena._server._assets.getVehicleByID(VehHarrierBotArmour);   // (null: its own armour)
             h.bRespawn = false;   // (destroyed: the crew gets out - OnHarrierLost)
             h.DamageImmuneUntilTick = NonZeroTick(now + 1500);
