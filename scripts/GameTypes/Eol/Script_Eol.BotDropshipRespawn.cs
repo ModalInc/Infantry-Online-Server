@@ -232,7 +232,7 @@ namespace InfServer.Script.GameType_Eol
             if ((bot is RoamingAttacker || bot is RoamingCaptain) && (IsRoamingSquadTeam(bot._team) || IsRoamBotTeam(bot._team)))
                 return PickDropshipSpawn() ?? PickEliteSpawnPoint();
             if (bot is AlienHorde && UseSwarmOf(bot._team))
-                return PickSwarmCaveSpot();
+                return _sw.Pirate ? (PickDropshipSpawn() ?? FreeSwarmPostSpot(bot)) : PickSwarmCaveSpot();   // (2026-11-26: Pirate Raiders: the dropship)
 
             short anchorX;
             short anchorY;
@@ -492,10 +492,16 @@ namespace InfServer.Script.GameType_Eol
             // (2026-11-16d) back at its spawn: the walk out starts again (dropship -> portal, cave -> portal)
             if (bot.ExtraArmorIgnore > 0 && bot._state.health < HumanBotHealth)
                 bot._state.health = HumanBotHealth;   // (human-class bots' 100 HP, as at spawn)
-            if (_eol != null && _eol.IsInPioneerDropshipSafeZone(spawn.positionX, spawn.positionY))
+            // (2026-11-26) a swarm bot first: a Pirate Raider in the dropship walks out the swarm way, not the squads'
+            if (bot is AlienHorde && UseSwarmOf(bot._team))
+            {
+                if (_sw.Pirate)
+                    ApplyPirateToughness(bot);   // (a bug's HP again)
+                if (!_sw.Pirate || (_eol != null && _eol.IsInPioneerDropshipSafeZone(spawn.positionX, spawn.positionY)))
+                    BeginSwarmDeploy(bot, Environment.TickCount);
+            }
+            else if (_eol != null && _eol.IsInPioneerDropshipSafeZone(spawn.positionX, spawn.positionY))
                 BeginDeploy(bot, Environment.TickCount);
-            else if (bot is AlienHorde && UseSwarmOf(bot._team))
-                BeginSwarmDeploy(bot, Environment.TickCount);
 
             // Re-list if death dropped them while the team was under max.
             _arena.EnsureBotOnNamelist(bot);

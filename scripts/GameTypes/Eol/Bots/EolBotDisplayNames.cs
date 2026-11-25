@@ -82,8 +82,8 @@ namespace InfServer.Script.GameType_Eol
             if (bot == null)
                 return "?";
             // Alien wave bots use vehicle type name only (no pool names).
-            if (bot is AlienHorde)
-                return bot._type != null ? bot._type.Name : "?";
+            if (bot is AlienHorde ah)
+                return !string.IsNullOrEmpty(ah.FixedName) ? ah.FixedName : bot._type != null ? bot._type.Name : "?";   // (2026-11-26: Pirate Raiders by name)
             lock (_lock)
             {
                 string name;

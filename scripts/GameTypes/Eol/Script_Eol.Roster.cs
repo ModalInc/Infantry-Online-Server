@@ -18,9 +18,9 @@ namespace InfServer.Script.GameType_Eol
     {
         /// <summary>(2026-11-21, owner: "3 bot bases team like eol classic", "both swarms out", "if sector C is chosen please add
         /// another 3 6man teams") 79 + the third base 10 + the King's swarm 12, + 18 while Sector C is open.</summary>
-        public static int EolBotTotalTarget { get { return 102 + (s_sectorCOpen ? SectorCExtraSquads * SquadMaxSize : 0); } }
+        public static int EolBotTotalTarget { get { return 96 + (s_sectorCOpen ? SectorCExtraSquads * SquadMaxSize : 0); } }   // (2026-11-26: -6, the pirate squad is gone; the swarm sites are still 2 x 12 - aliens + Pirate Raiders)
         /// <summary>Extra mixed squads while Sector C is open (the last ones of MixedTeamNames).</summary>
-        public const int SectorCExtraSquads = 3;
+        public const int SectorCExtraSquads = 4;   // (2026-11-26: + Low Life Thugs)
         static bool s_sectorCOpen;
         /// <summary>Mixed squads that fill right now.</summary>
         int MixedTeamsActive { get { return RosterMixedTeamCount - (s_sectorCOpen ? 0 : SectorCExtraSquads); } }
@@ -29,7 +29,7 @@ namespace InfServer.Script.GameType_Eol
         public const int RosterAlienMainSize = 8;
         public const int RosterVehicleSquadSize = 6;   // (2026-11-24, owner: "give them a captain on a pack ... so their team is 6")   // (2026-11-17: + the board medic on a Hoverboard) // (2026-11-17, owner: Deathboard, Shimmerboard, Drop Pack + a SciOps on a Flight Pack)
         /// <summary>(2026-11-16c) Storm Rangers + 5 mixed teams = 6 joinable human squads of 5-6.</summary>
-        public const int RosterMixedTeamCount = 8;   // (2026-11-21: 5 + 3 that only fill while Sector C is open)
+        public const int RosterMixedTeamCount = 9;   // (2026-11-26: + Low Life Thugs, Sector C)   // (2026-11-21: 5 + 3 that only fill while Sector C is open)
         /// <summary>(2026-11-16c, owner) a joinable squad is 5 to 6 strong, players + bots.</summary>
         public const int SquadMinSize = 5;
 
@@ -50,7 +50,7 @@ namespace InfServer.Script.GameType_Eol
             Random r = new Random(Environment.TickCount);
             // (2026-11-16c, owner) 2 bases of 10, the bug base of 10, and roaming squads of 5-6: pirate roamers 5, the six
             // human squads (Storm Rangers + 5 mixed) 5 each, the spare places spread out (6 at most) - 70 in all
-            _rosterPirateRoamers = SquadMaxSize;   // (2026-11-17, owner: "yes 6")
+            _rosterPirateRoamers = 0;   // (2026-11-26: the pirate squad is gone; was 6)
             // (2026-11-16c) the crash-ship alien packs are gone: their places are the Alien Swarm's 10 bugs
             _rosterAlienElite = EolAlienWavesEnabled ? 4 : 0;
             int aliens = EolAlienWavesEnabled ? _rosterAlienElite + RosterAlienMainSize : SwarmDefenders * SwarmRunCount;   // (2026-11-21: the Queen's and the King's swarm)

@@ -188,6 +188,7 @@ namespace InfServer.Script.GameType_Eol
             public object DrainTarget; public int DrainUntil;   // (2026-11-18) the sidearm's energy-drain opener
             public int MixNext, MixUntil;                       // (2026-11-18) a misc-gun burst now and then
             public WeaponController Melee; public bool EnergySaving;   // (2026-11-18) low energy: free guns / melee
+            public bool PreferMelee;   // (2026-11-26) the Pirate Commander swings his Chain Sword whenever someone is in reach
             public int MiscFrom, MiscUntil;
             // (2026-11-17) stand-still guns: charge-up end, end of the planted burst, earliest next commit
             public int PlantFireFrom, PlantUntil, NextPlant;
@@ -199,6 +200,12 @@ namespace InfServer.Script.GameType_Eol
         public static void SetMeleeWeapon(Bot b, WeaponController melee)
         {
             if (b != null) Get(b).Melee = melee;
+        }
+
+        /// <summary>(2026-11-26) a melee misc gun is used whenever the target is in reach (not only as a last resort).</summary>
+        public static void SetPreferMelee(Bot b, bool on)
+        {
+            if (b != null) Get(b).PreferMelee = on;
         }
 
         public static void SetMiscWeapon(Bot b, WeaponController misc)
@@ -288,6 +295,8 @@ namespace InfServer.Script.GameType_Eol
             // is the last resort: in reach (close) and only when neither the main nor the sidearm can fire
             if (misc != null && IsMeleeGun(misc))
             {
+                if (m.PreferMelee && miscOk)
+                    return misc;   // (2026-11-26: in reach - GunReaches keeps a melee to arm's length)
                 bool mainCan = main != null && GunReaches(main, dist) && !main.IsReloading;
                 bool sideCan = side != null && !ReferenceEquals(side, misc) && GunReaches(side, dist) && !side.IsReloading;
                 if (mainCan) return main;

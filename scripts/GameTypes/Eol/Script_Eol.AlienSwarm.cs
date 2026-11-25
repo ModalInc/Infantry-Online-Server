@@ -67,18 +67,23 @@ namespace InfServer.Script.GameType_Eol
             public readonly Dictionary<Bots.Bot, int> ChaseUntil = new Dictionary<Bots.Bot, int>();
             public readonly HashSet<Bots.Bot> Returning = new HashSet<Bots.Bot>();
             public readonly Dictionary<Bots.Bot, StuckSample> Stuck = new Dictionary<Bots.Bot, StuckSample>();
+            public bool Pirate;             // (2026-11-26) the Pirate Raiders run (Script_Eol.PirateRaiders.cs)
         }
-        readonly SwarmRun _queenRun = new SwarmRun { Title = "Alien Queen", BotVehId = SwarmQueenBotVehId };
-        readonly SwarmRun _kingRun = new SwarmRun { Title = "Alien King", BotVehId = SwarmKingBotVehId };
+        // (2026-11-26, owner: "instead of two alien swarms, lets do 1 alien swarm and it rotates between the queen/king... and
+        // then we now replace the other swarm location with a Pirate Raiders team") run 1 = the aliens, the Queen and the King
+        // in turn; run 2 = the Pirate Raiders round their Commander - same code, same sites, same rules.
+        readonly SwarmRun _alienRun = new SwarmRun { Title = "Alien Queen", BotVehId = SwarmQueenBotVehId };
+        readonly SwarmRun _pirateRun = new SwarmRun { Title = PirateCommanderTitle, BotVehId = PirateCommanderVehId, Pirate = true };
+        bool _alienNextKing = new Random().Next(2) == 1;
         SwarmRun _swCur;
-        SwarmRun _sw { get { return _swCur ?? _queenRun; } set { _swCur = value; } }
+        SwarmRun _sw { get { return _swCur ?? _alienRun; } set { _swCur = value; } }
         IEnumerable<SwarmRun> SwarmRuns()
         {
-            yield return _queenRun;
-            if (AlienKingEnabled && _kingRun.Team != null)
-                yield return _kingRun;
+            yield return _alienRun;
+            if (PirateRaidersEnabled && _pirateRun.Team != null)
+                yield return _pirateRun;
         }
-        public int SwarmRunCount { get { return AlienKingEnabled ? 2 : 1; } }
+        public int SwarmRunCount { get { return PirateRaidersEnabled ? 2 : 1; } }
         SwarmRun SwarmRunOf(Team t)
         {
             if (t == null) return null;
@@ -208,16 +213,19 @@ namespace InfServer.Script.GameType_Eol
 
         public bool IsSwarmTeam(Team t) { return t != null && SwarmRunOf(t) != null; }
 
-        /// <summary>The swarm and the alien packs are all bugs: allies.</summary>
-        public bool IsBugTeam(Team t) { return IsAlienBotTeam(t) || IsSwarmTeam(t); }
+        /// <summary>The swarm and the alien packs are all bugs: allies. (Not the Pirate Raiders - they fight the bugs.)</summary>
+        public bool IsBugTeam(Team t) { return IsAlienBotTeam(t) || (IsSwarmTeam(t) && !IsPirateRaidersTeam(t)); }
+
+        /// <summary>(2026-11-26) the Pirate Raiders round their Commander (the second swarm run).</summary>
+        public bool IsPirateRaidersTeam(Team t) { return t != null && PirateRaidersEnabled && t == _pirateRun.Team; }
 
         static short TileRaw(short t) { return (short)(t * 16 + 8); }
 
         void CreateSwarmTeam()
         {
-            _queenRun.Team = CreateAndRegisterBotTeam("Hive Queen Brood");   // (2026-11-24, owner: "make up something cool")
-            if (AlienKingEnabled)
-                _kingRun.Team = CreateAndRegisterBotTeam("Hive King Legion");
+            _alienRun.Team = CreateAndRegisterBotTeam("Hive Queen Brood");   // (2026-11-24, owner: "make up something cool")
+            if (PirateRaidersEnabled)
+                _pirateRun.Team = CreateAndRegisterBotTeam(PirateRaidersTeamName);   // (the .cfg's team: its dark jackets)
         }
 
         /// <summary>(2026-11-21, owner: "actualy lets have both swarms out") the Queen's and the King's swarm both run.</summary>
@@ -302,8 +310,9 @@ namespace InfServer.Script.GameType_Eol
 
         bool SwarmHasChief()
         {
+            int chief = _sw.Pirate ? PirateSergeantCls : SwarmChiefVehId;   // (the pirates' Sergeant)
             foreach (Bots.Bot b in _arena.ActiveBots)
-                if (b != null && b._team == botTeamSwarm && !b.IsDead && b._type != null && b._type.Id == SwarmChiefVehId)
+                if (b != null && b._team == botTeamSwarm && !b.IsDead && b._type != null && b._type.Id == chief)
                     return true;
             return false;
         }
@@ -397,8 +406,14 @@ namespace InfServer.Script.GameType_Eol
 
         void StartSwarm(int now)
         {
-            VehInfo nestInfo = _arena._server._assets.getVehicleByID(SwarmNestVehId);
-            if (nestInfo == null)
+            VehInfo nestInfo = _sw.Pirate ? null : _arena._server._assets.getVehicleByID(SwarmNestVehId);
+            if (!_sw.Pirate)
+            {   // (2026-11-26) one alien swarm: the Queen and the King in turn
+                bool king = AlienKingEnabled && _alienNextKing;
+                _sw.Title = king ? "Alien King" : "Alien Queen";
+                _sw.BotVehId = king ? SwarmKingBotVehId : SwarmQueenBotVehId;
+            }
+            if (nestInfo == null && !_sw.Pirate)
             {
                 _swarmNextTick = now + SwarmReturnMs;
                 return;
@@ -441,7 +456,8 @@ namespace InfServer.Script.GameType_Eol
                 return;
             }
             SwarmHome = new Helpers.ObjectState { positionX = site.positionX, positionY = site.positionY };
-            _swarmNest = SpawnSwarmQueen(site) ?? _arena.newVehicle(nestInfo, botTeamSwarm, null, site);
+            _swarmNest = _sw.Pirate ? SpawnPirateCommander(site)
+                : SpawnSwarmQueen(site) ?? _arena.newVehicle(nestInfo, botTeamSwarm, null, site);
             if (_swarmNest == null)
             {
                 _swarmNextTick = now + 60000;
@@ -450,9 +466,16 @@ namespace InfServer.Script.GameType_Eol
             _swarmActive = true;
             _swarmOpening = true;
             _swarmNextBugTick = now;
-            EnqueueExplosionRoute(AlienCrashExplosionProjectileId, site.positionX, site.positionY, 0, 0, 0);
-            _arena.sendArenaMessage("&An " + _sw.Title + " has appeared! (" + Helpers.posToLetterCoord(site.positionX, site.positionY) + ")",
-                _config.flag.victoryWarningBong);
+            if (_sw.Pirate)
+                _arena.sendArenaMessage("&The " + PirateRaidersTeamName + " have landed! " + PirateNameOf(_swarmNest) + " leads them ("
+                    + Helpers.posToLetterCoord(site.positionX, site.positionY) + ")", _config.flag.victoryWarningBong);
+            else
+            {
+                _alienNextKing = !_alienNextKing;   // (the other one next time)
+                EnqueueExplosionRoute(AlienCrashExplosionProjectileId, site.positionX, site.positionY, 0, 0, 0);
+                _arena.sendArenaMessage("&An " + _sw.Title + " has appeared! (" + Helpers.posToLetterCoord(site.positionX, site.positionY) + ")",
+                    _config.flag.victoryWarningBong);
+            }
             Log.write(TLog.Normal, "[Eol] {0} swarm up at {1},{2}.", _sw.Title, site.positionX, site.positionY);
         }
 
@@ -548,11 +571,14 @@ namespace InfServer.Script.GameType_Eol
                 }
                 foreach (Team t in _arena.Teams)
                     if (t != winners)
-                        t.sendArenaMessage("&" + _sw.Title + " - The " + _sw.Title + "'s swarm has been defeated by " + winners._name + "!");
+                        t.sendArenaMessage(_sw.Pirate
+                            ? "&" + _sw.Title + " - The " + PirateRaidersTeamName + " have been defeated by " + winners._name + "!"
+                            : "&" + _sw.Title + " - The " + _sw.Title + "'s swarm has been defeated by " + winners._name + "!");
                 Log.write(TLog.Normal, "[Eol] {0} killed by {1} ({2} players paid).", _sw.Title, winners._name, winners.ActivePlayerCount);
             }
             else
-                _arena.sendArenaMessage("&The " + _sw.Title + "'s swarm has burrowed away.", _config.flag.periodicBong);
+                _arena.sendArenaMessage(_sw.Pirate ? "&The " + PirateRaidersTeamName + " have pulled out."
+                    : "&The " + _sw.Title + "'s swarm has burrowed away.", _config.flag.periodicBong);
 
             // the swarm goes with its nest
             List<Vehicle> gone = new List<Vehicle>();
@@ -579,6 +605,8 @@ namespace InfServer.Script.GameType_Eol
         {
             if (!CanSpawnBotOnTeam(botTeamSwarm))
                 return false;
+            if (_sw.Pirate)
+                return SpawnPirateRaider(now, needChief);   // (2026-11-26: in the dropship, out beside their Commander)
             Helpers.ObjectState at = PickSwarmCaveSpot();
             if (at == null)
                 return false;
@@ -615,7 +643,7 @@ namespace InfServer.Script.GameType_Eol
         void BeginSwarmDeploy(Bots.Bot bug, int now)
         {
             _swarmDeploying[bug] = now;
-            bug.DamageImmuneUntilTick = NonZeroTick(now + SwarmDeployTimeoutMs + 5000);
+            bug.DamageImmuneUntilTick = NonZeroTick(now + Math.Max(SwarmDeployTimeoutMs, DeployTimeoutMs) + 5000);
             try { bug.Navigation?.Clear(); } catch { }
         }
 
@@ -633,8 +661,9 @@ namespace InfServer.Script.GameType_Eol
                 _swarmDeploying.Remove(b);
                 return false;
             }
-            short px = TileRaw(SwarmCavePortalTileX), py = TileRaw(SwarmCavePortalTileY);
-            if (Helpers.distanceTo(b._state.positionX, b._state.positionY, px, py) <= 72 || now - t0 > SwarmDeployTimeoutMs)
+            // (2026-11-26) the Pirate Raiders walk to the dropship's portal instead of the bug cave's hole
+            short px = _sw.Pirate ? DropshipPortalX : TileRaw(SwarmCavePortalTileX), py = _sw.Pirate ? DropshipPortalY : TileRaw(SwarmCavePortalTileY);
+            if (Helpers.distanceTo(b._state.positionX, b._state.positionY, px, py) <= 72 || now - t0 > (_sw.Pirate ? DeployTimeoutMs : SwarmDeployTimeoutMs))
             {
                 // (2026-11-17, owner: "bugs spawn in A6 and get stuck in a choke between green physics") come out at a
                 // free guard post - open ground with a clear run to the Queen - never in a pocket next to her

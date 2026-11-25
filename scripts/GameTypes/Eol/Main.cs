@@ -464,9 +464,9 @@ namespace InfServer.Script.GameType_Eol
         public string botTeamName1 = "Titan Liberation League";   // base 1 (classic team 12)
         public string botTeamName2 = "Martian Consortium";        // base 2 (classic team 11)
         public string botTeamName3 = "Titanium Pirates";          // base 3 (classic team 10)
-        public string botTeamName4 = "Pirate Raiders";
+        public string botTeamName4 = "Pirate Raid Crew";        // (the old raid, off; 2026-11-26: "Pirate Raiders" is the swarm-site crew now)
         public string botTeamName5 = "Vaarsburg Freeholders";     // the 30k assassins (classic team 13) - local 2026-11-13 (was BHB)
-        public string botTeamName6 = "Low Life Thugs";            // the elite pirate squad of 6 (classic team 14)
+        public string botTeamName6 = "Low Life Thugs";            // (2026-11-26: no pirate squad any more - the name is a normal joinable squad, MixedTeamNames)
         public string botTeamName7 = "Skrall Swarm";
         public string botTeamName8 = "StarFire Corps";            // the elite vehicle squad (boards + Drop Pack) - (2026-11-24, owner:
                                                                   // "the ghost reapers should also have a normal team name") a public, joinable squad
@@ -850,7 +850,7 @@ namespace InfServer.Script.GameType_Eol
             botTeam3 = CreateAndRegisterBotTeam(botTeamName3);
             botTeam4 = CreateAndRegisterBotTeam(botTeamName4);
             botTeam5 = CreateAndRegisterBotTeam(botTeamName5);
-            botTeam6 = CreateAndRegisterBotTeam(botTeamName6);
+            botTeam6 = null;   // (2026-11-26, owner: "there is no low life thugs pirate team anymore ... that team name joins the other normal teams")
             botTeam7 = CreateAndRegisterBotTeam(botTeamName7);
             botTeam8 = SquadTeam(botTeamName8);   // (2026-11-24) a normal faction team players join with one click, like the other squads
             botTeam9 = null;   // (2026-11-24) one assassin team
@@ -6744,7 +6744,7 @@ namespace InfServer.Script.GameType_Eol
                 EolBotBrain.NoteNoise(dead._team, dead._state.positionX, dead._state.positionY);   // curious bots come to look
                 if (_rand == null)
                     _rand = new Random(Environment.TickCount);
-                bool alien = dead is AlienHorde || IsAlienBotTeam(dead._team);
+                bool alien = (dead is AlienHorde && !IsPirateRaidersTeam(dead._team)) || IsAlienBotTeam(dead._team);   // (Pirate Raiders bleed red)
                 short baseId = alien ? (short)1351 : (short)1167;   // Alien Blood Splat 1-6 / Blood Splat 1-6
                 // sent at once with the death (no queue = no delay), one splat, only to players near enough to
                 // see it, and NOT as a reliable packet - it's cosmetic, and reliable gore in big fights overflowed

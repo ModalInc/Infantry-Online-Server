@@ -81,7 +81,7 @@ namespace InfServer.Script.GameType_Eol
         // ones ... if they play sector C there is more teams, have them use the same teams going down the numbers") the squads
         // ARE the classic public factions now - new players land on a team that already has bots
         static readonly string[] MixedTeamNames = { "Collective Military", "Europan Mercs", "Morgan Raiders", "Tethys Consortium", "United Moons",
-            "Phobos Militarius", "Callisto Irregulars", "Ganymede Rangers" };   // (the last 3: Sector C only; StarFire Corps = the vehicle squad)
+            "Phobos Militarius", "Callisto Irregulars", "Ganymede Rangers", "Low Life Thugs" };   // (the last 4: Sector C only; StarFire Corps = the vehicle squad) (2026-11-26: + Low Life Thugs, was the pirate squad)
 
         void CreateStrikeTeams()
         {
