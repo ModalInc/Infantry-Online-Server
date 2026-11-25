@@ -43,7 +43,7 @@ namespace InfServer.Script.GameType_Eol
         /// tick (Bot.RideOn), RiderOffsetY below the hull's centre so its line sits under the Chief's. It can't be hurt there;
         /// the Harrier takes the hits and fires the guns.</summary>
         const ushort VehGunnerSquadLeader = 845, VehGunnerSergeant = 846;
-        const short RiderOffsetY = 12;   // (the turret sits on the hull; 12 px down puts its name one line under the Chief's)
+        const short RiderOffsetY = 0;   // (the turret on the hull's centre; its smaller sprite puts its name line above the Chief's)
         const int ItmKamenevScv = 3070, ItmLawLauncher = 3071, ItmFlakShell = 3074, ItmA2GrenadeLauncher = 3075;
 
         sealed class HarrierCrew
