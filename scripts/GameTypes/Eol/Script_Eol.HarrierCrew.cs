@@ -37,10 +37,9 @@ namespace InfServer.Script.GameType_Eol
         /// the damage they take. lets use for example a Autogun AT") the bot Harriers take hits with the Auto Turret - AT's
         /// armour (veh 413): explosive 5,000 ignore + 1 %, everything else 12,000 + 75 % - on their own 300 HP.</summary>
         const ushort VehHarrierBotArmour = 413;
-        /// <summary>(2026-11-26, owner: "i dont see two bot names? there should be two") the gunner rides on the Harrier as its
-        /// own bot: veh 845 (Squad Leader) / 846 (Sergeant) - the class with no thrust, so it only turns (aims); it is pinned
-        /// to the hull every tick, can't be hurt while up there, and fires the turret's guns.</summary>
-        const ushort VehGunnerSquadLeader = 845, VehGunnerSergeant = 846;
+        // (2026-11-26, owner: "there should be TWO names under the vehicle. not a body following it") a bot can't sit inside a
+        // vehicle (only players can), and a second bot riding along trailed behind it - so the Harrier carries both crew names:
+        // "Chief & Gunner". Out of it they are two bots again, each with its own name.
         const int ItmKamenevScv = 3070, ItmLawLauncher = 3071, ItmFlakShell = 3074, ItmA2GrenadeLauncher = 3075;
 
         sealed class HarrierCrew
@@ -50,8 +49,7 @@ namespace InfServer.Script.GameType_Eol
             public int CloseGun, FarGun, MiscGun;   // (MiscGun: the bots' third slot - a short burst every 8-14 s)
             public RoamingAttacker Harrier, Chief, Gunner;
             public Vehicle Turret;   // (2026-11-26) the Harrier's turret piece, on top of the bot (the gunner's seat)
-            public RoamingAttacker TurretGunner;   // (2026-11-26) the gunner up in the turret (its own name)
-            public bool HullArmed;                 // the gunner is gone: the Harrier fires the guns itself
+            public string ChiefAlias;   // the crew's own names while they are in the Harrier
             public string GunnerAlias;
             public bool ChiefCycled, GunnerCycled;   // been through the dropship since they got out of the Harrier
             public Helpers.ObjectState BuildSpot;
@@ -216,8 +214,8 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>A Harrier (with its crew inside).</summary>
         public static bool IsHarrierVeh(int vehId) { return vehId == VehHarrierGvs || vehId == VehHarrierGvsA2; }
 
-        /// <summary>A Harrier or a gunner riding one (the assassins' aim, an elite's fight).</summary>
-        public static bool IsHarrierCrewVeh(int vehId) { return IsHarrierVeh(vehId) || vehId == VehGunnerSquadLeader || vehId == VehGunnerSergeant; }
+        /// <summary>A Harrier (the assassins' aim, an elite's fight).</summary>
+        public static bool IsHarrierCrewVeh(int vehId) { return IsHarrierVeh(vehId); }
 
         static bool BotGone(Bots.Bot b)
         {
@@ -229,8 +227,6 @@ namespace InfServer.Script.GameType_Eol
             if (!HarrierCrewEnabled || botTeam6 == null || _arena == null || !_arena._bGameRunning || !EolHasArenaPresence())
                 return;
             PollPendingHarrierFoot(now);
-            foreach (HarrierCrew c in _harrierCrews)
-                PinTurretGunner(c, now);
             foreach (HarrierCrew c in _harrierCrews)
                 if (c.Turret != null)
                 {
@@ -252,7 +248,6 @@ namespace InfServer.Script.GameType_Eol
                     if (!BotGone(c.Harrier))
                         continue;
                     c.Harrier = null;   // (gone without the death hook - despawned, sector change): the crew starts again
-                    DropTurretGunner(c);
                 }
                 if (_pendingHarrierFoot.Exists(p => p.Crew == c))
                     continue;
@@ -431,8 +426,9 @@ namespace InfServer.Script.GameType_Eol
             Helpers.ObjectState at = findOpenWarpBot(_arena, chief._state.positionX, chief._state.positionY, 200, 56)
                 ?? new Helpers.ObjectState { positionX = chief._state.positionX, positionY = chief._state.positionY };
             int bounty = BotBountyOf(chief);
-            string chiefAlias = _arena.HandOverBotAlias(chief);
+            string chiefAlias = _arena.HandOverBotAlias(chief) ?? c.ChiefAlias;
             string gunnerAlias = _arena.HandOverBotAlias(gunner) ?? c.GunnerAlias;
+            c.ChiefAlias = chiefAlias;
             c.GunnerAlias = gunnerAlias;
             EnqueueVehicleDespawn(chief, force: true);
             EnqueueVehicleDespawn(gunner, force: true);
@@ -441,7 +437,7 @@ namespace InfServer.Script.GameType_Eol
             c.BuildDoneTick = 0;
             c.BuildSpot = null;
 
-            _arena.NextBotAlias = chiefAlias;
+            _arena.NextBotAlias = chiefAlias != null && gunnerAlias != null ? chiefAlias + " & " + gunnerAlias : chiefAlias;   // (both names under it)
             RoamingAttacker h = _arena.newBot(typeof(RoamingAttacker), c.HarrierVeh, botTeam6, null, at, this, null) as RoamingAttacker;
             _arena.NextBotAlias = null;
             if (h == null)
@@ -450,7 +446,7 @@ namespace InfServer.Script.GameType_Eol
                 c.NextSpawnTick = now + 5000;
                 return;
             }
-            h.SkillModeOverride = "ace";
+            ArmHarrierGuns(c, h);
             h.ArmorSource = _arena._server._assets.getVehicleByID(VehHarrierBotArmour);   // (null: its own armour)
             h.bRespawn = false;   // (destroyed: the crew gets out - OnHarrierLost)
             h.DamageImmuneUntilTick = NonZeroTick(now + 1500);
@@ -460,11 +456,7 @@ namespace InfServer.Script.GameType_Eol
                 _bots = new List<Bots.Bot>();
             _bots.Add(h);
             c.Harrier = h;
-            c.HullArmed = false;
             AttachHarrierTurret(c, h, at);
-            c.TurretGunner = SpawnTurretGunner(c, h, gunnerAlias, now);
-            if (c.TurretGunner == null)
-                ArmHarrierHull(c, h);   // (no gunner: the Harrier shoots itself)
             Log.write(TLog.Normal, "[Eol] Low Life Thugs: {0} and {1} got in their {2} at {3}.", chiefAlias, c.GunnerAlias,
                 HarrierName(c), Helpers.posToLetterCoord(at.positionX, at.positionY));
         }
@@ -509,68 +501,6 @@ namespace InfServer.Script.GameType_Eol
             b.SkillModeOverride = "ultra";
         }
 
-        void ArmHarrierHull(HarrierCrew c, RoamingAttacker h)
-        {
-            if (c.HullArmed || h == null)
-                return;
-            c.HullArmed = true;
-            ArmHarrierGuns(c, h);
-        }
-
-        /// <summary>The gunner up in the turret: its own bot (own name) on the hull, the turret's guns.</summary>
-        RoamingAttacker SpawnTurretGunner(HarrierCrew c, RoamingAttacker h, string alias, int now)
-        {
-            ushort veh = c.GunnerCls == ClsSergeant ? VehGunnerSergeant : VehGunnerSquadLeader;
-            if (!(_arena._server._assets.getVehicleByID(veh) is VehInfo.Car))
-                return null;
-            Helpers.ObjectState st = new Helpers.ObjectState { positionX = h._state.positionX, positionY = h._state.positionY, yaw = h._state.yaw };
-            _arena.NextBotAlias = alias;
-            RoamingAttacker g = _arena.newBot(typeof(RoamingAttacker), veh, botTeam6, null, st, this, null) as RoamingAttacker;
-            _arena.NextBotAlias = null;
-            if (g == null)
-                return null;
-            ArmHarrierGuns(c, g);
-            g.bRespawn = false;
-            g.DamageImmuneUntilTick = NonZeroTick(now + 1500);
-            if (_bots == null)
-                _bots = new List<Bots.Bot>();
-            _bots.Add(g);
-            return g;
-        }
-
-        /// <summary>Every tick: the gunner sits on the hull (moves with it, turns freely to aim) and can't be hurt up there.
-        /// Gone while the Harrier lives: the Harrier takes the guns.</summary>
-        void PinTurretGunner(HarrierCrew c, int now)
-        {
-            RoamingAttacker g = c.TurretGunner, h = c.Harrier;
-            if (g == null)
-                return;
-            if (h == null || BotGone(h))
-                return;   // (OnHarrierLost / the poll drops it)
-            if (g.IsDead || g.bCondemned)
-            {
-                c.TurretGunner = null;
-                ArmHarrierHull(c, h);
-                return;
-            }
-            if (g._movement != null)
-                g._movement.warp(new Helpers.ObjectState { positionX = h._state.positionX, positionY = h._state.positionY });
-            g._state.velocityX = h._state.velocityX;
-            g._state.velocityY = h._state.velocityY;
-            g.DamageImmuneUntilTick = NonZeroTick(now + 1000);
-        }
-
-        void DropTurretGunner(HarrierCrew c)
-        {
-            RoamingAttacker g = c.TurretGunner;
-            c.TurretGunner = null;
-            if (g == null)
-                return;
-            c.GunnerAlias = _arena.HandOverBotAlias(g) ?? c.GunnerAlias;
-            if (!g.IsDead && !g.bCondemned)
-                EnqueueVehicleDespawn(g, force: true);
-        }
-
         void DropHarrierTurret(HarrierCrew c)
         {
             Vehicle t = c.Turret;
@@ -596,9 +526,9 @@ namespace InfServer.Script.GameType_Eol
                 return false;
             c.Harrier = null;
             DropHarrierTurret(c);
-            DropTurretGunner(c);   // (its name goes to the gunner on foot)
             short x0 = dead._state != null ? dead._state.positionX : (short)0, y0 = dead._state != null ? dead._state.positionY : (short)0;
-            _pendingHarrierFoot.Add(new PendingHarrierFoot { Crew = c, X = x0, Y = y0, ChiefAlias = _arena.HandOverBotAlias(dead), Bounty = BotBountyOf(dead) });
+            _arena.HandOverBotAlias(dead);   // (frees "Chief & Gunner" - they get out under their own names)
+            _pendingHarrierFoot.Add(new PendingHarrierFoot { Crew = c, X = x0, Y = y0, ChiefAlias = c.ChiefAlias, Bounty = BotBountyOf(dead) });
             Log.write(TLog.Normal, "[Eol] Low Life Thugs: {0} destroyed - the crew is on foot.", HarrierName(c));
             return true;
         }
