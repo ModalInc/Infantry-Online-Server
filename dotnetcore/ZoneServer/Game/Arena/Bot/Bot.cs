@@ -1379,6 +1379,20 @@ namespace InfServer.Bots
             if (_movement is SteeringController steeringKill)
                 steeringKill.steerDelegate = null;
 
+            // (2026-11-26, owner: "the game crashed on the harrier death") a bot with child vehicles (the Harrier's turret):
+            // the children go FIRST, while the hull still exists - as when a vehicle is destroyed normally. The death went out
+            // first and the turret was removed after it, with its parent already gone - that crashed the game clients.
+            if (_childs != null && _childs.Count > 0)
+            {
+                foreach (Vehicle child in _childs.ToArray())
+                    if (child != null && !child.bCondemned)
+                    {
+                        try { child.destroy(false, true); }
+                        catch (Exception ex) { Log.write(TLog.Warning, "Bot {0}: child {1} teardown: {2}", _id, child._id, ex.Message); }
+                    }
+                _childs.Clear();
+            }
+
             //Notify the arena
             _arena.handleBotDeath(this, killer, weaponID);
         }

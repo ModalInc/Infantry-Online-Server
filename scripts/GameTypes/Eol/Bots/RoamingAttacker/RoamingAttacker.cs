@@ -281,6 +281,7 @@ namespace InfServer.Script.GameType_Eol
             }
 
             if (EolBotPhysicsUtil.StuckRecoveryEnabledRoamingAttacker
+                && !(_type != null && Script_Eol.IsHarrierVeh(_type.Id))   // (2026-11-26: a Harrier glides along walls and has its own back-to-route rescue - this threw it onto escape routes indoors: stutter)
                 && EolBotPhysicsUtil.HandleBotUnstickPoll(
                     this, _state, now, _arena, _baseScript, steering, _movement.bCollision,
                     ref _tickLastCollision, ref _tickStuckSample, ref _stuckSampleX, ref _stuckSampleY,
