@@ -115,13 +115,40 @@ namespace InfServer.Script.GameType_Eol
         {
             if (_arena == null || _arena._flags == null || _eol == null || !_eol.MatchSectorPlayReady)
                 return 0;
-            int n = 0;
+            // (2026-11-26, owner: "make sure that the eol roamers flags do NOT reset if you get a kill") hiding re-sends every
+            // flag to every client, and that restarts the drop timer of every carried flag - a roamer carrier's too (a carrier
+            // killed in a closed part dropped his flag there, and the hide restarted everybody's timers). Now a flag in a
+            // closed part is moved to an open spot of its own box and only that flag is sent; the full hide only runs while
+            // nobody is carrying a roamer flag (otherwise it waits - the flag just loses its owner, PollOffSectorFlags).
+            List<Arena.FlagState> toHide = new List<Arena.FlagState>();
+            bool roamerCarried = false;
             foreach (Arena.FlagState fs in _arena._flags.Values)
             {
-                if (fs == null || fs.flag == null || !fs.bActive || fs.carrier != null)
+                if (fs == null || fs.flag == null || !fs.bActive)
                     continue;
+                if (fs.carrier != null)
+                {
+                    if (IsRoamerFlag(fs.flag)) roamerCarried = true;
+                    continue;
+                }
                 if (_eol.IsInAnyActiveSector(fs.posX, fs.posY))
                     continue;
+                short ox, oy;
+                if (FindOpenSpotInFlagBox(fs, out ox, out oy))
+                {
+                    fs.team = null;
+                    fs.oldTeam = null;
+                    fs.posX = ox; fs.posY = oy; fs.oldPosX = ox; fs.oldPosY = oy;
+                    Helpers.Object_Flags(_arena.Players, fs);
+                    continue;
+                }
+                toHide.Add(fs);
+            }
+            if (toHide.Count == 0 || roamerCarried)
+                return 0;
+            int n = 0;
+            foreach (Arena.FlagState fs in toHide)
+            {
                 fs.bActive = false;
                 fs.team = null;
                 fs.oldTeam = null;

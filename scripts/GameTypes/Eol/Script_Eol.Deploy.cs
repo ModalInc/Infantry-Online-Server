@@ -257,6 +257,11 @@ namespace InfServer.Script.GameType_Eol
                 }
             }
 
+            // (2026-11-26) a squad sent after a team's roamer flags: its staging spot near them
+            at = RaidStageFor(b);
+            if (at != null)
+                return at;
+
             // the pirate raid: the raid's anchor
             if (IsPirateRaidTeam(team) && RaiderPdbAnchorValid)
             {

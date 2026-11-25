@@ -27,11 +27,23 @@ namespace InfServer.Script.GameType_Eol
     ///     team and moves with the bot, which runs (no fighting) to a spot 3,000+ px from the base and drops it there.
     ///     Killed on the way, it drops where it fell; a player who touches the flag takes it back as usual.
     ///   - The raided base is also a point of interest for every roaming bot (more weight with more flags held).
+    /// (2026-11-26, owner: "make sure if a team has more eol roamers the existing teams of 6 start to come attack them to take
+    /// the flags. do not call them raiders just say Other squads are coming for your flags ... they should spawn close to that
+    /// area and go in to start attacking" / "1 flag is 1 team, 2 flag 2, 3 flags 3, etc.")
+    ///   - Any player team holding Eol Roamer flags is attacked - an HQ is no longer needed: the target is its HQ if it has
+    ///     one, else where its roamer flags are (lying or carried). 1 flag = 1 squad, 2 = 2, 3 = 3, 4 = 4.
+    ///   - A squad sent comes out close by: its bots (and any still in the dropship) land at a staging spot 1,100-1,600 px
+    ///     from the target, out of the players' sight, and walk in from there. With no flag on the ground they go for the
+    ///     players carrying them (a carrier killed drops his roamer flags).
+    ///   - Messages: "Other squads are coming for your flags", never "raid".
     /// </summary>
     public partial class Script_Eol
     {
-        /// <summary>Raiding squads for 0 / 1 / 2 / 3 / 4 roamer flags held.</summary>
-        static readonly int[] RaidSquadsForFlags = { 0, 1, 2, 3, 5 };
+        /// <summary>Squads sent for 0 / 1 / 2 / 3 / 4 roamer flags held (2026-11-26, owner: one per flag; was 0,1,2,3,5).</summary>
+        static readonly int[] RaidSquadsForFlags = { 0, 1, 2, 3, 4 };
+        const int RaidStageMinRaw = 1100, RaidStageMaxRaw = 1600, RaidStageAwayFromPlayersRaw = 900, RaidStageSeenRaw = 1400;
+        /// <summary>Where each sent squad comes out (its staging spot near the target).</summary>
+        readonly Dictionary<Team, Helpers.ObjectState> _raidStage = new Dictionary<Team, Helpers.ObjectState>();
         const int RaidPollMs = 10000;
         const int RaidStealRangeRaw = 120;
         const int RaidDropMinFromBaseRaw = 3000;
@@ -111,7 +123,7 @@ namespace InfServer.Script.GameType_Eol
                 return;
             _tickRaids = now;
 
-            // the player teams with a base and roamer flags
+            // the player teams holding roamer flags (2026-11-26: with or without a base)
             HashSet<Team> raided = new HashSet<Team>();
             foreach (Team t in _arena.Teams)
             {
@@ -122,21 +134,16 @@ namespace InfServer.Script.GameType_Eol
                     continue;
                 Vehicle hq = FindHqVehicleForTeam(t);
                 bool hqUp = hq != null && !hq.IsDead && hq._state != null;
+                Helpers.ObjectState flagsAt = RoamerFlagsCentre(t);
+                if (!hqUp && flagsAt == null)
+                    continue;
                 BaseRaid r;
                 _raids.TryGetValue(t, out r);
-                if (!hqUp)
-                {   // no base: no new raid; one under way goes on for the flags a while
-                    if (r == null)
-                        continue;
-                    if (r.HqLostAt == 0) r.HqLostAt = now;
-                    if (now - r.HqLostAt > RaidAfterHqMs)
-                        continue;
-                }
                 raided.Add(t);
                 if (r == null)
                     _raids[t] = r = new BaseRaid { Target = t };
                 if (hqUp) { r.Hq = hq; r.HqLostAt = 0; r.Base = new Helpers.ObjectState { positionX = hq._state.positionX, positionY = hq._state.positionY }; }
-                else r.Hq = null;
+                else { r.Hq = null; r.Base = flagsAt; }
                 int before = r.Squads.Count, flagsBefore = r.Flags;
                 r.Flags = k;
                 int want = RaidSquadsForFlags[Math.Min(k, RaidSquadsForFlags.Length - 1)];
@@ -146,12 +153,12 @@ namespace InfServer.Script.GameType_Eol
                 {
                     Team s = r.Squads[i];
                     if (SquadHumans(s) > 0 || EliteSquadLeader(s) == null)
-                    { r.Squads.RemoveAt(i); _raidOf.Remove(s); }
+                    { r.Squads.RemoveAt(i); _raidOf.Remove(s); _raidStage.Remove(s); }
                 }
                 while (r.Squads.Count > want)
                 {
                     Team s = r.Squads[r.Squads.Count - 1];
-                    r.Squads.RemoveAt(r.Squads.Count - 1); _raidOf.Remove(s);
+                    r.Squads.RemoveAt(r.Squads.Count - 1); _raidOf.Remove(s); _raidStage.Remove(s);
                 }
                 if (r.Squads.Count < want)
                 {   // the nearest free squads
@@ -161,13 +168,14 @@ namespace InfServer.Script.GameType_Eol
                         if (r.Squads.Count >= want)
                             break;
                         r.Squads.Add(s); _raidOf[s] = r;
+                        StageRaidSquad(s, r);   // (2026-11-26: comes out close by, then walks in)
                     }
                 }
                 if (r.Squads.Count > before || (before == 0 && r.Squads.Count > 0))
                 {
                     string where = Helpers.posToLetterCoord(r.Base.positionX, r.Base.positionY);
-                    t.sendArenaMessage(string.Format("&Raid - {0} roamer squad{1} coming for your base at {2} and your {3} roamer flag{4}!",
-                        r.Squads.Count, r.Squads.Count == 1 ? " is" : "s are", where, k, k == 1 ? "" : "s"), _config.flag.periodicBong);
+                    t.sendArenaMessage(string.Format("&Other squads are coming for your flags! ({0} squad{1}, {2} roamer flag{3} held, near {4})",
+                        r.Squads.Count, r.Squads.Count == 1 ? "" : "s", k, k == 1 ? "" : "s", where), _config.flag.periodicBong);
                     Log.write(TLog.Normal, "[Eol] Base raid on {0} ({1} roamer flags): {2} squads ({3}).", t._name, k, r.Squads.Count,
                         string.Join(", ", r.Squads.Select(s => s._name)));
                 }
@@ -177,7 +185,7 @@ namespace InfServer.Script.GameType_Eol
             // raids that are over (HQ down, no roamer flags left, the team gone)
             foreach (Team t in _raids.Keys.Where(t => !raided.Contains(t)).ToList())
             {
-                foreach (Team s in _raids[t].Squads) _raidOf.Remove(s);
+                foreach (Team s in _raids[t].Squads) { _raidOf.Remove(s); _raidStage.Remove(s); }
                 _raids.Remove(t);
                 Log.write(TLog.Normal, "[Eol] Base raid on {0} over.", t._name);
             }
@@ -223,7 +231,104 @@ namespace InfServer.Script.GameType_Eol
             bool hqUp = r.Hq != null && !r.Hq.IsDead && r.Hq._state != null;
             if (fs != null && (!hqUp || d <= 1800 || d < Helpers.distanceTo(b._state, r.Hq._state)))
                 return new Helpers.ObjectState { positionX = fs.posX, positionY = fs.posY };
-            return hqUp ? new Helpers.ObjectState { positionX = r.Hq._state.positionX, positionY = r.Hq._state.positionY } : null;
+            if (hqUp)
+                return new Helpers.ObjectState { positionX = r.Hq._state.positionX, positionY = r.Hq._state.positionY };
+            // (2026-11-26) no base and nothing on the ground: after the players carrying them
+            InfServer.Game.Player carrier = NearestRoamerCarrier(r.Target, b._state);
+            if (carrier != null)
+                return new Helpers.ObjectState { positionX = carrier._state.positionX, positionY = carrier._state.positionY };
+            return r.Base;
+        }
+
+        /// <summary>A live player of <paramref name="team"/> carrying one of its roamer flags, nearest first; null = none.</summary>
+        InfServer.Game.Player NearestRoamerCarrier(Team team, Helpers.ObjectState from)
+        {
+            InfServer.Game.Player best = null; double bd = double.MaxValue;
+            if (_arena?._flags == null)
+                return null;
+            foreach (Arena.FlagState fs in _arena._flags.Values)
+            {
+                InfServer.Game.Player c = fs.carrier;
+                if (!IsRoamerFlag(fs) || fs.team != team || c == null || c.IsDead || c._state == null || !FlagInPlay(fs))
+                    continue;
+                double d = Helpers.distanceTo(c._state, from);
+                if (d < bd) { bd = d; best = c; }
+            }
+            return best;
+        }
+
+        /// <summary>The middle of where <paramref name="team"/>'s roamer flags are (lying or carried); null = none in play.</summary>
+        Helpers.ObjectState RoamerFlagsCentre(Team team)
+        {
+            long sx = 0, sy = 0; int n = 0;
+            if (_arena?._flags == null)
+                return null;
+            foreach (Arena.FlagState fs in _arena._flags.Values)
+            {
+                if (!IsRoamerFlag(fs) || fs.team != team || !FlagInPlay(fs))
+                    continue;
+                bool carried = fs.carrier != null && fs.carrier._state != null;
+                sx += carried ? fs.carrier._state.positionX : fs.posX;
+                sy += carried ? fs.carrier._state.positionY : fs.posY;
+                n++;
+            }
+            return n == 0 ? null : new Helpers.ObjectState { positionX = (short)(sx / n), positionY = (short)(sy / n) };
+        }
+
+        /// <summary>
+        /// (2026-11-26, owner: "they should spawn close to that area and go in") a squad just sent: a staging spot 1,100-1,600
+        /// px from the target, on open ground in play and away from players; its bots that no player can see right now are
+        /// moved there (the rest walk), and the ones still in the dropship land there (PickDeployLanding).
+        /// </summary>
+        void StageRaidSquad(Team s, BaseRaid r)
+        {
+            if (s == null || r?.Base == null)
+                return;
+            Random rnd = _rand ?? (_rand = new Random(Environment.TickCount));
+            Helpers.ObjectState stage = null;
+            for (int tries = 0; tries < 48 && stage == null; tries++)
+            {
+                double a = rnd.NextDouble() * 2 * Math.PI;
+                int dist = RaidStageMinRaw + rnd.Next(RaidStageMaxRaw - RaidStageMinRaw);
+                int x = r.Base.positionX + (int)(Math.Cos(a) * dist), y = r.Base.positionY + (int)(Math.Sin(a) * dist);
+                if (x < 64 || y < 64 || x > short.MaxValue - 64 || y > short.MaxValue - 64)
+                    continue;
+                Helpers.ObjectState at = OpenSpotNear((short)x, (short)y, 160);
+                if (at == null || NearNewPlayerBuffer(at.positionX, at.positionY)
+                    || (_eol != null && (!_eol.IsInAnyActiveSector(at.positionX, at.positionY) || _eol.IsInPioneerDropshipSafeZone(at.positionX, at.positionY)))
+                    || PlayerNear(at.positionX, at.positionY, tries < 32 ? RaidStageAwayFromPlayersRaw : RaidStageAwayFromPlayersRaw / 2))
+                    continue;
+                stage = at;
+            }
+            if (stage == null)
+            {
+                Log.write(TLog.Warning, "[Eol] Flag attack: no staging spot near {0} for {1} - it walks.", r.Target._name, s._name);
+                return;
+            }
+            _raidStage[s] = stage;
+            int moved = 0;
+            int now = Environment.TickCount;
+            foreach (RoamingAttacker b in EliteSquadMembers(s))
+            {
+                if (b == null || b._state == null || IsDeploying(b) || PlayerNear(b._state.positionX, b._state.positionY, RaidStageSeenRaw))
+                    continue;
+                Helpers.ObjectState spot = OpenSpotNear(stage.positionX, stage.positionY, 200) ?? stage;
+                WarpBot(b, spot);
+                try { b.Navigation?.Clear(); } catch { }
+                b.DamageImmuneUntilTick = NonZeroTick(now + BotSpawnProtectMs);
+                moved++;
+            }
+            Log.write(TLog.Normal, "[Eol] Flag attack: {0} staged at {1} ({2} bots moved) for {3}.", s._name,
+                Helpers.posToLetterCoord(stage.positionX, stage.positionY), moved, r.Target._name);
+        }
+
+        /// <summary>Where a bot of a sent squad comes out of the dropship (its staging spot); null = not sent.</summary>
+        public Helpers.ObjectState RaidStageFor(Bot b)
+        {
+            Helpers.ObjectState st;
+            if (b?._team == null || RaidOf(b) == null || !_raidStage.TryGetValue(b._team, out st) || st == null)
+                return null;
+            return OpenSpotNear(st.positionX, st.positionY, 200);
         }
 
         /// <summary>The HQ this bot's squad is raiding (bots shoot HQs like turrets), while one of the team's
@@ -272,7 +377,7 @@ namespace InfServer.Script.GameType_Eol
                     Helpers.ObjectState drop = PickRaidDropSpot(r.Base);
                     _stolen[fs] = new StolenFlag { Fs = fs, Carrier = b, From = r.Target, Drop = drop, Since = now, LastSend = now, SentX = fs.posX, SentY = fs.posY };
                     string name = InfServer.Game.Modules.BotNameModule.GetDisplayName(b);
-                    r.Target.sendArenaMessage(string.Format("&Raid - {0} grabbed your {1}! Stop them!", name, fs.flag.GeneralData.Name), _config.flag.periodicBong);
+                    r.Target.sendArenaMessage(string.Format("&{0} grabbed your {1}! Stop them!", name, fs.flag.GeneralData.Name), _config.flag.periodicBong);
                     Log.write(TLog.Normal, "[Eol] Base raid: {0} ({1}) stole {2} from {3}, taking it to {4}.", name, b._team._name,
                         fs.flag.GeneralData.Name, r.Target._name, Helpers.posToLetterCoord(drop.positionX, drop.positionY));
                     break;
@@ -300,7 +405,7 @@ namespace InfServer.Script.GameType_Eol
                     _stolen.Remove(fs);
                     SendFlagState(fs);
                     where = Helpers.posToLetterCoord(fs.posX, fs.posY);
-                    s.From?.sendArenaMessage(string.Format("&Raid - the thief is down: your {0} lies at {1}.", fs.flag.GeneralData.Name, where), 0);
+                    s.From?.sendArenaMessage(string.Format("&The thief is down: your {0} lies at {1}.", fs.flag.GeneralData.Name, where), 0);
                     continue;
                 }
                 if (fs.team != b._team)
@@ -316,7 +421,7 @@ namespace InfServer.Script.GameType_Eol
                     _stolen.Remove(fs);
                     SendFlagState(fs);
                     where = Helpers.posToLetterCoord(fs.posX, fs.posY);
-                    s.From?.sendArenaMessage(string.Format("&Raid - your {0} was dumped at {1}. Go get it back!", fs.flag.GeneralData.Name, where), 0);
+                    s.From?.sendArenaMessage(string.Format("&Your {0} was dumped at {1}. Go get it back!", fs.flag.GeneralData.Name, where), 0);
                     Log.write(TLog.Normal, "[Eol] Base raid: {0} dropped at {1}.", fs.flag.GeneralData.Name, where);
                     continue;
                 }
