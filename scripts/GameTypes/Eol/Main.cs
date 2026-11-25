@@ -8143,6 +8143,13 @@ namespace InfServer.Script.GameType_Eol
                 StartHqRecall(player);   // (2026-11-26, owner: stand still to use it - moving cancels; Script_Eol.HqTeleport.cs)
                 return false;
             }
+            // (2026-11-26, owner) the Store Recall (all of them) and the Teleport Charge - Recall: stand still for the charge too;
+            // when it is done this hook is called again with the bypass on and the warp goes through as before
+            if (player != null && IsStandStillRecall(item) && !StoreRecallBypass(player))
+            {
+                StartRecallCharge(player, item, targetPlayerID);
+                return false;
+            }
             // (2026-11-26, owner: "Make it so the only way you can teleport with a flag is the hq recall. that is the ONLY
             // way") a flag carrier can't teleport himself with anything else (the Store Recall below still works but leaves
             // the flags behind, so no flag is ever teleported); summons of a carrier are refused by his "*" summon-ignore
