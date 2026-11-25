@@ -33,7 +33,9 @@ namespace InfServer.Script.GameType_Eol
         // class in that team is a infil with a maklov PR and both have teleport distrupt. have a sciops cloaked that has that
         // kuchler pb g1111 gun and a kuchler pr209g. and then another black ops. make sure all know how to melee too. the sciops
         // using the magnafist") the 30k assassins: a fixed team of 4 ----------
-        enum AssassinRole { SphereBlackOps, Infiltrator, SciOps, BlackOps }
+        // (2026-11-26, owner: "give the assassin team a Squad Leader class as command. that he summons the team once they are
+        // hunting a 30k") the leader is a Squad Leader; the four above are his team
+        enum AssassinRole { SquadLeader, SphereBlackOps, Infiltrator, SciOps, BlackOps }
         readonly Dictionary<Bot, AssassinRole> _assassinRole = new Dictionary<Bot, AssassinRole>();
         const int ItmMaklovMk4PR = 1044, ItmKuchlerPBg111 = 1125, ItmKuchlerPR209g = 1104, ItmMagnaFist = 1173, ItmTeleportDisruptor = 22;
 
@@ -42,7 +44,7 @@ namespace InfServer.Script.GameType_Eol
         AssassinRole NextAssassinRole(Team team, bool leader)
         {
             if (leader)
-                return AssassinRole.SphereBlackOps;
+                return AssassinRole.SquadLeader;
             HashSet<AssassinRole> have = new HashSet<AssassinRole>();
             foreach (KeyValuePair<Bot, AssassinRole> kv in new List<KeyValuePair<Bot, AssassinRole>>(_assassinRole))
             {
@@ -54,7 +56,7 @@ namespace InfServer.Script.GameType_Eol
                 }
                 have.Add(kv.Value);
             }
-            foreach (AssassinRole r in new[] { AssassinRole.Infiltrator, AssassinRole.SciOps, AssassinRole.BlackOps })
+            foreach (AssassinRole r in new[] { AssassinRole.SphereBlackOps, AssassinRole.Infiltrator, AssassinRole.SciOps, AssassinRole.BlackOps })
                 if (!have.Contains(r))
                     return r;
             return AssassinRole.BlackOps;
@@ -64,6 +66,7 @@ namespace InfServer.Script.GameType_Eol
         {
             switch (r)
             {
+                case AssassinRole.SquadLeader: return ClsSquadLeader;
                 case AssassinRole.Infiltrator: return ClsInfiltrator;
                 case AssassinRole.SciOps: return ClsSciOps;
                 default: return ClsBlackOps;
@@ -152,7 +155,7 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>No speed bonus: assassins move at their vehicle's own speeds (2026-11-15 - the +35% read as a strafe cheat).</summary>
         public const int AssassinAgilityBonusPercent = 0;
         /// <summary>Live assassins per cell (captain + operatives).</summary>
-        public const int BountyHunterSquadSize = 4;   // (2026-11-26, owner: Black Ops (Proton Sphere) + Infiltrator + SciOps + Black Ops - was 5 random classes)
+        public const int BountyHunterSquadSize = 5;   // (2026-11-26, owner: a Squad Leader commanding Black Ops (Proton Sphere) + Infiltrator + SciOps + Black Ops)
         /// <summary>Operatives per cell - cell size minus the captain.</summary>
         public const int BountyHunterMaxConcurrentGrunts = BountyHunterSquadSize - 1;
         public const int BountyHunterOpeningBatch = BountyHunterMaxConcurrentGrunts;
@@ -740,7 +743,52 @@ namespace InfServer.Script.GameType_Eol
                     TrySpawnOneBountyHunterGrunt(now, FindLiveBountyHunterCaptain(team), team);
                 if (roamBots != null)
                     roamBots[team] = CountLiveBountyHunterGrunts(team);
+                if (IsBountyHunterMarkInField())
+                    PollAssassinSummon(now, team);
             }
+        }
+
+        /// <summary>
+        /// (2026-11-26, owner: "a Squad Leader ... that he summons the team once they are hunting a 30k") while the contract is
+        /// on, the Squad Leader summons his team to him: the first time as soon as he is out on the hunt, then every
+        /// AssassinSummonEveryMs while some of them are far off (AssassinSummonFarRaw). Like a player's summon: nobody inside
+        /// an enemy teleport disruptor comes (and none if he is inside one), and not while he is in a fight up close.
+        /// </summary>
+        const int AssassinSummonEveryMs = 45000, AssassinSummonFarRaw = 900;
+        readonly Dictionary<Team, int> _assassinSummonNext = new Dictionary<Team, int>();
+
+        void PollAssassinSummon(int now, Team team)
+        {
+            RoamingCaptain lead = FindLiveBountyHunterCaptain(team);
+            if (lead == null || lead.IsDead || lead._state == null || lead._type == null || lead._type.Id != ClsSquadLeader)
+                return;
+            if (_eol != null && _eol.IsInPioneerDropshipSafeZone(lead._state.positionX, lead._state.positionY))
+                return;
+            int next;
+            if (_assassinSummonNext.TryGetValue(team, out next) && now - next < 0)
+                return;
+            if (_arena.isTeleportDisruptedAt(lead._state.positionX, lead._state.positionY, team))
+                return;
+            int brought = 0;
+            foreach (Vehicle v in _arena.Vehicles)
+            {
+                RoamingAttacker b = v as RoamingAttacker;
+                if (b == null || b.IsDead || b.bCondemned || b._team != team || b._state == null || IsDeploying(b))
+                    continue;
+                if (Helpers.distanceTo(b._state, lead._state) < AssassinSummonFarRaw)
+                    continue;
+                if (_arena.isTeleportDisruptedAt(b._state.positionX, b._state.positionY, team))
+                    continue;   // (an enemy disruptor holds it)
+                Helpers.ObjectState at = OpenSpotNear(lead._state.positionX, lead._state.positionY, 180);
+                if (at == null)
+                    continue;
+                WarpBot(b, at);
+                b.DamageImmuneUntilTick = NonZeroTick(now + 1000);
+                brought++;
+            }
+            _assassinSummonNext[team] = now + AssassinSummonEveryMs;
+            if (brought > 0)
+                Log.write(TLog.Normal, "[Eol] Assassins: the Squad Leader summoned {0} of his team.", brought);
         }
 
         void TeardownBountyHunterSquad(int now, bool announce)
