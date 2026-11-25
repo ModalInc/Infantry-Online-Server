@@ -361,7 +361,7 @@ namespace InfServer.Bots
                 CollectNearbySolids();
                 double px = newPosition.x, py = newPosition.y, accX = 0, accY = 0;
                 bool touched = false;
-                for (int iter = 0; iter < 4; iter++)
+                for (int iter = 0; iter < 6; iter++)
                 {
                     double pushX, pushY;
                     if (!CirclePush(px, py, out pushX, out pushY))
@@ -1024,13 +1024,12 @@ namespace InfServer.Bots
             }
             if (n == 0)
                 return false;
-            // the averaged direction, as far as the deepest overlap (many tiles along one wall don't add up to a big shove)
-            double sl = Math.Sqrt(sumX * sumX + sumY * sumY);
-            if (sl < 0.001)
-                return false;
-            pushX = sumX / sl * deepest;
-            pushY = sumY / sl * deepest;
-            return deepest > 0.05;
+            // (2026-11-26, owner: "if a harrier goes indoors, it starts to stutter") the average of the overlaps: walls on both
+            // sides (a corridor, a doorway) balance out and it glides down the middle; the deepest one at full strength overshot
+            // to the other wall and bounced back every tick. (The few iterations per tick still clear a single wall fully.)
+            pushX = sumX / n;
+            pushY = sumY / n;
+            return Math.Sqrt(pushX * pushX + pushY * pushY) > 0.05;
         }
 
         /// <summary>The circle a big vehicle keeps round small obstacles (tree trunks, posts).</summary>
