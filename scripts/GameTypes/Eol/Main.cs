@@ -187,7 +187,7 @@ namespace InfServer.Script.GameType_Eol
         /// the kill rewards (cash / exp / points) still use c_percentOfVictim.</summary>
         public const int c_percentOfVictimBounty = 20;   // (2026-11-22, owner: 25 -> 20 %)
         public const int c_percentOfOwn = 3;
-        public const int c_percentOfOwnIncrease = 5;
+        public const int c_percentOfOwnIncrease = 4;   // (2026-11-26, owner: 5 -> 4 % of the killer's own bounty)
 
         private class PlayerCrownStatus
         {
@@ -6521,7 +6521,7 @@ namespace InfServer.Script.GameType_Eol
         /// same ratio below (1250 / 30000 = ~4.17 % of the killer's bounty). Never less than the old share (1 % of the
         /// kill's points), so a low-bounty killer's big kill still pays something.
         /// </summary>
-        public const int EolLeechAt30k = 1250;
+        public const int EolLeechAt30k = 1050;   // (2026-11-26, owner: leech 3.5 % - 1050 at a 30k killer; was 1250 = ~4.17 %)
         static int EolLeechBounty(InfServer.Game.Player killer, int basePoints, CfgInfo cfg)
         {
             int byRatio = (int)Math.Round(Math.Min(30000, Math.Max(0, killer.Bounty)) * (double)EolLeechAt30k / 30000);
