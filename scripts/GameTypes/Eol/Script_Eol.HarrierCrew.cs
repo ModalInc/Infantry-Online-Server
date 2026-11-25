@@ -512,6 +512,9 @@ namespace InfServer.Script.GameType_Eol
             ArmHarrierGuns(c, h);
             h.ArmorSource = _arena._server._assets.getVehicleByID(VehHarrierBotArmour);   // (null: its own armour)
             h.bRespawn = false;   // (destroyed: the crew gets out - OnHarrierLost)
+            // (2026-11-26, owner: "its not taking any damage") it was - but a bot always shows full health to players, so its
+            // label stayed at hp=300. The Harrier shows its real HP like a player's vehicle (and like the Queen / Commander).
+            h.ShowHealthToAll = true;
             h.DamageImmuneUntilTick = NonZeroTick(now + 1500);
             lock (_botBounty) _botBounty[h] = bounty;
             h.DisplayBounty = bounty;
