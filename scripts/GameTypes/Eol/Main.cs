@@ -3279,7 +3279,7 @@ namespace InfServer.Script.GameType_Eol
             }
 
             string bhbPart = null;
-            if (_bountyHunterWaveActive || IsBountyHuntActive)
+            if (EolAssassinsEnabled && (_bountyHunterWaveActive || IsBountyHuntActive))
             {
                 int aliveH = GetBountyHunterAliveCount();
                 if (aliveH < 0)
@@ -3359,7 +3359,7 @@ namespace InfServer.Script.GameType_Eol
             }
 
             string bhbPart = null;
-            if (_bountyHunterWaveActive)
+            if (EolAssassinsEnabled && _bountyHunterWaveActive)
             {
                 int aliveH = GetBountyHunterAliveCount();
                 if (aliveH < 0)

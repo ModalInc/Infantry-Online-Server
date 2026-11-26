@@ -190,6 +190,12 @@ namespace InfServer.Script.GameType_Eol
             if (botTeam9 != null) yield return botTeam9;
         }
 
+        /// <summary>
+        /// (2026-11-26, owner: "lets remove the assassin team... they are too bugged") false = no assassin bots at all: a 30k
+        /// hunt no longer deploys them (the hunt itself, its pots and payouts are unchanged). Set true to bring them back.
+        /// </summary>
+        public const bool EolAssassinsEnabled = false;
+
         public bool BountyHunterSquadOperational
         {
             get { return _bountyHunterWaveActive && IsBountyHuntActive; }
@@ -444,7 +450,7 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>Called when a hunt starts or advances to a new mark.</summary>
         public void OnBountyHunterHuntStarted(InfServer.Game.Player mark, int now)
         {
-            if (mark == null || _arena == null)
+            if (!EolAssassinsEnabled || mark == null || _arena == null)
                 return;
 
             bool sameTarget = _bountyHunterWaveActive && _bountyHunterMarkPlayerId == mark._id;
@@ -777,7 +783,7 @@ namespace InfServer.Script.GameType_Eol
 
         void PollBountyHunterSquad(int now)
         {
-            if (!_bountyHunterWaveActive)
+            if (!EolAssassinsEnabled || !_bountyHunterWaveActive)
                 return;
 
             if (!IsBountyHuntActive)
