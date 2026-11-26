@@ -8169,12 +8169,22 @@ namespace InfServer.Script.GameType_Eol
             // own live HQ (469, or a 473 Player headquarters); a message when the team has none.
             if (player != null && item != null && (item.id == HqTeleportItemId || item.warpGroup == HqWarpGroup))
             {
-                StartHqRecall(player);   // (2026-11-26, owner: stand still to use it - moving cancels; Script_Eol.HqTeleport.cs)
+                // (2026-11-26, owner: stand still to use it - moving cancels) the item's own prefire already did that (it is only
+                // sent once the animation finished standing still); the script charge only for an item without one
+                if (HasNativeStandStill(item))
+                {
+                    if (UnderTeleportDisrupt(player))   // (an enemy teleport disruptor holds it, as the script charge did)
+                        player.sendMessage(-1, "HQ recall blocked - you're inside a teleport disruptor.");
+                    else
+                        TryHqTeleport(player);
+                }
+                else
+                    StartHqRecall(player);
                 return false;
             }
             // (2026-11-26, owner) the Store Recall (all of them) and the Teleport Charge - Recall: stand still for the charge too;
             // when it is done this hook is called again with the bypass on and the warp goes through as before
-            if (player != null && IsStandStillRecall(item) && !StoreRecallBypass(player))
+            if (player != null && IsStandStillRecall(item) && !HasNativeStandStill(item) && !StoreRecallBypass(player))
             {
                 StartRecallCharge(player, item, targetPlayerID);
                 return false;
