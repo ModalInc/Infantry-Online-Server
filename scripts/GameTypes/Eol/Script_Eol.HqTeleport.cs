@@ -40,6 +40,17 @@ namespace InfServer.Script.GameType_Eol
             return item != null && item.id != HqTeleportItemId && (item.name ?? "").IndexOf("Recall", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        /// <summary>
+        /// (2026-11-26, owner: "remove those messages in the chat about the standing still ... make sure the animation cancels
+        /// too if they move ... just like a HQ recall") the item stands still by itself: the client plays its prefire (the
+        /// charge animation) and moving cancels it (itm prefireDelay + movementCancelsPrefire, as the HQ Teleport has). Then
+        /// no script charge on top - no chat messages, no second wait.
+        /// </summary>
+        static bool HasNativeStandStill(ItemInfo.WarpItem item)
+        {
+            return item != null && item.prefireDelay > 0 && item.movementCancelsPrefire;
+        }
+
         /// <summary>Player.WarpItem: true = this recall goes through now (its charge just finished).</summary>
         bool StoreRecallBypass(InfServer.Game.Player player) { return player != null && _recallBypass.Contains(player); }
 
@@ -52,13 +63,9 @@ namespace InfServer.Script.GameType_Eol
             string label = item == null ? "HQ recall" : (item.name ?? "Recall").Trim('"', ' ');
             HqRecallCharge cur;
             if (_hqRecalls.TryGetValue(player, out cur))
-            {
-                player.sendMessage(-1, "&" + cur.Label + " already charging - stand still.");
                 return;
-            }
             int now = Environment.TickCount;
             _hqRecalls[player] = new HqRecallCharge { X = player._state.positionX, Y = player._state.positionY, Due = now + HqRecallChargeMs, NextTell = now + 1000, Item = item, Target = target, Label = label };
-            player.sendMessage(0, String.Format("&{0} in {1} s - stand still, moving cancels it.", label, HqRecallChargeMs / 1000));
         }
 
         /// <summary>The charge is done: the recall's own (engine) warp, let through the script hook this once.</summary>
@@ -86,7 +93,6 @@ namespace InfServer.Script.GameType_Eol
                 if (Math.Abs(p._state.positionX - c.X) > HqRecallMoveTolerance || Math.Abs(p._state.positionY - c.Y) > HqRecallMoveTolerance)
                 {
                     _hqRecalls.Remove(p);
-                    p.sendMessage(-1, c.Label + " cancelled - you moved.");
                     continue;
                 }
                 if (UnderTeleportDisrupt(p))
@@ -103,11 +109,6 @@ namespace InfServer.Script.GameType_Eol
                     else
                         TryHqTeleport(p);
                     continue;
-                }
-                if (now - c.NextTell >= 0)
-                {
-                    c.NextTell += 1000;
-                    p.sendMessage(0, String.Format("&{0} in {1}...", c.Label, (c.Due - now + 999) / 1000));
                 }
             }
         }
