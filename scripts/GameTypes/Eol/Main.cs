@@ -737,6 +737,7 @@ namespace InfServer.Script.GameType_Eol
         {	//Populate our variables
             currentHour = DateTime.Now.Hour;
             _arena = invoker as Arena;
+            ScriptArena.TransportOnlyVehicles.Add(VehDart);   // (2026-11-27 owner) the Dart Bike is transport only: no weapons or items
             // (2026-11-15) Eol never resets when it empties: the public arena stays open with every structure where
             // it was (this arena only - private arenas still close when their last player leaves). Bots are only
             // there while somebody is (see PollEmptyArena).
@@ -854,6 +855,7 @@ namespace InfServer.Script.GameType_Eol
             botTeam7 = CreateAndRegisterBotTeam(botTeamName7);
             botTeam8 = SquadTeam(botTeamName8);   // (2026-11-24) a normal faction team players join with one click, like the other squads
             botTeam9 = null;   // (2026-11-24) one assassin team
+            CreateOpenWorldTeams();   // (2026-11-27) the base list (+ 5 open-world bases, the second Harrier team) - Script_Eol.OpenWorldRoster.cs
             botTeamAlienElite1 = CreateAndRegisterBotTeam("Skrall Ravagers");
             botTeamAlienElite2 = CreateAndRegisterBotTeam("Skrall Brood");
             CreateStrikeTeams();   // local 2026-11-14: three human-class strike teams
@@ -1377,7 +1379,8 @@ namespace InfServer.Script.GameType_Eol
             // The daily sector change is due and nobody is here: do it now, quietly (no warning needed) - the next
             // player finds new sectors and a fresh field.
             if (_botsClearedForEmpty && _arena._bGameRunning && !_bbetweengames && !_sectorChangeCountdownActive
-                && !_kothGameRunning && _tickNextSectorRotation != 0 && now - _tickNextSectorRotation >= 0)
+                && !_kothGameRunning && _tickNextSectorRotation != 0 && now - _tickNextSectorRotation >= 0
+                && !EolMap.AllSectorsOpen)   // (2026-11-27: the open world never changes sectors)
             {
                 Log.write(TLog.Normal, "[Eol] Daily sector change while the arena is empty.");
                 newSectorDSRecall();
@@ -1535,6 +1538,8 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>True while a sector is pinned (EolBoundaries.PinnedFirstSector) and it is the only one open.</summary>
         bool SectorRotationOnlyPinned()
         {
+            if (EolMap.AllSectorsOpen)
+                return true;   // (2026-11-27) open world: nothing to change to - no radiation wind change at all
             string pin = EolBoundaries.PinnedFirstSector;
             if (pin == null || _eol == null || _eol._activeSectors == null)
                 return false;
@@ -2051,11 +2056,14 @@ namespace InfServer.Script.GameType_Eol
             WireTerritoryHooks();                 // NW territories + the new player buffer (Script_Eol.Territories.cs)
             // pirate / class helmets on death; (2026-11-21, owner) a vehicle-squad bot that only lost its board / pack drops
             // nothing and gets no killfeed line - its rider on foot drops the helmet when it dies
-            Bots.Bot.DeathDropResolver = b => IsVehicleStageBot(b) ? -1 : PirateHelmetFor(b);
+            Bots.Bot.DeathDropResolver = b => IsVehicleStageBot(b) || b.KilledByTeammate ? -1 : PirateHelmetFor(b);   // (2026-11-27: no helmet for a team kill)
             Bots.Bot.SuppressKillfeed = b => IsVehicleStageBot(b);
             PrepareNewBots(now);    // 35 % more armour + spawn protection (Script_Eol.Deploy.cs)
             PollSquadCommands(now); // squad team-chat orders S / X / @ (Script_Eol.SquadCommands.cs)
-            SafeRun("hq recall", () => PollHqRecalls(now));     // (2026-11-26) the HQ recall's 5 s stand-still charge (Script_Eol.HqTeleport.cs)
+            SafeRun("hq recall", () => PollHqRecalls(now));
+            SafeRun("open world perf", () => PollOpenWorldPerf(now));
+            SafeRun("field vehicles", () => PollFieldVehicles(now));   // (2026-11-27) parked Harriers / Atlas for players (Script_Eol.FieldVehicles.cs)   // (2026-11-27) server-eol\eol-perf.log every 30 s
+            SafeRun("breach doors", () => PollBreachDoors(now));   // (2026-11-26) breachable doors + "repair door" (Script_Eol.BreachDoors.cs)     // (2026-11-26) the HQ recall's 5 s stand-still charge (Script_Eol.HqTeleport.cs)
             PollNoSpawnBuildings(now); // bots that come alive inside a no-spawn building go outside (Script_Eol.NoSpawnBuildings.cs)
             WireTacticsHooks();     // per-player adaptive skill (Script_Eol.Tactics.cs)
             PollMedics(now);        // squad medics heal bots and players
@@ -2157,12 +2165,12 @@ namespace InfServer.Script.GameType_Eol
                 return;
 
             Team teamNeedingHq = null;
-            if (!TeamHasLiveHqVehicle(botTeam1))
-                teamNeedingHq = botTeam1;
-            else if (!TeamHasLiveHqVehicle(botTeam2))
-                teamNeedingHq = botTeam2;
-            else if (!TeamHasLiveHqVehicle(botTeam3))
-                teamNeedingHq = botTeam3;
+            foreach (Team bt in ActiveBaseTeams())   // (2026-11-27: 3 bases, or the open world's 8)
+                if (!TeamHasLiveHqVehicle(bt))
+                {
+                    teamNeedingHq = bt;
+                    break;
+                }
 
             if (teamNeedingHq == null)
                 return;
@@ -2251,6 +2259,21 @@ namespace InfServer.Script.GameType_Eol
 
             if (_rand == null)
                 _rand = new Random(Environment.TickCount);
+
+            // (2026-11-27, owner: "atleast 2 in sector A area, 2 in sector B, and 4 in sector C") open world: the base goes up
+            // in its team's sector (BaseSectorPlan); anywhere only when that sector has no free slot at all
+            string wantSector = BaseSectorOf(teamNeedingHq);
+            if (wantSector != null && _eol != null)
+            {
+                List<KeyValuePair<int, pylonObject>> inSector = new List<KeyValuePair<int, pylonObject>>();
+                foreach (KeyValuePair<int, pylonObject> kv in slotCandidates)
+                    if (_eol.IsInSector(wantSector, kv.Value.getX(), kv.Value.getY()))
+                        inSector.Add(kv);
+                if (inSector.Count > 0)
+                    slotCandidates = inSector;
+                else
+                    Log.write(TLog.Warning, "[Eol] Bot HQ: no free slot in {0} for {1} - placing it elsewhere.", wantSector, teamNeedingHq._name);
+            }
 
             // Prefer a different anchor than the one just destroyed when multiple slots are free.
             if (_hasLastDestroyedBotHq && slotCandidates.Count > 1)
@@ -2565,9 +2588,8 @@ namespace InfServer.Script.GameType_Eol
         int CountLiveDefenseBotHqs()
         {
             int n = 0;
-            if (TeamHasLiveHqVehicle(botTeam1)) n++;
-            if (TeamHasLiveHqVehicle(botTeam2)) n++;
-            if (TeamHasLiveHqVehicle(botTeam3)) n++;
+            foreach (Team bt in ActiveBaseTeams())
+                if (TeamHasLiveHqVehicle(bt)) n++;
             return n;
         }
 
@@ -3184,6 +3206,17 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>Compact open-sector label for HUD, e.g. <c>Open: A+C</c>.</summary>
         string FormatEolOpenSectorsTickerPrefix()
         {
+            // (2026-11-27, owner: "remove the text at the top where it says sectors open, as its all open. please replace that
+            // with Live Player count instead") open world: real players in the game (no bots, no spectators)
+            if (EolMap.OpenWorld)
+            {
+                int live = 0;
+                if (_arena != null && _arena.PlayersIngame != null)
+                    foreach (InfServer.Game.Player p in _arena.PlayersIngame)
+                        if (p != null && !p.IsSpectator)
+                            live++;
+                return "Live Players: " + live;
+            }
             if (_eol == null || _eol._activeSectors == null || _eol._activeSectors.Count == 0)
                 return "Open Sector(s): --";
 
@@ -7363,6 +7396,10 @@ namespace InfServer.Script.GameType_Eol
                 return false;
             }
 
+            // (2026-11-27) open world: the six sector portals land players at the owner's spawn points (Script_Eol.SectorPortals.cs)
+            if (EolMap.OpenWorld && TrySectorPortal(player, portal))
+                return false;
+
             _eol.EnsureActiveSectorsReadyForPortal();
             if (_eol._activeSectors == null || _eol._activeSectors.Count == 0)
             {
@@ -7523,7 +7560,7 @@ namespace InfServer.Script.GameType_Eol
                         t.sendArenaMessage("&Headquarters - " + dead._team._name + " HQ was destroyed by " + killers._name + "!");
                 }
 
-                if (dead._team == botTeam1 || dead._team == botTeam2 || dead._team == botTeam3)
+                if (IsDefenseBotTeam(dead._team))
                 {
                     if (_currentEngineers > 0)
                         _currentEngineers--;
@@ -7673,10 +7710,15 @@ namespace InfServer.Script.GameType_Eol
 
             OnBountyHuntPlayerKill(victim, killer);
 
-            killer.Kills++;
+            // (2026-11-27, owner: "team kills TKs should not have any reward") a team kill counts nothing for the killer:
+            // no kill, no streak, no crown progress (the cash / exp / points were already skipped above)
+            bool teamKill = victim._team == killer._team;
+            if (!teamKill)
+                killer.Kills++;
             victim.Deaths++;
 
-            UpdateKiller(killer);
+            if (!teamKill)
+                UpdateKiller(killer);
             UpdateDeath(victim, killer);
 
             if (_arena != null)
@@ -7704,13 +7746,13 @@ namespace InfServer.Script.GameType_Eol
                         QueueKothCrownBroadcast(false, _noCrowns);
                     }
 
-                    if (!ks.crown)
+                    if (!ks.crown && !teamKill)
                         ks.crownKills++;
                 }
 
                 if (ks.crown)
                     updateCrownTime(killer);
-                else if (_config.king.crownRecoverKills != 0 && ks.crownKills >= _config.king.crownRecoverKills)
+                else if (!teamKill && _config.king.crownRecoverKills != 0 && ks.crownKills >= _config.king.crownRecoverKills)
                     GiveCrownBack(killer);
             }
             return false;
@@ -7880,6 +7922,8 @@ namespace InfServer.Script.GameType_Eol
         {
             // Sector seam switches (910-913) are driven by code only - never let a player toggle them.
             if (swi != null && swi.GeneralData.Id >= 910 && swi.GeneralData.Id <= 913)
+                return false;
+            if (!BreachDoorSwitchAllowed(player, swi))   // (2026-11-26) a breached door's lock is dead (Script_Eol.BreachDoors.cs)
                 return false;
             return true;
         }
@@ -8129,6 +8173,7 @@ namespace InfServer.Script.GameType_Eol
         [Scripts.Event("Player.Explosion")]
         public bool playerExplosion(InfServer.Game.Player player, ItemInfo.Projectile weapon, short posX, short posY, short posZ)
         {
+            SafeRun("breach doors", () => BreachDoorExplosion(player, weapon, posX, posY));   // (2026-11-26) Script_Eol.BreachDoors.cs
             // Player fire near a bot — that bot's team can call for help even before it acquires the player.
             if (player != null && !player.IsDead && _arena != null)
             {
@@ -8402,7 +8447,10 @@ namespace InfServer.Script.GameType_Eol
 
             CS_VehicleDeath u = _pendingBotDeathUpdate;
             if (bot != null && victim != null && victim._team != bot._team)
+            {
                 QueueBotKillTauntExplosion(bot, victim, u);
+                SafeRun("bot kill taunt", () => BotKillTauntChat(bot, victim));   // (2026-11-27) Script_Eol.BotTaunts.cs
+            }
             KothOnPlayerKilledByBot(victim, bot);   // a bot's kill counts in KOTH like a player's
 
             _pendingBotDeathUpdate = null;

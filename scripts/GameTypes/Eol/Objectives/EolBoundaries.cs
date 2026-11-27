@@ -568,6 +568,8 @@ namespace InfServer.Script.GameType_Eol
 
         private static int DesiredSectorCountForPlayers(int playing)
         {
+            if (EolMap.AllSectorsOpen)
+                return SectorCount;   // (2026-11-27) open world: every sector, whatever the population
             if (playing < 30)
                 return 1;
             if (playing < 46)
@@ -706,8 +708,10 @@ namespace InfServer.Script.GameType_Eol
                 Sectors(fTL, fBL, fTR, fBR);
                 if (announce)
                 {
-                    _arena.sendArenaMessage("All Sectors are currently open with low radiation levels", _config.flag.victoryWarningBong);
-                    _arena.setTicker(1, 3, 0, "All Sectors are currently open with low radiation levels");
+                    string open = EolMap.OpenWorld ? "The whole of Eol is open - pick your sector portal in the dropship"
+                        : "All Sectors are currently open with low radiation levels";
+                    _arena.sendArenaMessage(open, _config.flag.victoryWarningBong);
+                    _arena.setTicker(1, 3, 0, EolMap.OpenWorld ? "" : open);   // (2026-11-27: open world - no sector line on the HUD)
                     _lastSectorLayoutBroadcastKey = broadcastKey;
                 }
                 bOneSector = false;

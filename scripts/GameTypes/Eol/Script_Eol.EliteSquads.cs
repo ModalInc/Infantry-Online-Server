@@ -227,19 +227,31 @@ namespace InfServer.Script.GameType_Eol
         /// An open spot inside the play area, away from players, and spread out from the bots already in the field
         /// (best of many samples = farthest from any other bot), so squads appear all around the area.
         /// </summary>
-        Helpers.ObjectState PickEliteSpawnPoint()
+        Helpers.ObjectState PickEliteSpawnPoint(string sector = null)
         {
             LvlInfo lvl = _arena._server._assets.Level;
             if (lvl == null)
                 return null;
             int w = lvl.Width * 16, h = lvl.Height * 16;
+            // (2026-11-27) open world: only inside this sector (its bounding box, then the sector test)
+            int x0 = 128, y0 = 128, x1 = Math.Max(256, w - 128), y1 = Math.Max(256, h - 128);
+            short sMinX, sMaxX, sMinY, sMaxY;
+            if (sector != null && _eol != null && _eol.TryGetSectorBounds(sector, out sMinX, out sMaxX, out sMinY, out sMaxY))
+            {
+                x0 = Math.Max(x0, (int)sMinX); x1 = Math.Max(x0 + 1, Math.Min(x1, (int)sMaxX));
+                y0 = Math.Max(y0, (int)sMinY); y1 = Math.Max(y0 + 1, Math.Min(y1, (int)sMaxY));
+            }
+            else
+                sector = null;
             Helpers.ObjectState best = null;
             double bestScore = -1;
             for (int i = 0, tries = 0; i < 320 && tries < 40; i++)   // more samples = squads spread wider over the map
             {
-                short x = (short)_arena._rand.Next(128, Math.Max(256, w - 128));
-                short y = (short)_arena._rand.Next(128, Math.Max(256, h - 128));
+                short x = (short)_arena._rand.Next(x0, x1);
+                short y = (short)_arena._rand.Next(y0, y1);
                 if (_arena.getTile(x, y).Blocked)
+                    continue;
+                if (sector != null && !_eol.IsInSector(sector, x, y))
                     continue;
                 if (!InPlayArea(x, y))
                     continue;
@@ -247,6 +259,8 @@ namespace InfServer.Script.GameType_Eol
                     continue;
                 Helpers.ObjectState at = findOpenWarpBot(_arena, x, y, 150);
                 if (at == null || !InPlayArea(at.positionX, at.positionY, 120))
+                    continue;
+                if (sector != null && !_eol.IsInSector(sector, at.positionX, at.positionY))
                     continue;
                 if (!IsOpenConnectedGround(at.positionX, at.positionY))
                     continue;   // inside a sealed building / physics pocket

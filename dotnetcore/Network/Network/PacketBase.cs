@@ -223,9 +223,12 @@ namespace InfServer.Network
 				return;
 			}
 			
-			//Sanity check
-			if (szValue.Length > iLen)
-				throw new InvalidOperationException("String length is longer than allocated space!");
+			//Sanity check: (2026-11-27) cut an over-long string to fit (room for the end marker) instead of throwing -
+			//a long bot name ("Chief & Gunner") threw here and stopped the whole arena poll every tick
+			if (szValue == null)
+				szValue = "";
+			if (szValue.Length > iLen - 1)
+				szValue = szValue.Substring(0, iLen - 1);
 
 			//Write in the string as a bunch of chars
 			_contentWriter.Write(szValue.ToCharArray());

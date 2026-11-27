@@ -275,7 +275,7 @@ namespace InfServer.Script.GameType_Eol
                 return false;
             int want;
             if (!_strikeTargetSize.TryGetValue(t, out want))
-                want = t == botTeam6 ? RosterPirateRoamers : 0;
+                want = IsHarrierCrewTeam(t) ? RosterPirateRoamers : 0;
             if (want <= 2)
                 return false;
             int outNow = 0;

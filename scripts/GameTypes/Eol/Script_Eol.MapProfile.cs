@@ -75,8 +75,18 @@ namespace InfServer.Script.GameType_Eol
             return ChaosInEol ? y >= OyPx : y < CombinedClassicRow * 16 - 40 * 16 / 2;
         }
 
+        /// <summary>(2026-11-27, owner: "i want to open the map up so its all open, and make it like a open world mmorpg on what we
+        /// already built" / "remove all of the toxic areas as its open now") Pioneer is one open world: all three sectors are
+        /// always open (no radiation, no daily sector change, nobody sent back to the dropship), players pick where they land
+        /// with the six sector portals in the dropship, and the bots are spread over A / B / C by a fixed plan. The sectors
+        /// themselves stay (EolBoundaries.SectorTable.cs keeps the old barrier-wall split) so the bots know where they live.
+        /// False = the old radiation sectors.</summary>
+        public const bool PioneerOpenWorld = true;
+        /// <summary>Pioneer live and open world on.</summary>
+        public static bool OpenWorld { get { return PioneerOpenWorld && !ChaosInEol; } }
+
         /// <summary>No toxic zones: every sector is always open, no daily radiation change, nobody sent back to the dropship.</summary>
-        public static bool AllSectorsOpen { get { return ChaosInEol; } }
+        public static bool AllSectorsOpen { get { return ChaosInEol || OpenWorld; } }
         /// <summary>Chaos in Eol alone only (the Alien King is veh 837 in ChaosInEol.veh, not in PioneerStation.veh; the welcome text).</summary>
         public static bool ChaosZoneOnly { get { return ChaosInEol && !Combined; } }
 
@@ -101,8 +111,8 @@ namespace InfServer.Script.GameType_Eol
         public static short SafeMaxX { get { return ChaosInEol ? (short)22191 : (short)28080; } }
         public static short SafeMinY { get { return ChaosInEol ? Cy(1920) : (short)2160; } }
         public static short SafeMaxY { get { return ChaosInEol ? Cy(3823) : (short)3824; } }
-        public static short HelmetTraderX { get { return (short)((ChaosInEol ? 1301 : 1667) * 16 + 8); } }
-        public static short HelmetTraderY { get { return (short)(((ChaosInEol ? 167 + Oy : 165)) * 16 + 8); } }
+        public static short HelmetTraderX { get { return (short)((ChaosInEol ? 1301 : OpenWorld ? 1687 : 1667) * 16 + 8); } }   // (2026-11-27: open world - above the VPPC)
+        public static short HelmetTraderY { get { return (short)(((ChaosInEol ? 167 + Oy : OpenWorld ? 119 : 165)) * 16 + 8); } }
 
         // ---- the BOT dropship: combined = Pioneer's for both halves (bots land wherever the live half needs them)
         static bool BotShipClassic { get { return ChaosZoneOnly; } }

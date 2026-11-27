@@ -85,7 +85,9 @@ namespace InfServer.Script.GameType_Eol
         };
         // Pioneer Station: tile 1667,165 (the zone owner's spot, 2026-11-15 - the first spot stuck him on physics), facing south.
         // Raw = tile x 16 + 8 (the tile's centre). Yaw: 240 steps a turn, 0 = north, 120 = south.
-        const short HelmetTraderX = 1667 * 16 + 8, HelmetTraderY = 165 * 16 + 8;
+        // (2026-11-27, owner: "move helmet trader above where vehicle vendor is") open world: the alcove north of the VPPC
+        static short HelmetTraderX { get { return EolMap.OpenWorld ? (short)(1687 * 16 + 8) : (short)(1667 * 16 + 8); } }
+        static short HelmetTraderY { get { return EolMap.OpenWorld ? (short)(119 * 16 + 8) : (short)(165 * 16 + 8); } }
         const byte HelmetTraderYaw = 120;
         // (2026-11-15, owner: min $500 + 200 xp a helmet, a bit more for the better ones)
         const int HelmetBasePrice = 500, HelmetSpecialistPrice = 750, HelmetCommandPrice = 1000;

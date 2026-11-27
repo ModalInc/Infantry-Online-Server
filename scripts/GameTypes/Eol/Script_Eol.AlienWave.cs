@@ -111,7 +111,7 @@ namespace InfServer.Script.GameType_Eol
         {
             if (t == null)
                 return false;
-            return t == botTeam1 || t == botTeam2 || t == botTeam3;
+            return BaseTeamIndex(t) >= 0;   // (2026-11-27: the open world's 8 bases - Script_Eol.OpenWorldRoster.cs)
         }
 
         bool IsManagedEolBotFactionTeam(Team t)
@@ -122,7 +122,7 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>The two always-on elite roaming squads (local 2026-11-13).</summary>
         public bool IsEliteSquadTeam(Team t)
         {
-            return t != null && (t == botTeam6 || t == botTeam8);
+            return t != null && (t == botTeam6 || t == botTeam8 || (t == botTeamHarrier2 && EolMap.OpenWorld));
         }
 
         /// <summary>

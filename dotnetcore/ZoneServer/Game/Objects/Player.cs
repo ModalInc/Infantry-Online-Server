@@ -1199,6 +1199,39 @@ namespace InfServer.Game
             Helpers.Player_InventoryUpdate(this);
         }
 
+        /// <summary>(2026-11-27) Inventory held back while riding a transport-only vehicle (ScriptArena.TransportOnlyVehicles,
+        /// Eol: the Dart Bike) - the rider has no weapons, armour, grenades or mines; every item comes back on leaving it.</summary>
+        public List<KeyValuePair<ItemInfo, ushort>> _transportStash;
+
+        public void stashInventoryForTransport()
+        {
+            if (_transportStash != null || _inventory == null)
+                return;
+            _transportStash = _inventory.Values
+                .Where(ii => ii != null && ii.item != null && ii.quantity > 0)
+                .Select(ii => new KeyValuePair<ItemInfo, ushort>(ii.item, ii.quantity))
+                .ToList();
+            _inventory.Clear();
+            syncInventory();
+        }
+
+        public void restoreTransportStash()
+        {
+            if (_transportStash == null)
+                return;
+            List<KeyValuePair<ItemInfo, ushort>> stash = _transportStash;
+            _transportStash = null;
+            foreach (KeyValuePair<ItemInfo, ushort> kv in stash)
+            {
+                InventoryItem ii;
+                if (_inventory.TryGetValue(kv.Key.id, out ii))
+                    ii.quantity = (ushort)Math.Min(ushort.MaxValue, ii.quantity + kv.Value);
+                else
+                    _inventory[kv.Key.id] = new InventoryItem { item = kv.Key, quantity = kv.Value };
+            }
+            syncInventory();
+        }
+
         /// <summary>
         /// Synchronizes the player's entire state with the player's client
         /// </summary>

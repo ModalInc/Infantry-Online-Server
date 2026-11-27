@@ -20,6 +20,50 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>Centre of the dropship's "MapPortal" (lio portal 1, 80 x 80 at 27008,2864).</summary>
         public static short DropshipPortalX { get { return EolMap.DropshipPortalX; } }
         public static short DropshipPortalY { get { return EolMap.DropshipPortalY; } }
+
+        /// <summary>(2026-11-27, owner: "when the bots respawn in dropship, have them go to any random portal instead of in the
+        /// middle (there is no middle portal anymore) so it looks more realistic") open world: the six sector portal pads
+        /// (lio portals 201-206); each bot walks to one of them, picked at random each time it comes through.</summary>
+        static readonly short[][] DropshipPads =
+        {
+            new short[] { 26752, 2774 }, new short[] { 26992, 2774 }, new short[] { 27232, 2774 },
+            new short[] { 26752, 3014 }, new short[] { 26992, 3014 }, new short[] { 27232, 3014 },
+        };
+        readonly Dictionary<Bots.Bot, int> _botPad = new Dictionary<Bots.Bot, int>();
+
+        /// <summary>The pad this bot walks to (open world), else the old middle portal point.</summary>
+        void BotPortalTarget(Bots.Bot b, out short x, out short y)
+        {
+            x = DropshipPortalX; y = DropshipPortalY;
+            if (!EolMap.OpenWorld || b == null)
+                return;
+            int i;
+            if (!_botPad.TryGetValue(b, out i))
+            {
+                i = _arena._rand.Next(DropshipPads.Length);
+                _botPad[b] = i;
+            }
+            x = DropshipPads[i][0]; y = DropshipPads[i][1];
+        }
+
+        /// <summary>(2026-11-27, owner: "they should not walk through existing portals to get to their own ... the first one
+        /// they enter they teleport from there") distance to its own pad - or 0 once it stands on ANY pad on the way.</summary>
+        double DistanceToBotPortal(Bots.Bot b, short padX, short padY)
+        {
+            double d = Helpers.distanceTo(b._state.positionX, b._state.positionY, padX, padY);
+            if (EolMap.OpenWorld)
+                foreach (short[] p in DropshipPads)
+                    if (Helpers.distanceTo(b._state.positionX, b._state.positionY, p[0], p[1]) <= DeployPortalReachRaw)
+                        return 0;
+            return d;
+        }
+
+        /// <summary>Through the portal: next time it picks again.</summary>
+        void ForgetBotPad(Bots.Bot b)
+        {
+            if (b != null)
+                _botPad.Remove(b);
+        }
         const int DeployPortalReachRaw = 72;
         /// <summary>Stuck in the dropship this long: sent through anyway.</summary>
         const int DeployTimeoutMs = 30000;
@@ -204,9 +248,12 @@ namespace InfServer.Script.GameType_Eol
             if (b.IsDead || b.bCondemned)
             {
                 _deployStartTick.Remove(b);
+                ForgetBotPad(b);
                 return false;
             }
-            double d = Helpers.distanceTo(b._state.positionX, b._state.positionY, DropshipPortalX, DropshipPortalY);
+            short padX, padY;
+            BotPortalTarget(b, out padX, out padY);
+            double d = DistanceToBotPortal(b, padX, padY);
             if (d <= DeployPortalReachRaw || now - t0 > DeployTimeoutMs)
             {
                 int retry;
@@ -226,12 +273,13 @@ namespace InfServer.Script.GameType_Eol
                 }
                 _deployRetryAt.Remove(b);
                 _deployStartTick.Remove(b);
+                ForgetBotPad(b);
                 WarpBot(b, land);
                 b.DamageImmuneUntilTick = NonZeroTick(now + BotSpawnProtectMs);
                 return false;
             }
             b.ClearActivePlayerTarget();
-            SteerStraight(b, DropshipPortalX, DropshipPortalY);
+            SteerStraight(b, padX, padY);
             return true;
         }
 
@@ -286,6 +334,14 @@ namespace InfServer.Script.GameType_Eol
                     return at;
             }
 
+            // (2026-11-27) open world: a squad / Harrier crew lands in its home sector
+            string home = HomeSectorOf(b);
+            if (home != null)
+            {
+                Helpers.ObjectState inHome = PickEliteSpawnPoint(home);
+                if (inHome != null)
+                    return inHome;
+            }
             return PickEliteSpawnPoint();
         }
 

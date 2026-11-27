@@ -18,18 +18,31 @@ namespace InfServer.Script.GameType_Eol
     {
         /// <summary>(2026-11-21, owner: "3 bot bases team like eol classic", "both swarms out", "if sector C is chosen please add
         /// another 3 6man teams") 79 + the third base 10 + the King's swarm 12, + 18 while Sector C is open.</summary>
-        public static int EolBotTotalTarget { get { return 100 + (s_sectorCOpen ? SectorCExtraSquads * SquadMaxSize : 0); } }   // (2026-11-26: the pirate squad of 6 -> the Harrier crews of 4; the swarm sites are still 2 x 12 - aliens + Pirate Raiders)
+        public static int EolBotTotalTarget { get { return EolMap.OpenWorld ? OpenWorldBotTotal : 100 + (s_sectorCOpen ? SectorCExtraSquads * SquadMaxSize : 0); } }
+        /// <summary>(2026-11-27, owner) the open world: 8 bases x 10 + 4 swarm sites x (12 + the boss) + 13 foot squads x 6 + the
+        /// vehicle squad 6 + 2 Harrier teams x 4 = 80 + 52 + 78 + 6 + 8 = 224.</summary>
+        public static int OpenWorldBotTotal
+        {
+            get
+            {
+                return RosterBaseTeams * RosterBaseSize + OpenWorldSwarmRuns * (SwarmDefenders + 1)
+                    + (1 + RosterMixedTeamCount) * SquadMaxSize + RosterVehicleSquadSize + HarrierTeamCount * HarrierCrewSize;
+            }
+        }   // (2026-11-26: the pirate squad of 6 -> the Harrier crews of 4; the swarm sites are still 2 x 12 - aliens + Pirate Raiders)
         /// <summary>Extra mixed squads while Sector C is open (the last ones of MixedTeamNames).</summary>
         public const int SectorCExtraSquads = 3;
         static bool s_sectorCOpen;
         /// <summary>Mixed squads that fill right now.</summary>
-        int MixedTeamsActive { get { return RosterMixedTeamCount - (s_sectorCOpen ? 0 : SectorCExtraSquads); } }
-        public const int RosterBaseTeams = 3;   // (2026-11-21: a third base, like Eol Classic - Steel Wardens)
+        int MixedTeamsActive { get { return EolMap.OpenWorld ? RosterMixedTeamCount : RosterMixedTeamCount - OpenWorldExtraSquads - (s_sectorCOpen ? 0 : SectorCExtraSquads); } }
+        /// <summary>(2026-11-21: a third base, like Eol Classic - Steel Wardens) (2026-11-27: the open world's 8 - Script_Eol.OpenWorldRoster.cs)</summary>
+        public static int RosterBaseTeams { get { return EolMap.OpenWorld ? 8 : 3; } }
         public const int RosterBaseSize = EolMaxConcurrentBaseDefenseBots;   // 10
         public const int RosterAlienMainSize = 8;
         public const int RosterVehicleSquadSize = 6;   // (2026-11-24, owner: "give them a captain on a pack ... so their team is 6")   // (2026-11-17: + the board medic on a Hoverboard) // (2026-11-17, owner: Deathboard, Shimmerboard, Drop Pack + a SciOps on a Flight Pack)
         /// <summary>(2026-11-16c) Storm Rangers + 5 mixed teams = 6 joinable human squads of 5-6.</summary>
-        public const int RosterMixedTeamCount = 8;   // (2026-11-21: 5 + 3 that only fill while Sector C is open)
+        public const int RosterMixedTeamCount = 12;   // (2026-11-21: 5 + 3 that only fill while Sector C is open) (2026-11-27: + 4 open-world squads)
+        /// <summary>(2026-11-27) the last 4 of MixedTeamNames only play in the open world.</summary>
+        public const int OpenWorldExtraSquads = 4;
         /// <summary>(2026-11-16c, owner) a joinable squad is 5 to 6 strong, players + bots.</summary>
         public const int SquadMinSize = 5;
 

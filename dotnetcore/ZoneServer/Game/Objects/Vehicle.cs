@@ -389,6 +389,10 @@ namespace InfServer.Game
             player._occupiedVehicle = this;
             _tickUnoccupied = 0;
 
+            //Transport-only vehicle (Eol: Dart Bike): the rider's own items are held back until he leaves it
+            if (_type != null && ScriptArena.TransportOnlyVehicles.Contains(_type.Id))
+                player.stashInventoryForTransport();
+
             //Disable our base vehicle and enable the new
             Helpers.Object_VehicleBind(_arena.Players, player._baseVehicle, null);
             Helpers.Object_VehicleBind(_arena.Players, this, player._baseVehicle,
@@ -426,6 +430,9 @@ namespace InfServer.Game
                         exInhabitant._bIgnoreUpdates = false;
                     });
             }
+
+            //Give back anything held while riding a transport-only vehicle
+            _inhabitant.restoreTransportStash();
 
             //We're no longer inhabited
             _inhabitant._occupiedVehicle = null;

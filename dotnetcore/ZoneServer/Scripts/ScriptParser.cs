@@ -305,8 +305,8 @@ namespace InfServer.Scripting
 
 				//Handle the first occurance
 				if (startSLC ==
-					Math.Min((startSLC != -1 ? startSLC : Int16.MaxValue),
-								(startMLC != -1 ? startMLC : Int16.MaxValue)))
+					Math.Min((startSLC != -1 ? startSLC : int.MaxValue),
+								(startMLC != -1 ? startMLC : int.MaxValue)))
 				{	//Assign our tokens
 					startPos = startSLC;
 					startToken = "//";
@@ -531,8 +531,8 @@ namespace InfServer.Scripting
 				startMLC = text.IndexOf("/*", searchOffset);
 
 				//Which is first?
-				if (startSLC == Math.Min(startSLC != -1 ? startSLC : Int16.MaxValue,
-										 startMLC != -1 ? startMLC : Int16.MaxValue))
+				if (startSLC == Math.Min(startSLC != -1 ? startSLC : int.MaxValue,
+										 startMLC != -1 ? startMLC : int.MaxValue))
 				{
 					startPos = startSLC;
 					startToken = "//";
