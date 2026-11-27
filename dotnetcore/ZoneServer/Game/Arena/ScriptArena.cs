@@ -1351,7 +1351,7 @@ namespace InfServer.Game
             if (!_transportOnlyMsgTick.TryGetValue(p._id, out last) || now - last > 3000)
             {
                 _transportOnlyMsgTick[p._id] = now;
-                p.sendMessage(-1, "No weapons or items while riding the " + v._type.Name + ".");
+                p.sendMessage(-1, "Only the " + v._type.Name + "'s own weapons can be used here.");
             }
             return true;
         }
