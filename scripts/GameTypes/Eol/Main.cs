@@ -738,6 +738,9 @@ namespace InfServer.Script.GameType_Eol
             currentHour = DateTime.Now.Hour;
             _arena = invoker as Arena;
             ScriptArena.TransportOnlyVehicles.Add(VehDart);   // (2026-11-27 owner) the Dart Bike is transport only: no weapons or items
+            // (2026-11-28 owner) Harrier driver + gunner seats: only the Harrier's own guns, never the rider's (NEO GL etc.)
+            foreach (int harrierSeat in new[] { 121, 512, 126, 515 })   // GV-s, GV-s Turret, GV-s A2, GV-s A2 Turret
+                ScriptArena.TransportOnlyVehicles.Add(harrierSeat);
             // (2026-11-15) Eol never resets when it empties: the public arena stays open with every structure where
             // it was (this arena only - private arenas still close when their last player leaves). Bots are only
             // there while somebody is (see PollEmptyArena).

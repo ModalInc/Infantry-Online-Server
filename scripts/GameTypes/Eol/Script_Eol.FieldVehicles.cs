@@ -33,7 +33,7 @@ namespace InfServer.Script.GameType_Eol
             new FieldVehicle { VehId = VehHarrierGvs,   TileX = 1074, TileY = 852, Name = "Harrier GV-s (cannon)" },
             new FieldVehicle { VehId = VehHarrierGvsA2, TileX = 1362, TileY = 393, Name = "Harrier GV-s A2 (grenade launcher)" },
             new FieldVehicle { VehId = VehHarrierGvsA2, TileX = 730,  TileY = 15,  Name = "Harrier GV-s A2 (grenade launcher)" },
-            new FieldVehicle { VehId = VehAtlas,        TileX = 767,  TileY = 144, Name = "Atlas ATLst" },
+            // (2026-11-28 owner) the Atlas at 767,144 is gone: the map already has Atlas spawns at 717,138 and in I9
         };
 
         /// <summary>(2026-11-27, owner: "spawn dart bikes, 6 of them ... side by side ... stack them to the east from that") each row
