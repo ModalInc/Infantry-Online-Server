@@ -884,6 +884,12 @@ namespace InfServer.Game
         /// arrive once it's in game, so the joiner no longer sees a line for every bot. Enter rows only (small);
         /// the hulls (SC_Vehicles) still stream after EnterArena in small batches (QueueBotNamelistJoinStream).
         /// </summary>
+        /// <summary>(2026-11-28) At most this many bot rows go out during a joiner's "downloading game state"
+        /// (-1 = all). With ~224 bots the whole roster in that burst crashed the second player to join (the client
+        /// lost its connection mid-download); the rest come with the post-EnterArena join stream (Enter + hull in
+        /// small batches, QueueBotNamelistJoinStream). Mods can change it live (Eol: *joinroster N).</summary>
+        public static int BotRosterBeforeIngameMax = 60;
+
         public void SendBotRosterBeforeIngame(Player player)
         {
             if (player?._client == null || BotNames == null)
@@ -891,11 +897,15 @@ namespace InfServer.Game
             List<Bot> named = BuildUniqueNamelistBots();
             if (named == null)
                 return;
+            int sent = 0;
             foreach (Bot bot in named)
             {
+                if (BotRosterBeforeIngameMax >= 0 && sent >= BotRosterBeforeIngameMax)
+                    break;
                 if (bot == null || !ShouldBotAppearOnNamelist(bot))
                     continue;
                 SendBotNamelistEntryTo(player, bot, leaveFirst: false);
+                sent++;
             }
         }
 
