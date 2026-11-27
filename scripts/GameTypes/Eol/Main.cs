@@ -6881,6 +6881,23 @@ namespace InfServer.Script.GameType_Eol
             string cmd = command.ToLowerInvariant();
             if (TrySectorModCommand(player, cmd, payload))
                 return true;   // (2026-11-21) *sector a|b|c - Script_Eol.SectorVote.cs
+            if (cmd.Equals("joinroster"))
+            {   // (2026-11-28) *joinroster [N|all]: bot rows sent during a joiner's game-state download (rest stream after)
+                if (!IsEolModerator(player))
+                {
+                    player.sendMessage(-1, "Moderators only.");
+                    return true;
+                }
+                string p = (payload ?? "").Trim().ToLowerInvariant();
+                int n;
+                if (p == "all")
+                    Arena.BotRosterBeforeIngameMax = -1;
+                else if (int.TryParse(p, out n) && n >= 0)
+                    Arena.BotRosterBeforeIngameMax = n;
+                int cur = Arena.BotRosterBeforeIngameMax;
+                player.sendMessage(0, "&Join roster: " + (cur < 0 ? "all bots" : cur + " bots") + " during the download, the rest after.");
+                return true;
+            }
             if (cmd.Equals("swarm"))
             {   // (2026-11-16c) bring the Alien Swarm nest up now
                 if (!IsEolModerator(player))
