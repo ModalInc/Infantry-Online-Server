@@ -607,8 +607,9 @@ namespace InfServer.Script.GameType_Eol
                 Bots.Bot b = w.Bot;
                 if (b == null || b.IsDead || b.bCondemned || p == null || p.IsDead || p.IsSpectator || p._team != b._team)
                     continue;
-                // (2026-11-26, owner: "no one should be able to get summoned by anyone ... if they have a TD on them" / "team mates
-                // can't teleport to you if YOU're in a teleport disrupt. that makes no sense ... its only for summons the TD") a bot
+                // (2026-11-26, owner: 'no one should be able to get summoned by anyone ... if they have a TD on them' / 'team mates
+                // can't teleport to you if YOU're in a teleport disrupt. that makes no sense ... its only for summons the TD') a bot
+                // (no double quotes in comments past 32767 chars: the old script reader crashed on them - see ScriptParser fix)
                 // inside an enemy disruptor can't suit-teleport out of it (it comes on foot); teleporting TO a player inside one is fine
                 if (_arena.isTeleportDisruptedAt(b._state.positionX, b._state.positionY, b._team))
                     continue;

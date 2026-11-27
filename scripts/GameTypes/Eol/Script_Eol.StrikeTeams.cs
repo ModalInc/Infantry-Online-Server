@@ -81,7 +81,8 @@ namespace InfServer.Script.GameType_Eol
         // ones ... if they play sector C there is more teams, have them use the same teams going down the numbers") the squads
         // ARE the classic public factions now - new players land on a team that already has bots
         static readonly string[] MixedTeamNames = { "Collective Military", "Europan Mercs", "Morgan Raiders", "Tethys Consortium", "United Moons",
-            "Phobos Militarius", "Callisto Irregulars", "Ganymede Rangers" };   // (the last 3: Sector C only; StarFire Corps = the vehicle squad; Low Life Thugs = the Harrier crews)
+            "Phobos Militarius", "Callisto Irregulars", "Ganymede Rangers",
+            "Oberon Lancers", "Hyperion Guard", "Deimos Hussars", "Vesta Dragoons" };   // (2026-11-27: open world only - TeamInfo27-30)   // (the last 3: Sector C only; StarFire Corps = the vehicle squad; Low Life Thugs = the Harrier crews)
 
         void CreateStrikeTeams()
         {
@@ -250,7 +251,7 @@ namespace InfServer.Script.GameType_Eol
             int size;
             if (t != null && _strikeTargetSize.TryGetValue(t, out size) && size > 0)
                 size = Math.Min(size, SquadMaxSize);
-            else if (t != null && t == botTeam6)
+            else if (t != null && IsHarrierCrewTeam(t))
                 size = Math.Min(RosterPirateRoamers, SquadMaxSize);
             else
                 size = SquadMaxSize;

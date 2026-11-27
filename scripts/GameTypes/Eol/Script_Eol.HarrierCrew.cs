@@ -64,6 +64,8 @@ namespace InfServer.Script.GameType_Eol
             public Helpers.ObjectState BuildSpot;
             public int BuildDoneTick, NextSpawnTick;
             public string Sector;   // (2026-11-26) the sector it spawned in - its Harrier drives that sector's route
+            public int TeamNo;       // (2026-11-27) 0 = Low Life Thugs, 1 = the second Harrier team (HarrierTeam2Name)
+            public string HomeSector;   // (2026-11-27) open world: the crew always lands, and drives, in this sector
             public short[] SpawnTile;   // (2026-11-26, owner: "spawn at different spawn points") the owner's point it last used
         }
 
@@ -188,7 +190,7 @@ namespace InfServer.Script.GameType_Eol
 
         // ---------- (2026-11-26, owner: "it got stuck in this point. have it go back to the drive path if it is stuck. it should
         // drive around searching") ----------
-        sealed class HarrierStuck { public short X, Y; public int Since, ForceUntil, Stage; }
+        sealed class HarrierStuck { public short X, Y; public int Since, ForceUntil, Stage, IndoorSince, IndoorCheck; public bool Indoor; }
         readonly Dictionary<Bots.Bot, HarrierStuck> _harrierStuck = new Dictionary<Bots.Bot, HarrierStuck>();
         const int HarrierStuckMs = 7000, HarrierStuckWarpMs = 8000, HarrierStuckMoveRaw = 48, HarrierUnseenRaw = 1000;
 
@@ -210,6 +212,37 @@ namespace InfServer.Script.GameType_Eol
             HarrierStuck s;
             if (!_harrierStuck.TryGetValue(b, out s))
                 _harrierStuck[b] = s = new HarrierStuck { X = b._state.positionX, Y = b._state.positionY, Since = now };
+            // (2026-11-27, owner: "hawk and lotus are stuck inside ... this should not happen") inside a building - moving
+            // about in there or not - for 4 s: straight back onto its route (no route goes indoors; checked twice a second)
+            if (now - s.IndoorCheck >= 500)
+            {
+                s.IndoorCheck = now;
+                bool inside = HarrierSpotIndoors(b._state.positionX, b._state.positionY);
+                if (inside && !s.Indoor)
+                    s.IndoorSince = now;
+                s.Indoor = inside;
+            }
+            if (s.Indoor && now - s.IndoorSince >= 4000)
+            {
+                RouteWalk iw;
+                Helpers.ObjectState to = null;
+                HarrierRouteGoal(b, now);   // (makes sure it has a route)
+                if (_routeWalk.TryGetValue(b, out iw) && iw.Route != null)
+                {
+                    Helpers.ObjectState n = RouteNodeRaw(iw.Route, NearestRouteNode(iw.Route, b._state));
+                    to = findOpenWarpBot(_arena, n.positionX, n.positionY, 200, 56) ?? n;
+                }
+                to = to ?? NearestOutdoors(b._state.positionX, b._state.positionY);
+                if (to != null)
+                {
+                    WarpBot(b, to);
+                    try { b.Navigation?.Clear(); } catch { }
+                    Log.write(TLog.Normal, "[Eol] Low Life Thugs: {0} was inside a building - put back on its route at {1},{2}.", b._alias, to.positionX / 16, to.positionY / 16);
+                }
+                ResetRouteWalk(b);
+                s.Indoor = false; s.Stage = 0; s.Since = now; s.X = b._state.positionX; s.Y = b._state.positionY;
+                return null;
+            }
             if (Helpers.distanceTo(b._state.positionX, b._state.positionY, s.X, s.Y) > HarrierStuckMoveRaw)
             {   // moving: fine (a back-to-route trip ends once it's moving again and back near the route)
                 s.X = b._state.positionX; s.Y = b._state.positionY; s.Since = now;
@@ -227,7 +260,9 @@ namespace InfServer.Script.GameType_Eol
                 Log.write(TLog.Normal, "[Eol] Low Life Thugs: {0} stuck at {1},{2} - back to its route.", b._alias, b._state.positionX / 16, b._state.positionY / 16);
                 return HarrierRouteGoal(b, now);
             }
-            if (now - s.Since >= HarrierStuckMs + HarrierStuckWarpMs)
+            // (2026-11-27) stuck INSIDE a building (no route goes indoors): it can't drive out - onto the route now, seen or not
+            bool trappedIndoors = HarrierSpotIndoors(b._state.positionX, b._state.positionY);
+            if (now - s.Since >= HarrierStuckMs + HarrierStuckWarpMs || (trappedIndoors && now - s.Since >= HarrierStuckMs))
             {   // still stuck: onto the nearest waypoint - only where no player sees it jump (else it keeps driving back)
                 RouteWalk w;
                 Helpers.ObjectState to = null;
@@ -236,7 +271,7 @@ namespace InfServer.Script.GameType_Eol
                     Helpers.ObjectState n = RouteNodeRaw(w.Route, NearestRouteNode(w.Route, b._state));
                     to = findOpenWarpBot(_arena, n.positionX, n.positionY, 200, 56) ?? n;
                 }
-                if (to != null && (PlayerNear(b._state.positionX, b._state.positionY, HarrierUnseenRaw) || PlayerNear(to.positionX, to.positionY, HarrierUnseenRaw)))
+                if (to != null && !trappedIndoors && (PlayerNear(b._state.positionX, b._state.positionY, HarrierUnseenRaw) || PlayerNear(to.positionX, to.positionY, HarrierUnseenRaw)))
                 {
                     to = null;
                     ResetRouteWalk(b);
@@ -337,16 +372,70 @@ namespace InfServer.Script.GameType_Eol
         readonly List<HarrierCrew> _harrierCrews = new List<HarrierCrew>
         {
             // (2026-11-26, owner: "they were shooting the rocket law too often") the Kamenev at every range, the LAW now and then
-            new HarrierCrew { HarrierVeh = VehHarrierGvs, GunnerCls = ClsSquadLeader, CloseGun = ItmKamenevScv, FarGun = ItmKamenevScv, MiscGun = ItmLawLauncher },
-            new HarrierCrew { HarrierVeh = VehHarrierGvsA2, GunnerCls = ClsSergeant, CloseGun = ItmFlakShell, FarGun = ItmA2GrenadeLauncher },
+            new HarrierCrew { HarrierVeh = VehHarrierGvs, GunnerCls = ClsSquadLeader, CloseGun = ItmKamenevScv, FarGun = ItmKamenevScv, MiscGun = ItmLawLauncher, TeamNo = 0, HomeSector = "Sector A" },
+            new HarrierCrew { HarrierVeh = VehHarrierGvsA2, GunnerCls = ClsSergeant, CloseGun = ItmFlakShell, FarGun = ItmA2GrenadeLauncher, TeamNo = 0, HomeSector = "Sector C" },
+            // (2026-11-27, owner: "splitting up 1 harrier in sector A, 1 in Sector B, and 2 in sector C. random types when they
+            // spawn. they should also be split across 2 teams. so 4 in each team") open world: two more crews on a second team
+            new HarrierCrew { HarrierVeh = VehHarrierGvs, GunnerCls = ClsSquadLeader, CloseGun = ItmKamenevScv, FarGun = ItmKamenevScv, MiscGun = ItmLawLauncher, TeamNo = 1, HomeSector = "Sector B" },
+            new HarrierCrew { HarrierVeh = VehHarrierGvsA2, GunnerCls = ClsSergeant, CloseGun = ItmFlakShell, FarGun = ItmA2GrenadeLauncher, TeamNo = 1, HomeSector = "Sector C" },
         };
+
+        /// <summary>(2026-11-27) the second Harrier team (open world): bot-only, its own .cfg team (TeamInfo31).</summary>
+        public const string HarrierTeam2Name = "Dust Devils";
+        public Team botTeamHarrier2;
+        /// <summary>Harrier teams in play: Low Life Thugs, plus the Dust Devils in the open world.</summary>
+        public static int HarrierTeamCount { get { return EolMap.OpenWorld ? 2 : 1; } }
+
+        /// <summary>The crews in play: all four in the open world (two per team), else the first two.</summary>
+        List<HarrierCrew> ActiveHarrierCrews()
+        {
+            return EolMap.OpenWorld ? _harrierCrews : _harrierCrews.GetRange(0, 2);
+        }
+
+        Team HarrierTeamOf(HarrierCrew c)
+        {
+            return c != null && c.TeamNo == 1 && EolMap.OpenWorld && botTeamHarrier2 != null ? botTeamHarrier2 : botTeam6;
+        }
+
+        /// <summary>(2026-11-27, owner: "random types when they spawn") a fresh Harrier is a GV-s or a GV-s A2 at random, each with
+        /// its own guns (the gunner keeps his class).</summary>
+        void RandomizeHarrierType(HarrierCrew c)
+        {
+            if (!EolMap.OpenWorld || c == null)
+                return;
+            if (_arena._rand.Next(2) == 0)
+            {
+                c.HarrierVeh = VehHarrierGvs; c.CloseGun = ItmKamenevScv; c.FarGun = ItmKamenevScv; c.MiscGun = ItmLawLauncher;
+            }
+            else
+            {
+                c.HarrierVeh = VehHarrierGvsA2; c.CloseGun = ItmFlakShell; c.FarGun = ItmA2GrenadeLauncher; c.MiscGun = 0;
+            }
+        }
+
+        /// <summary>(2026-11-27) open world: the crew a bot belongs to (on foot or in the Harrier), or null.</summary>
+        HarrierCrew HarrierCrewOf(Bots.Bot b)
+        {
+            if (b == null)
+                return null;
+            foreach (HarrierCrew c in ActiveHarrierCrews())
+                if (ReferenceEquals(c.Chief, b) || ReferenceEquals(c.Gunner, b) || ReferenceEquals(c.Harrier, b))
+                    return c;
+            return null;
+        }
 
         sealed class PendingHarrierFoot { public HarrierCrew Crew; public short X, Y; public string ChiefAlias; public int Bounty; }
         readonly List<PendingHarrierFoot> _pendingHarrierFoot = new List<PendingHarrierFoot>();
         int _tickHarrierPoll;
 
         /// <summary>The Harrier crews' team (Low Life Thugs).</summary>
-        public bool IsHarrierCrewTeam(Team t) { return t != null && HarrierCrewEnabled && t == botTeam6; }
+        /// <summary>(2026-11-27) a building floor (or walled-in pocket) - no place for a Harrier.</summary>
+        bool HarrierSpotIndoors(short x, short y)
+        {
+            return _arena.getTerrainID(x, y) == BuildingFloorTerrain || IsIndoors(x, y) || !IsOpenConnectedGround(x, y);
+        }
+
+        public bool IsHarrierCrewTeam(Team t) { return t != null && HarrierCrewEnabled && (t == botTeam6 || (t == botTeamHarrier2 && EolMap.OpenWorld)); }
 
         /// <summary>A Harrier (with its crew inside).</summary>
         public static bool IsHarrierVeh(int vehId) { return vehId == VehHarrierGvs || vehId == VehHarrierGvsA2; }
@@ -400,7 +489,7 @@ namespace InfServer.Script.GameType_Eol
             if (!HarrierCrewEnabled || botTeam6 == null || _arena == null || !_arena._bGameRunning || !EolHasArenaPresence())
                 return;
             PollPendingHarrierFoot(now);
-            foreach (HarrierCrew c in _harrierCrews)
+            foreach (HarrierCrew c in ActiveHarrierCrews())
                 if (c.Rider != null)
                 {
                     if (c.Harrier != null && !BotGone(c.Harrier) && !c.Rider.IsDead && !c.Rider.bCondemned)
@@ -410,7 +499,7 @@ namespace InfServer.Script.GameType_Eol
                     else
                         c.Rider = null;
                 }
-            foreach (HarrierCrew c in _harrierCrews)
+            foreach (HarrierCrew c in ActiveHarrierCrews())
                 if (c.Turret != null)
                 {
                     if (c.Harrier != null && !BotGone(c.Harrier) && !c.Turret.IsDead && !c.Turret.bCondemned)
@@ -423,8 +512,10 @@ namespace InfServer.Script.GameType_Eol
             _tickHarrierPoll = now;
             if (roamBots != null && !roamBots.ContainsKey(botTeam6))
                 roamBots.Add(botTeam6, 0);
+            if (roamBots != null && botTeamHarrier2 != null && EolMap.OpenWorld && !roamBots.ContainsKey(botTeamHarrier2))
+                roamBots.Add(botTeamHarrier2, 0);
 
-            foreach (HarrierCrew c in _harrierCrews)
+            foreach (HarrierCrew c in ActiveHarrierCrews())
             {
                 if (c.Harrier != null)
                 {
@@ -493,12 +584,12 @@ namespace InfServer.Script.GameType_Eol
             c.BuildDoneTick = 0;
             if (c.Chief == null)
             {
-                c.Chief = NewHarrierCrewBot(ClsChiefEngineer, null, null, now);
+                c.Chief = NewHarrierCrewBot(c, ClsChiefEngineer, null, null, now);
                 c.ChiefCycled = true;
             }
             if (c.Gunner == null)
             {
-                c.Gunner = NewHarrierCrewBot(c.GunnerCls, null, null, now);
+                c.Gunner = NewHarrierCrewBot(c, c.GunnerCls, null, null, now);
                 c.GunnerCycled = true;
             }
             c.NextSpawnTick = now + 5000;   // (one try every 5 s while the dropship is busy)
@@ -506,9 +597,10 @@ namespace InfServer.Script.GameType_Eol
 
         /// <summary>A crew member on foot: in the dropship (at == null) or on the spot. Ace, its class's guns and armour,
         /// back through the dropship when killed.</summary>
-        RoamingAttacker NewHarrierCrewBot(int cls, Helpers.ObjectState at, string alias, int now)
+        RoamingAttacker NewHarrierCrewBot(HarrierCrew crew, int cls, Helpers.ObjectState at, string alias, int now)
         {
-            if (!CanSpawnBotOnTeam(botTeam6))
+            Team team = HarrierTeamOf(crew);
+            if (!CanSpawnBotOnTeam(team))
                 return null;
             bool viaDropship = at == null;
             if (viaDropship)
@@ -516,12 +608,12 @@ namespace InfServer.Script.GameType_Eol
             if (at == null)
                 return null;
             _arena.NextBotAlias = alias;
-            RoamingAttacker bot = _arena.newBot(typeof(RoamingAttacker), (ushort)cls, botTeam6, null, at, this, null) as RoamingAttacker;
+            RoamingAttacker bot = _arena.newBot(typeof(RoamingAttacker), (ushort)cls, team, null, at, this, null) as RoamingAttacker;
             _arena.NextBotAlias = null;
             if (bot == null)
                 return null;
             bot.SkillModeOverride = "ace";
-            ApplyHumanLoadout(bot, cls, botTeam6);
+            ApplyHumanLoadout(bot, cls, team);
             EnableBotDropshipRespawn(bot, 0);   // (killed: back through the dropship, same bot)
             if (viaDropship && _eol != null && _eol.IsInPioneerDropshipSafeZone(at.positionX, at.positionY))
                 BeginDeploy(bot, now);
@@ -530,8 +622,8 @@ namespace InfServer.Script.GameType_Eol
             if (_bots == null)
                 _bots = new List<Bots.Bot>();
             _bots.Add(bot);
-            if (roamBots != null && roamBots.ContainsKey(botTeam6))
-                roamBots[botTeam6]++;
+            if (roamBots != null && roamBots.ContainsKey(team))
+                roamBots[team]++;
             return bot;
         }
 
@@ -543,7 +635,7 @@ namespace InfServer.Script.GameType_Eol
         {
             if (b == null || !IsHarrierCrewTeam(b._team))
                 return null;
-            foreach (HarrierCrew c in _harrierCrews)
+            foreach (HarrierCrew c in ActiveHarrierCrews())
             {
                 if (!ReferenceEquals(c.Chief, b) && !ReferenceEquals(c.Gunner, b))
                     continue;
@@ -569,8 +661,14 @@ namespace InfServer.Script.GameType_Eol
             List<string> open = new List<string>();
             foreach (string sec in HarrierSpawnTiles.Keys)
                 if (SectorOpen(sec)) open.Add(sec);
-            HarrierCrew other = _harrierCrews.Find(x => x != c);
-            if (open.Count > 1 && other != null && other.Sector != null)
+            HarrierCrew other = ActiveHarrierCrews().Find(x => x != c && x.Sector != null && (!EolMap.OpenWorld || x.Sector == c.HomeSector));
+            // (2026-11-27) open world: always the crew's own sector (a point the other crew there isn't using)
+            if (EolMap.OpenWorld && c.HomeSector != null && SectorOpen(c.HomeSector))
+            {
+                open.Clear();
+                open.Add(c.HomeSector);
+            }
+            else if (open.Count > 1 && other != null && other.Sector != null)
                 open.Remove(other.Sector);
             while (open.Count > 0)
             {
@@ -584,7 +682,7 @@ namespace InfServer.Script.GameType_Eol
                         if (other != null && ReferenceEquals(other.SpawnTile, t))
                             continue;   // (never the other crew's point)
                         Helpers.ObjectState at = findOpenWarpBot(_arena, (short)(t[0] * 16 + 8), (short)(t[1] * 16 + 8), 200, 56);
-                        if (at == null || !_eol.IsInAnyActiveSector(at.positionX, at.positionY))
+                        if (at == null || !_eol.IsInAnyActiveSector(at.positionX, at.positionY) || HarrierSpotIndoors(at.positionX, at.positionY))
                             continue;
                         c.Sector = sec;
                         c.SpawnTile = t;
@@ -607,8 +705,19 @@ namespace InfServer.Script.GameType_Eol
         void MountHarrier(HarrierCrew c, int now)
         {
             RoamingAttacker chief = c.Chief, gunner = c.Gunner;
+            RandomizeHarrierType(c);   // (2026-11-27) a GV-s or an A2, at random
             Helpers.ObjectState at = findOpenWarpBot(_arena, chief._state.positionX, chief._state.positionY, 200, 56)
                 ?? new Helpers.ObjectState { positionX = chief._state.positionX, positionY = chief._state.positionY };
+            // (2026-11-27, owner: "hawk and lotus are stuck inside ... its not a part of their path to drive") the crew may have
+            // walked into a building after a fight - the Harrier goes up on the nearest open ground outside, never indoors
+            if (HarrierSpotIndoors(at.positionX, at.positionY))
+            {
+                Helpers.ObjectState outside = c.BuildSpot != null && !HarrierSpotIndoors(c.BuildSpot.positionX, c.BuildSpot.positionY)
+                    && Helpers.distanceTo(c.BuildSpot.positionX, c.BuildSpot.positionY, at.positionX, at.positionY) < 1600 ? c.BuildSpot
+                    : NearestOutdoors(at.positionX, at.positionY);
+                if (outside != null)
+                    at = findOpenWarpBot(_arena, outside.positionX, outside.positionY, 200, 56) ?? outside;
+            }
             int bounty = BotBountyOf(chief);
             c.GunnerBounty = BotBountyOf(gunner);
             string chiefAlias = _arena.HandOverBotAlias(chief) ?? c.ChiefAlias;
@@ -623,7 +732,7 @@ namespace InfServer.Script.GameType_Eol
             c.BuildSpot = null;
 
             _arena.NextBotAlias = !HarrierRiderEnabled && chiefAlias != null && gunnerAlias != null ? chiefAlias + " & " + gunnerAlias : chiefAlias;
-            RoamingAttacker h = _arena.newBot(typeof(RoamingAttacker), c.HarrierVeh, botTeam6, null, at, this, null) as RoamingAttacker;
+            RoamingAttacker h = _arena.newBot(typeof(RoamingAttacker), c.HarrierVeh, HarrierTeamOf(c), null, at, this, null) as RoamingAttacker;
             _arena.NextBotAlias = null;
             if (h == null)
             {
@@ -666,7 +775,7 @@ namespace InfServer.Script.GameType_Eol
                 if (tt == null)
                     return;
                 Helpers.ObjectState st = new Helpers.ObjectState { positionX = h._state.positionX, positionY = h._state.positionY, yaw = h._state.yaw };
-                Vehicle turret = _arena.newVehicle(tt, botTeam6, null, st, delegate (Vehicle v) { v._parent = h; v._parentSlot = 0; });
+                Vehicle turret = _arena.newVehicle(tt, HarrierTeamOf(c), null, st, delegate (Vehicle v) { v._parent = h; v._parentSlot = 0; });
                 if (turret == null)
                     return;
                 h._childs.Add(turret);
@@ -699,7 +808,7 @@ namespace InfServer.Script.GameType_Eol
                 return null;
             Helpers.ObjectState st = new Helpers.ObjectState { positionX = h._state.positionX, positionY = (short)(h._state.positionY + RiderOffsetY), yaw = h._state.yaw };
             _arena.NextBotAlias = alias;
-            RoamingAttacker g = _arena.newBot(typeof(RoamingAttacker), veh, botTeam6, null, st, this, null) as RoamingAttacker;
+            RoamingAttacker g = _arena.newBot(typeof(RoamingAttacker), veh, HarrierTeamOf(c), null, st, this, null) as RoamingAttacker;
             _arena.NextBotAlias = null;
             if (g == null)
                 return null;
@@ -792,8 +901,8 @@ namespace InfServer.Script.GameType_Eol
                 HarrierCrew c = f.Crew;
                 Helpers.ObjectState a = findOpenWarpBot(_arena, f.X, f.Y, 64) ?? new Helpers.ObjectState { positionX = f.X, positionY = f.Y };
                 Helpers.ObjectState b = findOpenWarpBot(_arena, f.X, f.Y, 96) ?? a;
-                c.Chief = NewHarrierCrewBot(ClsChiefEngineer, a, f.ChiefAlias, now);
-                c.Gunner = NewHarrierCrewBot(c.GunnerCls, b, c.GunnerAlias, now);
+                c.Chief = NewHarrierCrewBot(c, ClsChiefEngineer, a, f.ChiefAlias, now);
+                c.Gunner = NewHarrierCrewBot(c, c.GunnerCls, b, c.GunnerAlias, now);
                 c.ChiefCycled = c.GunnerCycled = false;   // (they get back in only after the dropship)
                 c.BuildDoneTick = 0;
                 if (c.Chief != null)

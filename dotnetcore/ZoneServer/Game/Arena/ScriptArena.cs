@@ -1202,6 +1202,8 @@ namespace InfServer.Game
         /// </summary>
         public override void handlePlayerExplosion(Player from, CS_Explosion update)
         {	//Damage any computer vehicles (future, also bots) in the blast radius
+            if (from != null && TransportOnlyBlocks(from, update.explosionID))
+                return;
             if (from == null)
             {
                 Log.write(TLog.Error, "handlePlayerExplosion(): Called with null player.");
@@ -1332,6 +1334,28 @@ namespace InfServer.Game
         /// <summary>
         /// Triggered when a player has sent an update packet
         /// </summary>
+        /// <summary>(2026-11-27) Vehicle type ids whose riders may use nothing: no own weapons, grenades, mines,
+        /// warps, repairs or makers (a gametype script fills it, e.g. Eol: the Dart Bike). The vehicle's own items still work.</summary>
+        public static readonly HashSet<int> TransportOnlyVehicles = new HashSet<int>();
+        readonly Dictionary<ushort, int> _transportOnlyMsgTick = new Dictionary<ushort, int>();
+
+        /// <summary>True (and a short notice, at most every 3 s) when this player rides a transport-only vehicle.</summary>
+        bool TransportOnlyBlocks(Player p, int itemId = 0)
+        {
+            Vehicle v = p != null ? p.ActiveVehicle : null;
+            if (v == null || v._type == null || TransportOnlyVehicles.Count == 0 || !TransportOnlyVehicles.Contains(v._type.Id))
+                return false;
+            if (itemId != 0 && v._type.InventoryItems.Any(i => i == itemId))
+                return false;   // the vehicle's own item
+            int now = Environment.TickCount, last;
+            if (!_transportOnlyMsgTick.TryGetValue(p._id, out last) || now - last > 3000)
+            {
+                _transportOnlyMsgTick[p._id] = now;
+                p.sendMessage(-1, "No weapons or items while riding the " + v._type.Name + ".");
+            }
+            return true;
+        }
+
         public override void handlePlayerUpdate(Player from, CS_PlayerUpdate update)
         {	//Should we ignore this?
             if (update.bIgnored)
@@ -1347,6 +1371,15 @@ namespace InfServer.Game
                     Log.write(TLog.Warning, "Player {0} attempted to fire non-existent item.", from);
                     return;
                 }
+
+                // transport-only vehicle (Eol: Dart Bike): the shot / throw / mine is dropped, the movement still goes out
+                if (TransportOnlyBlocks(from, update.itemID))
+                    update.itemID = 0;
+            }
+
+            if (update.itemID != 0)
+            {
+                ItemInfo info = _server._assets.getItemByID(update.itemID);
 
                 //Does he have it?
                 Player.InventoryItem ii = from.getInventory(info);
@@ -1600,7 +1633,14 @@ namespace InfServer.Game
                     if (update.killedID == from._occupiedVehicle._id)
                     {
                         //Yes, fall out of the vehicle
-                        from._occupiedVehicle.kill(killer);
+                        Vehicle wreck = from._occupiedVehicle;
+                        wreck.kill(killer);
+                        // (2026-11-27) only the vehicle died: the client throws the rider out alive, so this is not his
+                        // death - no death count, kill reward, death drops or bounty reset (the client showed no death
+                        // timer because he was never dead). The vehicle's own death events ran in kill().
+                        if (from._occupiedVehicle == wreck)
+                            wreck.playerLeave(true);
+                        return;
                     }
                 }
                 else
@@ -1626,9 +1666,10 @@ namespace InfServer.Game
                 }
             }
 
-            //Innate Drop items?
+            //Innate Drop items? (2026-11-27, Eol owner: "team kills ... no helmet drops" - not for a team kill)
             VehInfo vehicle = _server._assets.getVehicleByID(from._baseVehicle._type.Id);
-            if (vehicle.DropItemId != 0)
+            bool teamKilled = killer != null && killer != from && killer._team == from._team;
+            if (vehicle.DropItemId != 0 && !teamKilled)
             {
                 ItemInfo item = _server._assets.getItemByID(vehicle.DropItemId);
                 if (item != null && vehicle.DropItemQuantity > 0)
@@ -1879,7 +1920,10 @@ namespace InfServer.Game
         /// Triggered when a player attempts to use a warp item
         /// </summary>
         public override void handlePlayerWarp(Player player, ItemInfo.WarpItem item, ushort targetPlayerID, short posX, short posY)
-        {	//Is this warp being prevented by a bot?
+        {
+            if (TransportOnlyBlocks(player, item != null ? item.id : 0))
+                return;
+	//Is this warp being prevented by a bot?
             Bot antiWarpBot = checkBotAntiwarp(player);
             if (antiWarpBot != null)
             {
@@ -2379,7 +2423,10 @@ namespace InfServer.Game
         }
 
         public override void handlePlayerMakeVehicle(Player player, ItemInfo.VehicleMaker item, short posX, short posY)
-        {	//What does he expect us to make?
+        {
+            if (TransportOnlyBlocks(player, item != null ? item.id : 0))
+                return;
+	//What does he expect us to make?
             VehInfo vehinfo = _server._assets.getVehicleByID(item.vehicleID);
             if (vehinfo == null)
             {
@@ -2549,7 +2596,10 @@ namespace InfServer.Game
         /// Triggered when a player attempts to use an item creator
         /// </summary>
         public override void handlePlayerMakeItem(Player player, ItemInfo.ItemMaker item, short posX, short posY)
-        {   //What does he expect us to make?
+        {
+            if (TransportOnlyBlocks(player, item != null ? item.id : 0))
+                return;
+   //What does he expect us to make?
             ItemInfo itminfo = _server._assets.getItemByID(item.itemMakerItemID);
             if (itminfo == null)
             {
@@ -2688,6 +2738,9 @@ namespace InfServer.Game
         /// </summary>
         public override void handlePlayerRepair(Player player, ItemInfo.RepairItem item, UInt16 targetVehicle, short posX, short posY)
         {
+            if (TransportOnlyBlocks(player, item != null ? item.id : 0))
+                return;
+
             if (StunDebugLog)
                 Log.write(TLog.Normal, "[heal] {0} used {1} (#{2}) type {3} dist {4} amt {5} pct {6} target {7} at {8},{9}",
                     player._alias, item.name, item.id, item.repairType, item.repairDistance, item.repairAmount, item.repairPercentage, targetVehicle, posX, posY);   //Does the player have appropriate ammo?
@@ -2887,6 +2940,9 @@ namespace InfServer.Game
         /// </summary>
         public override void handlePlayerControl(Player player, ItemInfo.ControlItem item, UInt16 targetVehicle, short posX, short posY)
         {
+            if (TransportOnlyBlocks(player, item != null ? item.id : 0))
+                return;
+
             //Lets find the vehicle in question
             Vehicle target = _vehicles.getObjByID(targetVehicle);
             if (target == null)

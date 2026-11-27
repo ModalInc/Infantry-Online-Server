@@ -94,8 +94,17 @@ namespace InfServer.Script.GameType_Eol
             byte[] map = new byte[w * h];
             Queue<int> q = new Queue<int>();
 
+            // (2026-11-27) open world: the barrier walls are coming out of the map - the split they made is frozen in
+            // EolBoundaries.SectorTable.cs (a flood fill would now find one big sector)
+            byte[] frozen = EolMap.OpenWorld ? FixedSectorMap(w, h) : null;
+            if (frozen != null)
+            {
+                map = frozen;
+                Log.write(TLog.Normal, "[Eol] Sector map: open world - the frozen A / B / C split (EolBoundaries.SectorTable.cs).");
+            }
+
             // 1) each sector's open ground: flood from its seed, never through a wall
-            for (int s = 0; s < SectorSeedTiles.GetLength(0); s++)
+            for (int s = 0; s < SectorSeedTiles.GetLength(0) && frozen == null; s++)
             {
                 int sx = SectorSeedTiles[s, 0], sy = SectorSeedTiles[s, 1];
                 if (sx >= w || sy >= h || IsWallTile(lvl, sx, sy) || map[sy * w + sx] != 0)
@@ -124,7 +133,7 @@ namespace InfServer.Script.GameType_Eol
             }
 
             // 2) walls and sealed pockets: the nearest sector (grow every sector outwards together)
-            for (int i = 0; i < map.Length; i++)
+            for (int i = 0; i < map.Length && frozen == null; i++)
                 if (map[i] != 0)
                     q.Enqueue(i);
             while (q.Count > 0)

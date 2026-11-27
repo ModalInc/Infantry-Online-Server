@@ -1095,6 +1095,8 @@ namespace InfServer.Bots
         public int LastShotTick { get; private set; }
 
         bool _killedByPlayer;
+        /// <summary>(2026-11-27) the last death was a player on this bot's own team (a team kill): no helmet drop.</summary>
+        public bool KilledByTeammate;
         /// <summary>Death drops (helmets) only when a player made the kill.</summary>
         public static bool DropOnlyForPlayerKills = true;
 
@@ -1371,6 +1373,7 @@ namespace InfServer.Bots
             _state.health = 0;
             _tickDead = Environment.TickCount;
             _killedByPlayer = killer != null;
+            KilledByTeammate = killer != null && killer._team == _team;   // (2026-11-27: a team kill drops nothing)
 
             _movement.stop();
             _movement.bEnabled = false;

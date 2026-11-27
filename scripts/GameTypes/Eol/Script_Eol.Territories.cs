@@ -89,7 +89,7 @@ namespace InfServer.Script.GameType_Eol
                 return BotTerritory.Alien;
             // (2026-11-15) pirate base teams guard their own HQ wherever it stands (bases rotate over the Sector A
             // objectives) - no territory; the two elite roaming squads hold the base corner
-            if (b._team == botTeam1 || b._team == botTeam2 || b._team == botTeam3)
+            if (IsDefenseBotTeam(b._team))
                 return BotTerritory.None;
             if (IsEliteSquadTeam(b._team))
                 return BotTerritory.Elite;
@@ -103,6 +103,10 @@ namespace InfServer.Script.GameType_Eol
                 return false;
             if (b != null && IsRaidingBot(b))
                 return true;   // (2026-11-19) a squad raiding a player base goes wherever the base is
+            // (2026-11-27) open world: a squad / Harrier crew roams its own sector (Script_Eol.OpenWorldRoster.cs)
+            string home = HomeSectorOf(b);
+            if (home != null && _eol != null && !_eol.IsInSector(home, x, y))
+                return false;
             if (b == null || b._state == null || !InNw(b._state.positionX, b._state.positionY))
                 return true;   // (not in NW: no territory yet)
             BotTerritory mine = TerritoryOf(b), there = TerritoryAt(x, y);
@@ -114,6 +118,9 @@ namespace InfServer.Script.GameType_Eol
         {
             if (b == null || _arena == null || r == null)
                 return null;
+            string home = HomeSectorOf(b);   // (2026-11-27) open world: back into its home sector
+            if (home != null)
+                return PickPointInSector(b, home, r);
             TRect[] rects;
             switch (TerritoryOf(b))
             {

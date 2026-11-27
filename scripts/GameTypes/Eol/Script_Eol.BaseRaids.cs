@@ -95,7 +95,7 @@ namespace InfServer.Script.GameType_Eol
         /// <summary>The roaming squads that could be sent (no player on them, a leader out in the field).</summary>
         IEnumerable<Team> RaidCandidateSquads()
         {
-            List<Team> all = new List<Team> { botTeam6, botTeam8, botTeamStrike1 };
+            List<Team> all = new List<Team> { botTeam6, botTeam8, botTeamStrike1, EolMap.OpenWorld ? botTeamHarrier2 : null };
             all.AddRange(_mixedTeams);
             all.Add(botTeam4); all.Add(botTeamRaid2);
             foreach (Team t in all.Distinct())

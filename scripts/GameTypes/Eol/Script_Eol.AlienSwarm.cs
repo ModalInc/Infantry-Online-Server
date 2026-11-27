@@ -74,16 +74,28 @@ namespace InfServer.Script.GameType_Eol
         // in turn; run 2 = the Pirate Raiders round their Commander - same code, same sites, same rules.
         readonly SwarmRun _alienRun = new SwarmRun { Title = "Alien Queen", BotVehId = SwarmQueenBotVehId };
         readonly SwarmRun _pirateRun = new SwarmRun { Title = PirateCommanderTitle, BotVehId = PirateCommanderVehId, Pirate = true };
+        // (2026-11-27, owner: "then we have 2 alien swarms, queen and king, and then 2 pirate raiders") open world: the Queen and
+        // the King each have their own swarm again, and a second Pirate Raider crew - four sites at once
+        readonly SwarmRun _kingRun = new SwarmRun { Title = "Alien King", BotVehId = SwarmKingBotVehId };
+        readonly SwarmRun _pirateRun2 = new SwarmRun { Title = PirateCommanderTitle, BotVehId = PirateCommanderVehId, Pirate = true };
+        /// <summary>The open world's swarm sites: Queen, King, two Pirate Raider crews.</summary>
+        public const int OpenWorldSwarmRuns = 4;
+        /// <summary>(2026-11-27) the second Pirate Raider crew's team (.cfg TeamInfo32, the Pirate Raiders' dark jackets).</summary>
+        public const string PirateRaiders2TeamName = "Void Corsairs";
         bool _alienNextKing = new Random().Next(2) == 1;
         SwarmRun _swCur;
         SwarmRun _sw { get { return _swCur ?? _alienRun; } set { _swCur = value; } }
         IEnumerable<SwarmRun> SwarmRuns()
         {
             yield return _alienRun;
+            if (EolMap.OpenWorld && _kingRun.Team != null)
+                yield return _kingRun;
             if (PirateRaidersEnabled && _pirateRun.Team != null)
                 yield return _pirateRun;
+            if (EolMap.OpenWorld && PirateRaidersEnabled && _pirateRun2.Team != null)
+                yield return _pirateRun2;
         }
-        public int SwarmRunCount { get { return PirateRaidersEnabled ? 2 : 1; } }
+        public int SwarmRunCount { get { return EolMap.OpenWorld ? OpenWorldSwarmRuns : PirateRaidersEnabled ? 2 : 1; } }
         SwarmRun SwarmRunOf(Team t)
         {
             if (t == null) return null;
@@ -217,7 +229,7 @@ namespace InfServer.Script.GameType_Eol
         public bool IsBugTeam(Team t) { return IsAlienBotTeam(t) || (IsSwarmTeam(t) && !IsPirateRaidersTeam(t)); }
 
         /// <summary>(2026-11-26) the Pirate Raiders round their Commander (the second swarm run).</summary>
-        public bool IsPirateRaidersTeam(Team t) { return t != null && PirateRaidersEnabled && t == _pirateRun.Team; }
+        public bool IsPirateRaidersTeam(Team t) { return t != null && PirateRaidersEnabled && (t == _pirateRun.Team || (EolMap.OpenWorld && t == _pirateRun2.Team)); }
 
         static short TileRaw(short t) { return (short)(t * 16 + 8); }
 
@@ -226,6 +238,12 @@ namespace InfServer.Script.GameType_Eol
             _alienRun.Team = CreateAndRegisterBotTeam("Hive Queen Brood");   // (2026-11-24, owner: "make up something cool")
             if (PirateRaidersEnabled)
                 _pirateRun.Team = CreateAndRegisterBotTeam(PirateRaidersTeamName);   // (the .cfg's team: its dark jackets)
+            if (EolMap.OpenWorld)
+            {
+                _kingRun.Team = CreateAndRegisterBotTeam("Hive King Legion");   // (.cfg TeamInfo19)
+                if (PirateRaidersEnabled)
+                    _pirateRun2.Team = CreateAndRegisterBotTeam(PirateRaiders2TeamName);
+            }
         }
 
         /// <summary>(2026-11-21, owner: "actualy lets have both swarms out") the Queen's and the King's swarm both run.</summary>
@@ -266,8 +284,8 @@ namespace InfServer.Script.GameType_Eol
 
             if (!_swarmActive)
             {
-                if (_swarmNextTick == 0)
-                    _swarmNextTick = NonZeroTick(now + SwarmFirstDelayMs);
+                if (_swarmNextTick == 0)   // (2026-11-27: the open world's four sites come up 45 s apart, not all at once)
+                    _swarmNextTick = NonZeroTick(now + SwarmFirstDelayMs + 45000 * Math.Max(0, new List<SwarmRun>(SwarmRuns()).IndexOf(_sw)));
                 if (now - _swarmNextTick >= 0)
                     StartSwarm(now);
                 return;
@@ -357,15 +375,20 @@ namespace InfServer.Script.GameType_Eol
             }
             if (squares.Count == 0)
                 return null;
-            Vehicle other = null;
+            // (2026-11-27: with four sites, as far as it can be from the NEAREST other boss)
+            List<Vehicle> others = new List<Vehicle>();
             foreach (SwarmRun r in SwarmRuns())
                 if (r != _sw && r.Active && r.Nest != null && !r.Nest.IsDead && r.Nest._state != null)
-                    other = r.Nest;
+                    others.Add(r.Nest);
+            Vehicle other = others.Count > 0 ? others[0] : null;
             Func<KeyValuePair<string, string>, double> farFromOther = kv =>
             {
-                if (other == null) return 0;
+                if (others.Count == 0) return 0;
                 int x0, y0; SquareTiles(kv.Value, out x0, out y0);
-                return Helpers.distanceTo(x0 * 16 + 640, y0 * 16 + 640, other._state.positionX, other._state.positionY);
+                double m = double.MaxValue;
+                foreach (Vehicle o in others)
+                    m = Math.Min(m, Helpers.distanceTo(x0 * 16 + 640, y0 * 16 + 640, o._state.positionX, o._state.positionY));
+                return m;
             };
             if (other != null)
                 squares.Sort((a, b) => farFromOther(b).CompareTo(farFromOther(a)));
@@ -407,8 +430,8 @@ namespace InfServer.Script.GameType_Eol
         void StartSwarm(int now)
         {
             VehInfo nestInfo = _sw.Pirate ? null : _arena._server._assets.getVehicleByID(SwarmNestVehId);
-            if (!_sw.Pirate)
-            {   // (2026-11-26) one alien swarm: the Queen and the King in turn
+            if (!_sw.Pirate && !EolMap.OpenWorld)
+            {   // (2026-11-26) one alien swarm: the Queen and the King in turn (2026-11-27: open world - each has its own)
                 bool king = AlienKingEnabled && _alienNextKing;
                 _sw.Title = king ? "Alien King" : "Alien Queen";
                 _sw.BotVehId = king ? SwarmKingBotVehId : SwarmQueenBotVehId;
@@ -467,7 +490,7 @@ namespace InfServer.Script.GameType_Eol
             _swarmOpening = true;
             _swarmNextBugTick = now;
             if (_sw.Pirate)
-                _arena.sendArenaMessage("&The " + PirateRaidersTeamName + " have landed! " + PirateNameOf(_swarmNest) + " leads them ("
+                _arena.sendArenaMessage("&The " + botTeamSwarm._name + " have landed! " + PirateNameOf(_swarmNest) + " leads them ("
                     + Helpers.posToLetterCoord(site.positionX, site.positionY) + ")", _config.flag.victoryWarningBong);
             else
             {
@@ -572,12 +595,12 @@ namespace InfServer.Script.GameType_Eol
                 foreach (Team t in _arena.Teams)
                     if (t != winners)
                         t.sendArenaMessage(_sw.Pirate
-                            ? "&" + _sw.Title + " - The " + PirateRaidersTeamName + " have been defeated by " + winners._name + "!"
+                            ? "&" + _sw.Title + " - The " + botTeamSwarm._name + " have been defeated by " + winners._name + "!"
                             : "&" + _sw.Title + " - The " + _sw.Title + "'s swarm has been defeated by " + winners._name + "!");
                 Log.write(TLog.Normal, "[Eol] {0} killed by {1} ({2} players paid).", _sw.Title, winners._name, winners.ActivePlayerCount);
             }
             else
-                _arena.sendArenaMessage(_sw.Pirate ? "&The " + PirateRaidersTeamName + " have pulled out."
+                _arena.sendArenaMessage(_sw.Pirate ? "&The " + botTeamSwarm._name + " have pulled out."
                     : "&The " + _sw.Title + "'s swarm has burrowed away.", _config.flag.periodicBong);
 
             // the swarm goes with its nest
@@ -662,8 +685,11 @@ namespace InfServer.Script.GameType_Eol
                 return false;
             }
             // (2026-11-26) the Pirate Raiders walk to the dropship's portal instead of the bug cave's hole
-            short px = _sw.Pirate ? DropshipPortalX : TileRaw(SwarmCavePortalTileX), py = _sw.Pirate ? DropshipPortalY : TileRaw(SwarmCavePortalTileY);
-            if (Helpers.distanceTo(b._state.positionX, b._state.positionY, px, py) <= 72 || now - t0 > (_sw.Pirate ? DeployTimeoutMs : SwarmDeployTimeoutMs))
+            short px = TileRaw(SwarmCavePortalTileX), py = TileRaw(SwarmCavePortalTileY);
+            if (_sw.Pirate)
+                BotPortalTarget(b, out px, out py);   // (2026-11-27: one of the six pads, at random)
+            double toPortal = _sw.Pirate ? DistanceToBotPortal(b, px, py) : Helpers.distanceTo(b._state.positionX, b._state.positionY, px, py);
+            if (toPortal <= 72 || now - t0 > (_sw.Pirate ? DeployTimeoutMs : SwarmDeployTimeoutMs))
             {
                 // (2026-11-17, owner: "bugs spawn in A6 and get stuck in a choke between green physics") come out at a
                 // free guard post - open ground with a clear run to the Queen - never in a pocket next to her
