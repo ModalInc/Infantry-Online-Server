@@ -420,8 +420,11 @@ namespace InfServer.Protocol
                 // (2026-11-15) and a lowest one: the budget is divided by the ping, so a lag spike shrank it,
                 // which backed the queue up, which raised the ping - a spiral that ended in a disconnect.
                 // Never below the 100 ms rate (~10 KB burst, ~78 KB/s) - a bot-heavy fight needs ~40 KB/s
-                if (averageDelta > 100)
-                    averageDelta = 100;
+                // (2026-11-28, owner: high-ping players lag even more with some kits; max zoom must get every update)
+                // a 200 ms ping is distance, not a thin pipe - it got the smallest budget (78 KB/s) and fell behind first.
+                // Floor now at the 40 ms rate (~26 KB burst, ~196 KB/s) for everyone.
+                if (averageDelta > 40)
+                    averageDelta = 40;
 
                 _rateThreshold = RATETHRESHOLD_BASE / averageDelta;
                 _decayRate = DECAYRATE_BASE / averageDelta;
@@ -1220,11 +1223,16 @@ namespace InfServer.Protocol
         /// </summary>
         public override void destroy()
         {	//Redirect
-            if (_obj != null)
-                //Note: This calls player.destroy()
-                _obj.destroy();
-
-            base.destroy();
+            try
+            {
+                if (_obj != null)
+                    //Note: This calls player.destroy()
+                    _obj.destroy();
+            }
+            finally
+            {   // (2026-11-28) the connection always closes, even if the player clean-up throws
+                base.destroy();
+            }
         }
 
         /// <summary>

@@ -726,6 +726,9 @@ namespace InfServer.Game
                 Log.write(TLog.Warning, e.ToString());
             }
 
+            try { sweepGhostPlayers(); }   // (2026-11-28) players who left but stayed in the list
+            catch (Exception e) { Log.write(TLog.Warning, "sweepGhostPlayers: " + e); }
+
             //Are we on an auto-recycle timer?
             if (_recycleAttempt > 0 && now > _recycleAttempt)
             {
