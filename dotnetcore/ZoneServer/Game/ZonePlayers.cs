@@ -127,15 +127,18 @@ namespace InfServer.Game
 
                 //Make sure his stats get updated
                 if (!IsStandalone && player._bDBLoaded)
-                {
-                    _db.updatePlayer(player);
+                {   // (2026-11-28) a failed stats save must never stop the "player left" note to the database (that
+                    // left him "currently in use" there - nobody could log in on that alias until a restart)
+                    try { _db.updatePlayer(player); }
+                    catch (Exception ex) { Log.write(TLog.Exception, "lostPlayer(): saving stats failed for {0}: {1}", player, ex); }
 
                     //We've lost him!
                     _db.lostPlayer(player);
                 }
 
                 //Set a destroy timer. This prevents lingering clients from not fully disconnecting
-                player._client._tickDestroy = Environment.TickCount64;
+                if (player._client != null)
+                    player._client._tickDestroy = Environment.TickCount64;
             }
         }
 
@@ -153,8 +156,44 @@ namespace InfServer.Game
             return (player._magic == inst.magic) ? player : null;
         }
 
+        long _tickGhostSweep;
+        /// <summary>Ghost players found so far (shown in the log).</summary>
+        public int GhostPlayersRemoved;
+
         /// <summary>
-        /// Obtains the player associated with a given name 
+        /// (2026-11-28, owner: "make sure if people leave there arent ghosts like blocking people from joining") every
+        /// 5 s: a player still in the zone's list whose connection is closed, or who has sent nothing for over a minute,
+        /// is removed from the zone and the database - he can log straight back in.
+        /// </summary>
+        public void sweepGhostPlayers()
+        {
+            long now = Environment.TickCount64;
+            if (now - _tickGhostSweep < 5000)
+                return;
+            _tickGhostSweep = now;
+            long silentMs = Math.Max(60000, 3L * Math.Max(0, Client.connectionTimeout));
+            foreach (Player p in _players.Values.ToList())
+            {
+                if (p == null)
+                    continue;
+                bool gone = p._client == null || p._client._bDestroyed
+                    || (p._client._lastPacketRecv > 0 && now - p._client._lastPacketRecv > silentMs);
+                if (!gone)
+                    continue;
+                GhostPlayersRemoved++;
+                Log.write(TLog.Warning, "Ghost player removed: {0} (connection {1}).", p,
+                    p._client == null ? "missing" : p._client._bDestroyed ? "closed" : "silent " + (now - p._client._lastPacketRecv) / 1000 + " s");
+                try { p.forceRemoveGhost(); }
+                catch (Exception ex)
+                {
+                    Log.write(TLog.Exception, "sweepGhostPlayers(): {0}: {1}", p, ex);
+                    _players.Remove(p._id);   // last resort: never leave him in the list
+                }
+            }
+        }
+
+        /// <summary>
+        /// Obtains the player associated with a given name
         /// </summary>
         public Player getPlayer(string name)
         {	//Attempt to find him

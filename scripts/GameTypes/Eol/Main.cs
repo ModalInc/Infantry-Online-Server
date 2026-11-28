@@ -187,7 +187,7 @@ namespace InfServer.Script.GameType_Eol
         /// the kill rewards (cash / exp / points) still use c_percentOfVictim.</summary>
         public const int c_percentOfVictimBounty = 20;   // (2026-11-22, owner: 25 -> 20 %)
         public const int c_percentOfOwn = 3;
-        public const int c_percentOfOwnIncrease = 4;   // (2026-11-26, owner: 5 -> 4 % of the killer's own bounty)
+        public const double c_percentOfOwnIncrease = 3.5;   // (2026-11-28, owner: 4 -> 3.5 % of the killer's own bounty; was 5 until 2026-11-26)
 
         private class PlayerCrownStatus
         {
@@ -731,6 +731,36 @@ namespace InfServer.Script.GameType_Eol
         // Member Functions
         ///////////////////////////////////////////////////
         /// <summary>
+        /// (2026-11-28, owner: "if a sniper is max zoomed out then he needs to have NO lag whatsoever" / "i want the
+        /// MAXIMUM zoom to have MAXIMUM update, every update smooth") how far every movement update (players and bots)
+        /// goes out at full rate. The server.xml bands were full rate to 2500 px, then 1 update in 9 to 3000 px, then
+        /// nothing - zoomed out past 2500 px everyone jumped. Zoom slides the view up to [View] AdjustDistance (2048 px)
+        /// from the player, plus half the screen: ~3150 px at 1080p, ~4250 px at 4K, ~4700 px on a 5120x1440 ultrawide.
+        /// Now every update goes out to EolRouteFull (5000 px), every 2nd to EolRouteMid, every 3rd to EolRouteFar, and
+        /// every bot in view streams at its full rate (no nearest-16 cap). Set here so it works on any server whatever its
+        /// server.xml says; *routes changes it live.
+        /// </summary>
+        public static int EolRouteFull = 5000, EolRouteMid = 6000, EolRouteFar = 7000;
+        /// <summary>Bots each player gets at full rate (0 = all of them; the rest at InfServer.Bots.BotFeatures.RouteSlowMs).</summary>
+        public static int EolBotNearCap = 0;
+        static void ApplyEolRouteBands(int full, int mid, int far)
+        {
+            full = Math.Max(1000, full);
+            mid = Math.Max(full, mid);
+            far = Math.Max(mid, far);
+            EolRouteFull = full; EolRouteMid = mid; EolRouteFar = far;
+            Arena.routeRange = full;
+            Arena.routeWeaponRange = full;
+            Arena.routeRadarRange = mid;
+            Arena.routeRadarRangeFactor = 2;
+            Arena.routeRadarRangeFar = far;
+            Arena.routeRadarRangeFarFactor = 3;
+            InfServer.Bots.BotFeatures.RouteNearCap = Math.Max(0, EolBotNearCap);
+            Log.write(TLog.Normal, "[Eol] Route bands: full rate to {0} px, 1/2 to {1} px, 1/3 to {2} px; bot full-rate cap {3}.",
+                full, mid, far, EolBotNearCap == 0 ? "off" : EolBotNearCap.ToString());
+        }
+
+        /// <summary>
         /// Performs script initialization
         /// </summary>
         public bool init(IEventObject invoker)
@@ -741,6 +771,7 @@ namespace InfServer.Script.GameType_Eol
             // (2026-11-28 owner) Harrier driver + gunner seats: only the Harrier's own guns, never the rider's (NEO GL etc.)
             foreach (int harrierSeat in new[] { 121, 512, 126, 515 })   // GV-s, GV-s Turret, GV-s A2, GV-s A2 Turret
                 ScriptArena.TransportOnlyVehicles.Add(harrierSeat);
+            ApplyEolRouteBands(EolRouteFull, EolRouteMid, EolRouteFar);
             // (2026-11-15) Eol never resets when it empties: the public arena stays open with every structure where
             // it was (this arena only - private arenas still close when their last player leaves). Bots are only
             // there while somebody is (see PollEmptyArena).
@@ -6557,7 +6588,7 @@ namespace InfServer.Script.GameType_Eol
         /// same ratio below (1250 / 30000 = ~4.17 % of the killer's bounty). Never less than the old share (1 % of the
         /// kill's points), so a low-bounty killer's big kill still pays something.
         /// </summary>
-        public const int EolLeechAt30k = 1050;   // (2026-11-26, owner: leech 3.5 % - 1050 at a 30k killer; was 1250 = ~4.17 %)
+        public const int EolLeechAt30k = 600;   // (2026-11-28, owner: leech 2 % - 600 at a 30k killer; was 1050 = 3.5 %, before that 1250)
         static int EolLeechBounty(InfServer.Game.Player killer, int basePoints, CfgInfo cfg)
         {
             int byRatio = (int)Math.Round(Math.Min(30000, Math.Max(0, killer.Bounty)) * (double)EolLeechAt30k / 30000);
@@ -6899,6 +6930,30 @@ namespace InfServer.Script.GameType_Eol
                     Arena.BotRosterBeforeIngameMax = n;
                 int cur = Arena.BotRosterBeforeIngameMax;
                 player.sendMessage(0, "&Join roster: " + (cur < 0 ? "all bots" : cur + " bots") + " during the download, the rest after.");
+                return true;
+            }
+            if (cmd.Equals("routes"))
+            {   // (2026-11-28) *routes [full mid far]: how far movement updates go at full / half / third rate (px)
+                if (!IsEolModerator(player))
+                {
+                    player.sendMessage(-1, "Moderators only.");
+                    return true;
+                }
+                string[] a = (payload ?? "").Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
+                int f, m, r;
+                if (a.Length >= 2 && a[0].Equals("botcap", StringComparison.OrdinalIgnoreCase) && int.TryParse(a[1], out f))
+                {   // *routes botcap N: only each player's N nearest bots at full rate (0 = all)
+                    EolBotNearCap = Math.Max(0, f);
+                    ApplyEolRouteBands(EolRouteFull, EolRouteMid, EolRouteFar);
+                }
+                else if (a.Length >= 1 && int.TryParse(a[0], out f))
+                {
+                    m = a.Length >= 2 && int.TryParse(a[1], out m) ? m : f + 1000;
+                    r = a.Length >= 3 && int.TryParse(a[2], out r) ? r : m + 1000;
+                    ApplyEolRouteBands(f, m, r);
+                }
+                player.sendMessage(0, String.Format("&Movement updates: full rate to {0} px, every 2nd to {1} px, every 3rd to {2} px. Bot cap: {3}.",
+                    EolRouteFull, EolRouteMid, EolRouteFar, EolBotNearCap == 0 ? "off (every bot full rate)" : EolBotNearCap + " nearest"));
                 return true;
             }
             if (cmd.Equals("swarm"))

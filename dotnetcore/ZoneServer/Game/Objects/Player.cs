@@ -298,12 +298,42 @@ namespace InfServer.Game
             bDestroyed = true;
 
             using (LogAssume.Assume(_server._logger))
-            {	//Take him out of his arena
-                leftArena();
-
-                //and next, the zone server
-                _server.lostPlayer(this);
+            {   // (2026-11-28, owner: "a player exit out, and then cant come back in because it says he is still in the
+                // zone") an exception while leaving the arena (script Player.Leave, vehicle, team...) used to skip
+                // lostPlayer: he stayed in the zone's list and the database kept him online ("Alias is currently in
+                // use") until a restart. The zone and the database now always let him go.
+                try
+                {   //Take him out of his arena
+                    leftArena();
+                }
+                catch (Exception ex)
+                {
+                    Log.write(TLog.Exception, "Player.destroy(): leaving the arena failed for {0}: {1}", this, ex);
+                }
+                finally
+                {   //and next, the zone server
+                    _server.lostPlayer(this);
+                }
             }
+        }
+
+        /// <summary>
+        /// (2026-11-28) Ghost cleanup: removes a player whose connection is gone but who is still in the zone's list
+        /// (destroy() already ran and failed, or never ran). Safe to call more than once.
+        /// </summary>
+        public void forceRemoveGhost()
+        {
+            bDestroyed = true;
+            try
+            {
+                if (_arena != null)
+                    leftArena();
+            }
+            catch (Exception ex)
+            {
+                Log.write(TLog.Exception, "forceRemoveGhost(): leaving the arena failed for {0}: {1}", this, ex);
+            }
+            _server.lostPlayer(this);
         }
 
         /// <summary>

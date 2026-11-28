@@ -2634,7 +2634,13 @@ namespace InfServer.Game
 
                 player._client.sendReliable(rld);
 
-                player.syncState();
+                // (2026-11-28, owner: Berserker / Kenalog / Steron made high-ping players lag more) using an injection
+                // re-sent the whole player state (inventory, skills, stats) as one big reliable packet. When nothing
+                // but the inventory changed (no cash cost), only the inventory goes out.
+                if (item.cashCost != 0)
+                    player.syncState();
+                else
+                    player.syncInventory();
             }
         }
         #endregion
